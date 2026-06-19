@@ -583,7 +583,6 @@ async function main() {
         filiereId: filiereMais.id,
         parentId: maisGrain.id,
         estDerive: true,
-        uniteRef: d.uniteRef,
         ...d,
       },
     });
@@ -688,7 +687,6 @@ async function main() {
         filiereId: filiereCajou.id,
         parentId: cajouRCN.id,
         estDerive: true,
-        uniteRef: d.uniteRef,
         ...d,
       },
     });
@@ -773,7 +771,6 @@ async function main() {
         filiereId: filiereCola.id,
         parentId: colaNoix.id,
         estDerive: true,
-        uniteRef: d.uniteRef,
         ...d,
       },
     });
