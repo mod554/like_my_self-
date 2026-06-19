@@ -1,0 +1,27 @@
+// Registre des connecteurs — point d'entrée unique
+// Chaque connecteur correspond à une Source en base de données
+
+import { WorldBankConnector } from "./worldbank";
+import { FaoFpmaConnector } from "./fao-fpma";
+import { UsdaFasConnector } from "./usda-fas";
+import { ConseilAnacardeCiConnector } from "./conseil-anacarde";
+import { ResimaoConnector } from "./resimao";
+import { RssNewsConnector } from "./rss-news";
+import { IndexMundiConnector } from "./indexmundi";
+import type { Connector } from "./base";
+
+export const CONNECTEURS: Connector[] = [
+  new WorldBankConnector(),
+  new FaoFpmaConnector(),
+  new UsdaFasConnector(),
+  new ConseilAnacardeCiConnector(),
+  new ResimaoConnector(),
+  new RssNewsConnector(),
+  new IndexMundiConnector(),
+];
+
+export { type Connector, type ConnectorResult } from "./base";
+
+export function getConnecteur(code: string): Connector | undefined {
+  return CONNECTEURS.find((c) => c.code === code);
+}
