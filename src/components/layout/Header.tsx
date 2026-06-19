@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import AfricaGroLogo from "@/components/brand/AfricaGroLogo";
 
 const NAV = [
-  { href: "/referentiel", label: "Référentiel", active: true, badge: null },
-  { href: "/marche",      label: "Marché",       active: false, badge: "Phase 4" },
-  { href: "/connecteurs", label: "Collecte",      active: false, badge: "Phase 3" },
-  { href: "/analyse",     label: "Analyse",       active: false, badge: "Phase 5" },
+  { href: "/referentiel", label: "Référentiel", active: true,  badge: null },
+  { href: "/marche",      label: "Marché",       active: true,  badge: null },
+  { href: "/prix",        label: "Prix",          active: true,  badge: null },
+  { href: "/collecte",    label: "Collecte",      active: true,  badge: null },
+  { href: "/analyse",     label: "Analyse",       active: true,  badge: null },
 ];
 
 export default function Header() {
