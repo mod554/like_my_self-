@@ -2,6 +2,31 @@ import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+const FILIERE_META: Record<string, {
+  accent: string; accentBg: string; accentBorder: string;
+  badge: string; badgeBg: string; badgeColor: string;
+  ticker: string; icon: string; gradient: string;
+}> = {
+  MAIS:  {
+    accent: "#92BA59", accentBg: "rgba(146,186,89,0.08)", accentBorder: "rgba(146,186,89,0.2)",
+    badge: "Cotée CME/CBOT", badgeBg: "rgba(74,155,111,0.15)", badgeColor: "#4A9B6F",
+    ticker: "ZC · CBOT", icon: "🌽",
+    gradient: "linear-gradient(135deg, rgba(146,186,89,0.12) 0%, transparent 60%)",
+  },
+  CAJOU: {
+    accent: "#B89B3A", accentBg: "rgba(184,155,58,0.08)", accentBorder: "rgba(184,155,58,0.2)",
+    badge: "Non cotée", badgeBg: "rgba(184,155,58,0.12)", badgeColor: "#B89B3A",
+    ticker: "RCN · W320", icon: "🥜",
+    gradient: "linear-gradient(135deg, rgba(184,155,58,0.12) 0%, transparent 60%)",
+  },
+  COLA:  {
+    accent: "#8A9E1A", accentBg: "rgba(107,118,13,0.08)", accentBorder: "rgba(107,118,13,0.2)",
+    badge: "Régional AOF", badgeBg: "rgba(107,118,13,0.15)", badgeColor: "#6B760D",
+    ticker: "AOF", icon: "🌰",
+    gradient: "linear-gradient(135deg, rgba(107,118,13,0.12) 0%, transparent 60%)",
+  },
+};
+
 export default async function FilierePage({
   params,
 }: {
@@ -21,7 +46,7 @@ export default async function FilierePage({
       },
       actualites: {
         orderBy: { datePublication: "desc" },
-        take: 5,
+        take: 6,
       },
     },
   });
@@ -30,102 +55,305 @@ export default async function FilierePage({
 
   const principaux = filiere.produits.filter((p) => !p.estDerive);
   const derives = filiere.produits.filter((p) => p.estDerive);
+  const meta = FILIERE_META[filiere.code] ?? {
+    accent: "var(--ag-lime)", accentBg: "rgba(146,186,89,0.06)", accentBorder: "rgba(146,186,89,0.15)",
+    badge: filiere.code, badgeBg: "rgba(90,122,90,0.12)", badgeColor: "#5A7A5A",
+    ticker: filiere.code, icon: "📦", gradient: "",
+  };
 
   return (
-    <div className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
-      {/* Breadcrumb */}
-      <div className="text-xs text-zinc-600 font-mono mb-6">
-        <Link href="/referentiel" className="hover:text-zinc-400 transition-colors">Référentiel</Link>
-        <span className="mx-2">›</span>
-        <span className="text-zinc-400">{filiere.nom}</span>
-      </div>
+    <div style={{ flex: 1, padding: "32px 0 64px" }}>
+      <div className="ag-container">
 
-      {/* En-tête filière */}
-      <div className="mb-10">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="text-xs font-mono text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">{filiere.code}</span>
+        {/* Breadcrumb */}
+        <div style={{ marginBottom: "24px", display: "flex", alignItems: "center", gap: "6px", fontSize: 12, fontFamily: "monospace", color: "var(--text-muted)" }}>
+          <Link href="/" style={{ color: "var(--text-muted)", textDecoration: "none" }}>AfricaGro</Link>
+          <span style={{ color: "var(--border-default)" }}>›</span>
+          <Link href="/referentiel" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Référentiel</Link>
+          <span style={{ color: "var(--border-default)" }}>›</span>
+          <span style={{ color: "var(--ag-lime)" }}>{filiere.nom}</span>
         </div>
-        <h1 className="text-2xl font-bold text-zinc-100 mb-3">{filiere.nom}</h1>
-        <p className="text-sm text-zinc-400 leading-relaxed max-w-2xl">{filiere.description}</p>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Produits principaux */}
-        <div className="lg:col-span-2 space-y-6">
-          <div>
-            <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">
-              Produits principaux ({principaux.length})
-            </h2>
-            <div className="space-y-2">
-              {principaux.map((p) => (
-                <Link
-                  key={p.code}
-                  href={`/referentiel/${code.toLowerCase()}/${p.code.toLowerCase()}`}
-                  className="flex items-center justify-between border border-zinc-800 rounded-lg px-4 py-3 hover:border-zinc-600 hover:bg-zinc-900 transition-colors group"
+        {/* Hero filière */}
+        <div
+          style={{
+            background: `var(--bg-surface)`,
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "12px",
+            overflow: "hidden",
+            marginBottom: "24px",
+            position: "relative",
+          }}
+        >
+          {/* Top accent bar */}
+          <div style={{ height: "3px", background: `linear-gradient(90deg, ${meta.accent}, ${meta.accent}44, transparent)` }} />
+
+          {/* Background gradient overlay */}
+          <div style={{ position: "absolute", inset: 0, background: meta.gradient, pointerEvents: "none" }} />
+
+          <div style={{ padding: "28px 32px", position: "relative" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <span
+                  style={{
+                    width: 56, height: 56, borderRadius: "14px", fontSize: 28,
+                    background: meta.accentBg, border: `1px solid ${meta.accentBorder}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
                 >
-                  <div>
-                    <span className="text-xs font-mono text-zinc-500 mr-3">{p.code}</span>
-                    <span className="text-sm text-zinc-200 group-hover:text-white transition-colors">{p.nom}</span>
+                  {meta.icon}
+                </span>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                    <span
+                      style={{
+                        fontSize: 10, fontFamily: "monospace", letterSpacing: "0.08em",
+                        padding: "2px 8px", borderRadius: "20px",
+                        background: "var(--bg-elevated)", color: meta.accent,
+                        border: `1px solid ${meta.accentBorder}`,
+                      }}
+                    >
+                      {meta.ticker}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10, fontFamily: "monospace", letterSpacing: "0.06em",
+                        background: meta.badgeBg, color: meta.badgeColor,
+                        padding: "2px 8px", borderRadius: "20px",
+                        border: `1px solid ${meta.badgeColor}33`,
+                      }}
+                    >
+                      {meta.badge}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-zinc-600 font-mono">
-                    <span>{p._count.prixReleves} prix</span>
-                    <span>{p.derives.length} dérivés</span>
-                    <span className="text-zinc-700">›</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
+                  <h1 className="font-display" style={{ fontSize: 26, color: "var(--text-primary)", margin: 0, lineHeight: 1.1 }}>
+                    {filiere.nom}
+                  </h1>
+                </div>
+              </div>
 
-          {/* Dérivés */}
-          {derives.length > 0 && (
-            <div>
-              <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">
-                Dérivés & transformés ({derives.length})
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {derives.map((p) => (
+              {/* Quick stats */}
+              <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
+                {[
+                  { v: principaux.length, l: "Produits" },
+                  { v: derives.length,    l: "Dérivés" },
+                  { v: filiere.actualites.length, l: "Actualités" },
+                ].map(({ v, l }) => (
+                  <div key={l} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: meta.accent, fontFamily: "monospace", lineHeight: 1 }}>{v}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.05em", marginTop: "3px" }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <p style={{ marginTop: "16px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7, maxWidth: "800px" }}>
+              {filiere.description}
+            </p>
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "20px", alignItems: "start" }}>
+
+          {/* Left — produits */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+            {/* Produits principaux */}
+            <div
+              style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "10px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding: "14px 20px",
+                  borderBottom: "1px solid var(--border-subtle)",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                }}
+              >
+                <p className="ag-section-label">Produits principaux</p>
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: meta.accent }}>
+                  {principaux.length} produit{principaux.length > 1 ? "s" : ""}
+                </span>
+              </div>
+              <div style={{ padding: "8px" }}>
+                {principaux.map((p) => (
                   <Link
                     key={p.code}
                     href={`/referentiel/${code.toLowerCase()}/${p.code.toLowerCase()}`}
-                    className="flex items-center justify-between border border-zinc-800/60 rounded-lg px-4 py-2.5 hover:border-zinc-700 hover:bg-zinc-900/50 transition-colors group"
+                    style={{ textDecoration: "none", display: "block" }}
                   >
-                    <div>
-                      <span className="text-xs font-mono text-zinc-600 mr-2">{p.code}</span>
-                      <span className="text-xs text-zinc-300 group-hover:text-white transition-colors">{p.nom}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-zinc-600 font-mono">
-                      <span>{p._count.prixReleves}</span>
-                      <span className="text-zinc-700">›</span>
+                    <div
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "12px 14px", borderRadius: "8px",
+                        transition: "all 150ms ease",
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elevated)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <span
+                          style={{
+                            fontSize: 9, fontFamily: "monospace", letterSpacing: "0.08em",
+                            color: meta.accent, background: meta.accentBg,
+                            border: `1px solid ${meta.accentBorder}`,
+                            padding: "2px 6px", borderRadius: "4px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {p.code}
+                        </span>
+                        <span style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>{p.nom}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                        <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>
+                          {p._count.prixReleves} prix
+                        </span>
+                        {p.derives.length > 0 && (
+                          <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>
+                            {p.derives.length} dérivés
+                          </span>
+                        )}
+                        <span style={{ color: meta.accent, fontSize: 14 }}>›</span>
+                      </div>
                     </div>
                   </Link>
                 ))}
               </div>
             </div>
-          )}
+
+            {/* Dérivés */}
+            {derives.length > 0 && (
+              <div
+                style={{
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "10px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "14px 20px",
+                    borderBottom: "1px solid var(--border-subtle)",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                  }}
+                >
+                  <p className="ag-section-label">Dérivés &amp; transformés</p>
+                  <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-olive)" }}>
+                    {derives.length} produit{derives.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div style={{ padding: "8px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "4px" }}>
+                  {derives.map((p) => (
+                    <Link
+                      key={p.code}
+                      href={`/referentiel/${code.toLowerCase()}/${p.code.toLowerCase()}`}
+                      style={{ textDecoration: "none" }}
+                    >
+                      <div
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "10px 14px", borderRadius: "8px",
+                          transition: "background 150ms ease",
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elevated)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--ag-olive)", background: "rgba(107,118,13,0.1)", padding: "1px 5px", borderRadius: "3px" }}>
+                            {p.code}
+                          </span>
+                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.nom}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)" }}>{p._count.prixReleves}</span>
+                          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>›</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right — actualités */}
+          <div
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "10px",
+              overflow: "hidden",
+              position: "sticky",
+              top: "80px",
+            }}
+          >
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span className="ag-status-dot" />
+              <p className="ag-section-label">Actualités récentes</p>
+            </div>
+
+            {filiere.actualites.length === 0 ? (
+              <div style={{ padding: "24px 18px", textAlign: "center" }}>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>
+                  Aucune actualité
+                </p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: "4px" }}>
+                  Déclenchez la collecte RSS
+                </p>
+              </div>
+            ) : (
+              <div>
+                {filiere.actualites.map((a, i) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      padding: "14px 18px",
+                      borderBottom: i < filiere.actualites.length - 1 ? "1px solid var(--border-subtle)" : "none",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)" }}>
+                        {new Date(a.datePublication).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
+                      </span>
+                      <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--ag-olive)", background: "rgba(107,118,13,0.1)", padding: "1px 5px", borderRadius: "3px" }}>
+                        {a.source.split(" ")[0]}
+                      </span>
+                    </div>
+                    <a
+                      href={a.lien}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ textDecoration: "none" }}
+                    >
+                      <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {a.titre}
+                      </p>
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border-subtle)", background: "var(--bg-panel)" }}>
+              <Link
+                href="/api/connectors"
+                style={{ fontSize: 10, fontFamily: "monospace", color: "var(--ag-lime)", textDecoration: "none", letterSpacing: "0.06em" }}
+              >
+                → Déclencher collecte RSS
+              </Link>
+            </div>
+          </div>
         </div>
 
-        {/* Actualités */}
-        <div>
-          <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">
-            Actualités récentes
-          </h2>
-          {filiere.actualites.length === 0 ? (
-            <p className="text-xs text-zinc-600">Aucune actualité</p>
-          ) : (
-            <div className="space-y-3">
-              {filiere.actualites.map((a) => (
-                <div key={a.id} className="border border-zinc-800/60 rounded-lg p-3">
-                  <div className="text-xs text-zinc-600 font-mono mb-1">
-                    {new Date(a.datePublication).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}
-                  </div>
-                  <p className="text-xs text-zinc-300 leading-relaxed line-clamp-3">{a.titre}</p>
-                  <div className="mt-1 text-xs text-zinc-600 truncate">{a.source}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

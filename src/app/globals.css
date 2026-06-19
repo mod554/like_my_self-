@@ -1,26 +1,223 @@
 @import "tailwindcss";
 
+/* ── AfricaGro Partners — Design System ───────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand palette */
+  --ag-black:       #000000;
+  --ag-forest:      #003D2E;   /* vert forêt profond */
+  --ag-olive:       #6B760D;   /* olive */
+  --ag-lime:        #92BA59;   /* vert lime accent */
+
+  /* Surfaces dark terminal */
+  --bg-base:        #080D0A;   /* noir vert profond */
+  --bg-surface:     #0D1710;   /* surface carte */
+  --bg-elevated:    #122018;   /* surbrillance */
+  --bg-panel:       #091210;   /* panneaux latéraux */
+
+  /* Borders */
+  --border-subtle:  #1A2E1E;
+  --border-default: #224029;
+  --border-accent:  #2D6040;
+
+  /* Text */
+  --text-primary:   #D9EDD9;   /* blanc vert */
+  --text-secondary: #7AA87A;   /* vert moyen */
+  --text-muted:     #3D5C3D;   /* vert sombre */
+  --text-inverse:   #080D0A;
+
+  /* Data colors */
+  --data-up:        #92BA59;   /* lime — hausse */
+  --data-down:      #E05252;   /* rouge — baisse */
+  --data-neutral:   #5A7A5A;   /* neutre */
+  --data-official:  #4A9B6F;   /* officiel */
+  --data-indicatif: #92BA59;   /* indicatif */
+  --data-estime:    #B89B3A;   /* estimé */
+  --data-exemple:   #5A7A5A;   /* exemple */
+
+  /* Gradients */
+  --gradient-hero:  linear-gradient(135deg, #080D0A 0%, #0D2218 50%, #051A10 100%);
+  --gradient-card:  linear-gradient(145deg, #0D1710 0%, #091210 100%);
+  --gradient-lime:  linear-gradient(135deg, #92BA59 0%, #6B760D 100%);
+  --gradient-forest:linear-gradient(135deg, #003D2E 0%, #001F18 100%);
+
+  /* Shadows */
+  --shadow-card:    0 1px 3px rgba(0,0,0,0.5), 0 0 0 1px rgba(26,46,30,0.6);
+  --shadow-glow:    0 0 20px rgba(146,186,89,0.08);
+  --shadow-forest:  0 4px 24px rgba(0,61,46,0.4);
+
+  /* Transitions */
+  --t-fast:  150ms ease;
+  --t-base:  250ms ease;
+  --t-slow:  400ms ease;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ── Reset & base ──────────────────────────────────────────────────────────── */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+*, *::before, *::after { box-sizing: border-box; }
+
+html { height: 100%; scroll-behavior: smooth; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Ubuntu', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography ────────────────────────────────────────────────────────────── */
+
+.font-display {
+  font-family: 'Ubuntu', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.font-data {
+  font-family: 'Ubuntu Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── AfricaGro custom components ──────────────────────────────────────────── */
+
+/* Ticker strip */
+.ag-ticker {
+  background: var(--ag-forest);
+  border-bottom: 1px solid var(--border-accent);
+  overflow: hidden;
+}
+
+/* KPI Card */
+.ag-kpi {
+  background: var(--gradient-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 16px;
+  transition: border-color var(--t-base), box-shadow var(--t-base);
+}
+.ag-kpi:hover {
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-glow);
+}
+
+/* Filière card */
+.ag-filiere-card {
+  background: var(--gradient-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color var(--t-base), transform var(--t-base), box-shadow var(--t-base);
+  cursor: pointer;
+}
+.ag-filiere-card:hover {
+  border-color: var(--ag-lime);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow), var(--shadow-forest);
+}
+
+/* Badge fiabilité */
+.badge-officiel   { background: rgba(74,155,111,0.15); color: #4A9B6F; border: 1px solid rgba(74,155,111,0.3); }
+.badge-indicatif  { background: rgba(146,186,89,0.12); color: #92BA59; border: 1px solid rgba(146,186,89,0.25); }
+.badge-estime     { background: rgba(184,155,58,0.12); color: #B89B3A; border: 1px solid rgba(184,155,58,0.25); }
+.badge-exemple    { background: rgba(90,122,90,0.12);  color: #5A7A5A; border: 1px solid rgba(90,122,90,0.25); }
+
+/* Status indicator */
+.ag-status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--data-up);
+  box-shadow: 0 0 6px var(--data-up);
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--data-up); }
+  50%       { opacity: 0.6; box-shadow: 0 0 12px var(--data-up); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ag-lime); }
+
+/* Table data terminal */
+.ag-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ag-table th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+}
+.ag-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(26,46,30,0.4);
+  color: var(--text-secondary);
+  transition: background var(--t-fast);
+}
+.ag-table tr:hover td { background: rgba(18,32,24,0.8); }
+.ag-table .val-up   { color: var(--data-up); }
+.ag-table .val-down { color: var(--data-down); }
+
+/* Shimmer loading */
+@keyframes shimmer {
+  0%   { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+.ag-shimmer {
+  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* Glow text accent */
+.ag-glow {
+  color: var(--ag-lime);
+  text-shadow: 0 0 20px rgba(146,186,89,0.4);
+}
+
+/* Gradient text */
+.ag-gradient-text {
+  background: var(--gradient-lime);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Divider */
+.ag-divider {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 0;
+}
+
+/* Container */
+.ag-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Section heading */
+.ag-section-label {
+  font-size: 10px;
+  font-family: monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }

@@ -2,17 +2,24 @@ import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-const FIABILITE_STYLE: Record<string, { label: string; cls: string }> = {
-  OFFICIEL:  { label: "Officiel",  cls: "bg-green-900/40 text-green-400 border-green-800/50" },
-  INDICATIF: { label: "Indicatif", cls: "bg-yellow-900/40 text-yellow-400 border-yellow-800/50" },
-  ESTIME:    { label: "Estimé",    cls: "bg-orange-900/40 text-orange-400 border-orange-800/50" },
-  EXEMPLE:   { label: "Exemple ⚠️", cls: "bg-zinc-800 text-zinc-500 border-zinc-700" },
+const FIABILITE: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  OFFICIEL:  { label: "Officiel",   color: "#4A9B6F", bg: "rgba(74,155,111,0.12)",  border: "rgba(74,155,111,0.25)" },
+  INDICATIF: { label: "Indicatif",  color: "#92BA59", bg: "rgba(146,186,89,0.10)",  border: "rgba(146,186,89,0.22)" },
+  ESTIME:    { label: "Estimé",     color: "#B89B3A", bg: "rgba(184,155,58,0.10)",  border: "rgba(184,155,58,0.22)" },
+  EXEMPLE:   { label: "Exemple ⚠️", color: "#5A7A5A", bg: "rgba(90,122,90,0.10)",   border: "rgba(90,122,90,0.20)"  },
 };
 
 function BadgeFiabilite({ niveau }: { niveau: string }) {
-  const s = FIABILITE_STYLE[niveau] ?? { label: niveau, cls: "bg-zinc-800 text-zinc-400 border-zinc-700" };
+  const s = FIABILITE[niveau] ?? FIABILITE.EXEMPLE;
   return (
-    <span className={`text-xs px-1.5 py-0.5 rounded border font-mono ${s.cls}`}>
+    <span
+      style={{
+        fontSize: 9, fontFamily: "monospace", letterSpacing: "0.05em",
+        padding: "2px 6px", borderRadius: "4px",
+        color: s.color, background: s.bg, border: `1px solid ${s.border}`,
+        whiteSpace: "nowrap",
+      }}
+    >
       {s.label}
     </span>
   );
@@ -65,228 +72,322 @@ export default async function ProduitPage({
   const saisonnalite = p.saisonnalite as Record<string, { debut: string; fin: string; note?: string }> | null;
   const chaine = p.chaineDValeur as { etapes?: string[]; note?: string } | null;
 
-  return (
-    <div className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
-      {/* Breadcrumb */}
-      <div className="text-xs text-zinc-600 font-mono mb-6">
-        <Link href="/referentiel" className="hover:text-zinc-400">Référentiel</Link>
-        <span className="mx-2">›</span>
-        <Link href={`/referentiel/${code.toLowerCase()}`} className="hover:text-zinc-400">{p.filiere.nom}</Link>
-        <span className="mx-2">›</span>
-        <span className="text-zinc-400">{p.code}</span>
-      </div>
+  // Last price
+  const dernierPrix = p.prixReleves[0];
 
-      {/* En-tête produit */}
-      <div className="mb-8 pb-6 border-b border-zinc-800">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-mono text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">{p.code}</span>
-              {p.estDerive && (
-                <span className="text-xs text-zinc-600 font-mono">
-                  dérivé de{" "}
-                  <Link
-                    href={`/referentiel/${code.toLowerCase()}/${p.parent?.code.toLowerCase()}`}
-                    className="text-zinc-400 hover:text-zinc-200"
+  return (
+    <div style={{ flex: 1, padding: "32px 0 64px" }}>
+      <div className="ag-container">
+
+        {/* Breadcrumb */}
+        <div style={{ marginBottom: "20px", display: "flex", alignItems: "center", gap: "6px", fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>
+          <Link href="/" style={{ color: "var(--text-muted)", textDecoration: "none" }}>AfricaGro</Link>
+          <span>›</span>
+          <Link href="/referentiel" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Référentiel</Link>
+          <span>›</span>
+          <Link href={`/referentiel/${code.toLowerCase()}`} style={{ color: "var(--text-muted)", textDecoration: "none" }}>{p.filiere.nom}</Link>
+          <span>›</span>
+          <span style={{ color: "var(--ag-lime)" }}>{p.code}</span>
+        </div>
+
+        {/* Hero produit */}
+        <div
+          style={{
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "12px",
+            overflow: "hidden",
+            marginBottom: "24px",
+          }}
+        >
+          <div style={{ height: "3px", background: "linear-gradient(90deg, var(--ag-lime), var(--ag-olive), transparent)" }} />
+          <div style={{ padding: "24px 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
+
+              {/* Titre */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
+                  <span
+                    style={{
+                      fontSize: 10, fontFamily: "monospace", letterSpacing: "0.1em",
+                      color: "var(--ag-lime)", background: "rgba(146,186,89,0.1)",
+                      border: "1px solid rgba(146,186,89,0.2)", padding: "2px 8px", borderRadius: "4px",
+                    }}
                   >
-                    {p.parent?.code}
-                  </Link>
-                </span>
+                    {p.code}
+                  </span>
+                  {p.estDerive && p.parent && (
+                    <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>
+                      Dérivé de{" "}
+                      <Link href={`/referentiel/${code.toLowerCase()}/${p.parent.code.toLowerCase()}`}
+                        style={{ color: "var(--ag-lime)", textDecoration: "none" }}>
+                        {p.parent.code}
+                      </Link>
+                    </span>
+                  )}
+                  <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", background: "var(--bg-elevated)", padding: "2px 6px", borderRadius: "4px" }}>
+                    {p.uniteRef}
+                  </span>
+                </div>
+                <h1 className="font-display" style={{ fontSize: 22, color: "var(--text-primary)", margin: 0, lineHeight: 1.2 }}>
+                  {p.nom}
+                </h1>
+                {p.descriptionQualite && (
+                  <p style={{ marginTop: "8px", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                    {p.descriptionQualite}
+                  </p>
+                )}
+              </div>
+
+              {/* Dernier prix */}
+              {dernierPrix && (
+                <div
+                  style={{
+                    padding: "16px 20px", borderRadius: "10px",
+                    background: "var(--bg-elevated)", border: "1px solid var(--border-default)",
+                    textAlign: "right", minWidth: "180px",
+                  }}
+                >
+                  <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", marginBottom: "4px", letterSpacing: "0.06em" }}>
+                    DERNIER RELEVÉ
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: "var(--ag-lime)", fontFamily: "monospace", lineHeight: 1 }}>
+                    {formatValeur(dernierPrix.valeur)}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", fontFamily: "monospace", marginTop: "2px" }}>
+                    {dernierPrix.devise} / {dernierPrix.unite}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: "6px" }}>
+                    {formatDate(dernierPrix.dateReleve)} · <BadgeFiabilite niveau={dernierPrix.fiabilite} />
+                  </div>
+                </div>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-zinc-100 mb-1">{p.nom}</h1>
-            <p className="text-xs text-zinc-500 font-mono">Unité de référence : {p.uniteRef}</p>
-          </div>
-          <div className="text-right text-xs text-zinc-600 font-mono">
-            <div>{p.prixReleves.length} relevés de prix</div>
-            <div>{p.structuresCout.length} postes de coût</div>
-            <div>{p.derives.length} dérivés</div>
+
+            {/* Quick stats bar */}
+            <div
+              style={{
+                marginTop: "20px", paddingTop: "16px",
+                borderTop: "1px solid var(--border-subtle)",
+                display: "flex", gap: "24px", flexWrap: "wrap",
+              }}
+            >
+              {[
+                { v: p.prixReleves.length, l: "Relevés de prix" },
+                { v: p.structuresCout.length, l: "Postes de coût" },
+                { v: p.derives.length, l: "Dérivés" },
+              ].map(({ v, l }) => (
+                <div key={l} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: "var(--ag-lime)", fontFamily: "monospace" }}>{v}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{l}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {p.descriptionQualite && (
-          <div className="mt-4 text-sm text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
-            <span className="text-xs text-zinc-600 font-mono uppercase tracking-wider mr-2">Qualité ·</span>
-            {p.descriptionQualite}
-          </div>
-        )}
-      </div>
+        {/* Sections */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
-      <div className="space-y-10">
-        {/* Saisonnalité */}
-        {saisonnalite && Object.keys(saisonnalite).length > 0 && (
-          <section>
-            <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">Saisonnalité</h2>
-            <div className="border border-zinc-800 rounded-lg overflow-hidden">
-              <table className="w-full text-xs font-mono">
+          {/* Saisonnalité */}
+          {saisonnalite && Object.keys(saisonnalite).length > 0 && (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+                <p className="ag-section-label">Saisonnalité</p>
+              </div>
+              <table className="ag-table">
                 <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                    <th className="text-left px-4 py-2 text-zinc-500 font-normal">Zone</th>
-                    <th className="text-left px-4 py-2 text-zinc-500 font-normal">Début</th>
-                    <th className="text-left px-4 py-2 text-zinc-500 font-normal">Fin</th>
-                    <th className="text-left px-4 py-2 text-zinc-500 font-normal">Note</th>
+                  <tr>
+                    <th>Zone</th><th>Début</th><th>Fin</th><th>Note</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.entries(saisonnalite).map(([zone, s]) => (
-                    <tr key={zone} className="border-b border-zinc-800/50 last:border-0">
-                      <td className="px-4 py-2 text-zinc-300 font-bold">{zone}</td>
-                      <td className="px-4 py-2 text-zinc-400">{s.debut}</td>
-                      <td className="px-4 py-2 text-zinc-400">{s.fin}</td>
-                      <td className="px-4 py-2 text-zinc-600">{s.note ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {/* Chaîne de valeur */}
-        {chaine?.etapes && chaine.etapes.length > 0 && (
-          <section>
-            <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">Chaîne de valeur</h2>
-            <div className="flex flex-col gap-1">
-              {chaine.etapes.map((etape, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className="w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs text-zinc-500 font-mono flex-shrink-0">
-                      {i + 1}
-                    </div>
-                    {i < chaine.etapes!.length - 1 && <div className="w-px h-3 bg-zinc-800 mt-0.5" />}
-                  </div>
-                  <span className="text-sm text-zinc-300">{etape}</span>
-                </div>
-              ))}
-            </div>
-            {chaine.note && (
-              <p className="mt-3 text-xs text-zinc-600 italic">{chaine.note}</p>
-            )}
-          </section>
-        )}
-
-        {/* Cadre réglementaire & acteurs */}
-        {(p.cadreReglementaire || p.acteurs) && (
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {p.cadreReglementaire && (
-              <div>
-                <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-2">Cadre réglementaire</h2>
-                <p className="text-xs text-zinc-400 leading-relaxed">{p.cadreReglementaire}</p>
-              </div>
-            )}
-            {p.acteurs && (
-              <div>
-                <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-2">Acteurs clés</h2>
-                <p className="text-xs text-zinc-400 leading-relaxed">{p.acteurs}</p>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Prix relevés */}
-        <section>
-          <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">
-            Derniers relevés de prix ({p.prixReleves.length})
-          </h2>
-          {p.prixReleves.length === 0 ? (
-            <p className="text-xs text-zinc-600">Aucun relevé de prix</p>
-          ) : (
-            <div className="border border-zinc-800 rounded-lg overflow-x-auto">
-              <table className="w-full text-xs font-mono">
-                <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Date</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Marché</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Type</th>
-                    <th className="text-right px-3 py-2 text-zinc-500 font-normal">Valeur</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Devise</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Unité</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Fiabilité</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {p.prixReleves.map((pr) => (
-                    <tr key={pr.id} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/30">
-                      <td className="px-3 py-2 text-zinc-400">{formatDate(pr.dateReleve)}</td>
-                      <td className="px-3 py-2 text-zinc-300" title={pr.marche.nom}>{pr.marche.code}</td>
-                      <td className="px-3 py-2 text-zinc-500">{pr.typePrix}{pr.echeance ? ` ${pr.echeance}` : ""}</td>
-                      <td className="px-3 py-2 text-right text-zinc-100 font-bold">{formatValeur(pr.valeur)}</td>
-                      <td className="px-3 py-2 text-zinc-400">{pr.devise}</td>
-                      <td className="px-3 py-2 text-zinc-500">{pr.unite}</td>
-                      <td className="px-3 py-2"><BadgeFiabilite niveau={pr.fiabilite} /></td>
-                      <td className="px-3 py-2 text-zinc-600" title={pr.source.nom}>{pr.source.code}</td>
+                    <tr key={zone}>
+                      <td style={{ color: "var(--text-primary)", fontWeight: 600, fontFamily: "monospace" }}>{zone}</td>
+                      <td style={{ color: "var(--ag-lime)", fontFamily: "monospace" }}>{s.debut}</td>
+                      <td style={{ color: "var(--ag-lime)", fontFamily: "monospace" }}>{s.fin}</td>
+                      <td style={{ color: "var(--text-muted)" }}>{s.note ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-        </section>
 
-        {/* Structures de coûts */}
-        {p.structuresCout.length > 0 && (
-          <section>
-            <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">
-              Structure de coûts ({p.structuresCout.length} postes)
-            </h2>
-            <div className="border border-zinc-800 rounded-lg overflow-x-auto">
-              <table className="w-full text-xs font-mono">
-                <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Maillon</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Poste</th>
-                    <th className="text-right px-3 py-2 text-zinc-500 font-normal">Montant</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Devise</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Unité</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Période</th>
-                    <th className="text-left px-3 py-2 text-zinc-500 font-normal">Fiabilité</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {p.structuresCout.map((c) => (
-                    <tr key={c.id} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/30">
-                      <td className="px-3 py-2 text-zinc-300 font-bold">{c.maillon}</td>
-                      <td className="px-3 py-2 text-zinc-400">{c.poste.replace(/_/g, " ")}</td>
-                      <td className="px-3 py-2 text-right text-zinc-100">{formatValeur(c.montant)}</td>
-                      <td className="px-3 py-2 text-zinc-400">{c.devise}</td>
-                      <td className="px-3 py-2 text-zinc-500">{c.unite.replace(/_/g, " ")}</td>
-                      <td className="px-3 py-2 text-zinc-600">{c.periode ?? "—"}</td>
-                      <td className="px-3 py-2"><BadgeFiabilite niveau={c.fiabilite} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {/* Dérivés */}
-        {p.derives.length > 0 && (
-          <section>
-            <h2 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-3">
-              Produits dérivés ({p.derives.length})
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {p.derives.map((d) => (
-                <Link
-                  key={d.code}
-                  href={`/referentiel/${code.toLowerCase()}/${d.code.toLowerCase()}`}
-                  className="flex items-start justify-between border border-zinc-800/60 rounded-lg px-4 py-3 hover:border-zinc-600 hover:bg-zinc-900/50 transition-colors group"
-                >
-                  <div>
-                    <div className="text-xs font-mono text-zinc-500 mb-0.5">{d.code}</div>
-                    <div className="text-sm text-zinc-300 group-hover:text-white transition-colors">{d.nom}</div>
-                    {d.descriptionQualite && (
-                      <div className="text-xs text-zinc-600 mt-1 line-clamp-1">{d.descriptionQualite}</div>
-                    )}
+          {/* Chaîne de valeur */}
+          {chaine?.etapes && chaine.etapes.length > 0 && (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+                <p className="ag-section-label">Chaîne de valeur</p>
+              </div>
+              <div style={{ padding: "20px" }}>
+                {chaine.etapes.map((etape, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: i < chaine.etapes!.length - 1 ? "0" : "0" }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                      <div
+                        style={{
+                          width: 28, height: 28, borderRadius: "50%",
+                          background: "var(--ag-forest)", border: "1px solid var(--border-accent)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)",
+                          fontWeight: 700, flexShrink: 0,
+                        }}
+                      >
+                        {i + 1}
+                      </div>
+                      {i < chaine.etapes!.length - 1 && (
+                        <div style={{ width: 1, height: 20, background: "var(--border-subtle)", margin: "3px 0" }} />
+                      )}
+                    </div>
+                    <div style={{ padding: "5px 0 16px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                      {etape}
+                    </div>
                   </div>
-                  <span className="text-zinc-600 text-xs mt-0.5 flex-shrink-0 ml-2">›</span>
-                </Link>
-              ))}
+                ))}
+                {chaine.note && (
+                  <p style={{ marginTop: "8px", fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>{chaine.note}</p>
+                )}
+              </div>
             </div>
-          </section>
-        )}
+          )}
+
+          {/* Cadre régl & acteurs */}
+          {(p.cadreReglementaire || p.acteurs) && (
+            <div
+              style={{
+                display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px",
+              }}
+            >
+              {p.cadreReglementaire && (
+                <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+                  <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <p className="ag-section-label">Cadre réglementaire</p>
+                  </div>
+                  <p style={{ padding: "16px 20px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7, margin: 0 }}>{p.cadreReglementaire}</p>
+                </div>
+              )}
+              {p.acteurs && (
+                <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+                  <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <p className="ag-section-label">Acteurs clés</p>
+                  </div>
+                  <p style={{ padding: "16px 20px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7, margin: 0 }}>{p.acteurs}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Prix relevés */}
+          <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+            <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <p className="ag-section-label">Derniers relevés de prix</p>
+              <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)" }}>{p.prixReleves.length} relevés</span>
+            </div>
+            {p.prixReleves.length === 0 ? (
+              <div style={{ padding: "24px 20px", textAlign: "center" }}>
+                <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Aucun relevé de prix — déclenchez un connecteur</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="ag-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th><th>Marché</th><th>Type</th>
+                      <th style={{ textAlign: "right" }}>Valeur</th>
+                      <th>Devise</th><th>Unité</th><th>Fiabilité</th><th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {p.prixReleves.map((pr) => (
+                      <tr key={pr.id}>
+                        <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{formatDate(pr.dateReleve)}</td>
+                        <td title={pr.marche.nom} style={{ fontFamily: "monospace", color: "var(--text-primary)" }}>{pr.marche.code}</td>
+                        <td style={{ fontFamily: "monospace" }}>{pr.typePrix}{pr.echeance ? ` ${pr.echeance}` : ""}</td>
+                        <td style={{ textAlign: "right", fontFamily: "monospace", color: "var(--ag-lime)", fontWeight: 700 }}>{formatValeur(pr.valeur)}</td>
+                        <td style={{ fontFamily: "monospace" }}>{pr.devise}</td>
+                        <td style={{ fontFamily: "monospace" }}>{pr.unite}</td>
+                        <td><BadgeFiabilite niveau={pr.fiabilite} /></td>
+                        <td title={pr.source.nom} style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{pr.source.code}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Structures de coûts */}
+          {p.structuresCout.length > 0 && (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <p className="ag-section-label">Structure de coûts</p>
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-olive)" }}>{p.structuresCout.length} postes</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="ag-table">
+                  <thead>
+                    <tr>
+                      <th>Maillon</th><th>Poste</th>
+                      <th style={{ textAlign: "right" }}>Montant</th>
+                      <th>Devise</th><th>Unité</th><th>Période</th><th>Fiabilité</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {p.structuresCout.map((c) => (
+                      <tr key={c.id}>
+                        <td style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--text-primary)" }}>{c.maillon}</td>
+                        <td style={{ fontFamily: "monospace" }}>{c.poste.replace(/_/g, " ")}</td>
+                        <td style={{ textAlign: "right", fontFamily: "monospace", color: "var(--ag-lime)", fontWeight: 700 }}>{formatValeur(c.montant)}</td>
+                        <td style={{ fontFamily: "monospace" }}>{c.devise}</td>
+                        <td style={{ fontFamily: "monospace" }}>{c.unite.replace(/_/g, " ")}</td>
+                        <td style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{c.periode ?? "—"}</td>
+                        <td><BadgeFiabilite niveau={c.fiabilite} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Dérivés */}
+          {p.derives.length > 0 && (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+                <p className="ag-section-label">Produits dérivés ({p.derives.length})</p>
+              </div>
+              <div style={{ padding: "12px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "8px" }}>
+                {p.derives.map((d) => (
+                  <Link
+                    key={d.code}
+                    href={`/referentiel/${code.toLowerCase()}/${d.code.toLowerCase()}`}
+                    style={{ textDecoration: "none" }}
+                  >
+                    <div
+                      className="ag-kpi"
+                      style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px", cursor: "pointer" }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 9, fontFamily: "monospace", color: "var(--ag-lime)", background: "rgba(146,186,89,0.08)", padding: "1px 5px", borderRadius: "3px", marginBottom: "4px", display: "inline-block" }}>
+                          {d.code}
+                        </div>
+                        <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>{d.nom}</div>
+                        {d.descriptionQualite && (
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: "3px", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical" }}>
+                            {d.descriptionQualite}
+                          </div>
+                        )}
+                      </div>
+                      <span style={{ color: "var(--ag-lime)", fontSize: 14, flexShrink: 0 }}>›</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
