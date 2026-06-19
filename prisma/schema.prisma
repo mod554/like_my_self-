@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Taxonomie ───────────────────────────────────────────────────────────────
+
+model Filiere {
+  id          String   @id @default(cuid())
+  code        String   @unique // COLA | CAJOU | MAIS
+  nom         String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  produits   Produit[]
+  actualites Actualite[]
+  alertes    Alerte[]
+}
+
+model Produit {
+  id                 String   @id @default(cuid())
+  filiereId          String
+  code               String   @unique // RCN | W320 | ZC | COLA_BRUTE…
+  nom                String
+  estDerive          Boolean  @default(false)
+  parentId           String?
+  uniteRef           String // tonne | bushel | kg | sac50kg…
+  descriptionQualite String? // W320, US#2, Kola nitida…
+  saisonnalite       Json? // { "CI": { "debut": "mars", "fin": "juin" } }
+  chaineDValeur      Json? // étapes production → export
+  cadreReglementaire String?
+  acteurs            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  filiere        Filiere                 @relation(fields: [filiereId], references: [id])
+  parent         Produit?                @relation("Derives", fields: [parentId], references: [id])
+  derives        Produit[]               @relation("Derives")
+  prixReleves    PrixReleve[]
+  structuresCout StructureCout[]
+  analyses       AnalyseInvestissement[]
+
+  @@index([filiereId])
+}
+
+// ─── Marchés & géographie ────────────────────────────────────────────────────
+
+model Zone {
+  id   String @id @default(cuid())
+  code String @unique // CI | NG | UEMOA | MONDIAL | US…
+  nom  String
+  type String // PAYS | REGION | BOURSE
+
+  marches Marche[]
+}
+
+model Marche {
+  id          String   @id @default(cuid())
+  code        String   @unique // CME_MAIS | ABIDJAN_RCN | LAGOS_COLA…
+  nom         String
+  zoneId      String
+  devise      String // USD | EUR | XOF | NGN…
+  type        String // BOURSE | SPOT_DOMESTIQUE | FOB | CIF | GROSSISTE | DETAIL
+  description String?
+  actif       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  zone        Zone         @relation(fields: [zoneId], references: [id])
+  prixReleves PrixReleve[]
+  alertes     Alerte[]
+}
+
+// ─── Prix & séries temporelles ───────────────────────────────────────────────
+
+model PrixReleve {
+  id           String   @id @default(cuid())
+  produitId    String
+  marcheId     String
+  sourceId     String
+  typePrix     String // SPOT | FUTURE | BORD_CHAMP | FOB | CIF | GROS | DETAIL
+  echeance     String? // "2025-12" pour futures maïs CME
+  valeur       Decimal  @db.Decimal(18, 6)
+  devise       String
+  unite        String
+  dateReleve   DateTime
+  dateCollecte DateTime @default(now())
+  fiabilite    String // OFFICIEL | INDICATIF | ESTIME | EXEMPLE
+  notes        String?
+
+  produit Produit @relation(fields: [produitId], references: [id])
+  marche  Marche  @relation(fields: [marcheId], references: [id])
+  source  Source  @relation(fields: [sourceId], references: [id])
+
+  @@index([produitId, marcheId, dateReleve])
+  @@index([dateReleve])
+  @@index([sourceId])
+}
+
+// ─── Structures de coûts ─────────────────────────────────────────────────────
+
+model StructureCout {
+  id        String   @id @default(cuid())
+  produitId String
+  sourceId  String?
+  maillon   String // PRODUCTION | COLLECTE | TRANSFORMATION | EXPORT | GROS | DETAIL
+  poste     String // intrants | main_oeuvre | transport | taxes_export | logistique…
+  montant   Decimal  @db.Decimal(18, 4)
+  devise    String
+  unite     String // par_tonne | par_sac | par_kg…
+  periode   String? // "2024-2025"
+  fiabilite String // OFFICIEL | INDICATIF | ESTIME | EXEMPLE
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  produit Produit @relation(fields: [produitId], references: [id])
+  source  Source? @relation(fields: [sourceId], references: [id])
+
+  @@index([produitId])
+}
+
+// ─── Sources & connecteurs ───────────────────────────────────────────────────
+
+model Source {
+  id                String    @id @default(cuid())
+  code              String    @unique // WORLD_BANK_PINK | FAO_FPMA | USDA_WASDE | MANUEL…
+  nom               String
+  type              String // API | CSV | EXCEL | RSS | MANUEL
+  endpoint          String?
+  frequence         String? // QUOTIDIEN | HEBDO | MENSUEL | MANUEL
+  fiabiliteDefaut   String // OFFICIEL | INDICATIF | ESTIME
+  licence           String? // PUBLIC | CC-BY | PAYANT | USAGE_COMMERCIAL_INTERDIT
+  description       String?
+  derniereExecution DateTime?
+  statutDernier     String? // OK | ERREUR | EN_COURS
+  messageErreur     String?
+  actif             Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+
+  prixReleves    PrixReleve[]
+  structuresCout StructureCout[]
+  logs           ConnectorLog[]
+}
+
+model ConnectorLog {
+  id         String    @id @default(cuid())
+  sourceId   String
+  debut      DateTime
+  fin        DateTime?
+  statut     String // OK | ERREUR | PARTIEL
+  nbImportes Int       @default(0)
+  nbErreurs  Int       @default(0)
+  message    String?
+  detail     Json?
+
+  source Source @relation(fields: [sourceId], references: [id])
+
+  @@index([sourceId, debut])
+}
+
+// ─── Actualités ──────────────────────────────────────────────────────────────
+
+model Actualite {
+  id              String   @id @default(cuid())
+  filiereId       String?
+  titre           String
+  lien            String
+  source          String
+  resume          String?
+  datePublication DateTime
+  dateCollecte    DateTime @default(now())
+
+  filiere Filiere? @relation(fields: [filiereId], references: [id])
+
+  @@index([filiereId, datePublication])
+}
+
+// ─── Alertes ─────────────────────────────────────────────────────────────────
+
+model Alerte {
+  id            String   @id @default(cuid())
+  userId        String
+  filiereId     String?
+  produitId     String?
+  marcheId      String?
+  typeCondition String // SEUIL_HAUT | SEUIL_BAS | VARIATION_PCT | MM_FRANCHISSEMENT
+  valeurSeuil   Decimal? @db.Decimal(18, 4)
+  variationPct  Decimal? @db.Decimal(8, 4)
+  devise        String?
+  unite         String?
+  actif         Boolean  @default(true)
+  derniereNotif DateTime?
+  createdAt     DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  filiere Filiere? @relation(fields: [filiereId], references: [id])
+  marche  Marche?  @relation(fields: [marcheId], references: [id])
+
+  @@index([userId])
+}
+
+// ─── Analyse investissement ──────────────────────────────────────────────────
+
+model AnalyseInvestissement {
+  id          String   @id @default(cuid())
+  userId      String
+  produitId   String?
+  titre       String
+  description String?
+  hypotheses  Json // { volumes, prix, couts, capex, opex, duree, tauxActualisation }
+  resultats   Json? // { van, tri, payback, pointMort, margeNette, margeBrute }
+  scenarios   Json? // { bas: {...}, central: {...}, haut: {...} }
+  statut      String   @default("BROUILLON") // BROUILLON | VALIDE | ARCHIVE
+  devise      String   @default("USD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id])
+  produit Produit? @relation(fields: [produitId], references: [id])
+
+  @@index([userId])
+  @@index([produitId])
+}
+
+// ─── Taux de change ──────────────────────────────────────────────────────────
+
+model TauxChange {
+  id         String   @id @default(cuid())
+  deviseSrc  String // USD | EUR | XOF…
+  deviseDest String
+  taux       Decimal  @db.Decimal(18, 8)
+  dateReleve DateTime
+  sourceCode String // BCE | FIXE_LEGAL | MANUEL
+  createdAt  DateTime @default(now())
+
+  @@unique([deviseSrc, deviseDest, dateReleve, sourceCode])
+  @@index([deviseSrc, deviseDest, dateReleve])
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  nom        String
+  motDePasse String // hashé bcrypt
+  role       String   @default("LECTEUR") // ADMIN | ANALYSTE | LECTEUR
+  actif      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  alertes  Alerte[]
+  analyses AnalyseInvestissement[]
+}
