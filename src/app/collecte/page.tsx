@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import { CONNECTEURS } from "@/lib/connectors";
 import ConnecteurActions from "@/components/ConnecteurActions";
