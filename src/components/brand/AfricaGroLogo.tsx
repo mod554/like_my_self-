@@ -2,69 +2,64 @@ interface AfricaGroLogoProps {
   size?: "sm" | "md" | "lg";
   variant?: "full" | "icon" | "wordmark";
   className?: string;
+  dark?: boolean;
 }
 
 const sizes = {
-  sm: { icon: 28, text: 14, sub: 8 },
-  md: { icon: 36, text: 18, sub: 10 },
-  lg: { icon: 48, text: 24, sub: 12 },
+  sm: { h: 32, textH: 22, partnersFontSize: 7 },
+  md: { h: 44, textH: 30, partnersFontSize: 9 },
+  lg: { h: 64, textH: 44, partnersFontSize: 13 },
 };
 
 export default function AfricaGroLogo({
   size = "md",
   variant = "full",
   className = "",
+  dark = true,
 }: AfricaGroLogoProps) {
   const s = sizes[size];
+  const ratio = s.h / 64;
+
+  // Colors matching real logo
+  const forestGreen = "#003D2E";
+  const oliveGreen = "#6B760D";
+  const textColor = dark ? "#FFFFFF" : forestGreen;
 
   const Icon = (
     <svg
-      width={s.icon}
-      height={s.icon}
-      viewBox="0 0 48 48"
+      height={s.h}
+      viewBox="0 0 80 64"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
+      style={{ flexShrink: 0 }}
     >
-      {/* Background circle */}
-      <rect width="48" height="48" rx="10" fill="#003D2E" />
-      {/* Leaf shape (left petal) */}
+      {/* Large dark green half-circle (right side of icon) */}
+      <path d="M40 4 C40 4 72 4 72 32 C72 60 40 60 40 60 L40 4Z" fill={forestGreen} />
+      {/* "Partners" text vertical on dark bar */}
+      <text
+        x="56" y="38"
+        textAnchor="middle"
+        fontSize="8"
+        fontFamily="Ubuntu, sans-serif"
+        fontWeight="400"
+        fill="white"
+        letterSpacing="0.5"
+        transform="rotate(-90, 56, 32)"
+      >
+        Partners
+      </text>
+      {/* Large olive leaf top-left */}
       <path
-        d="M14 34 C14 34 10 22 18 14 C18 14 18 28 14 34Z"
-        fill="#92BA59"
-        opacity="0.9"
+        d="M8 8 C8 8 38 8 38 32 C38 32 14 32 8 8Z"
+        fill={oliveGreen}
       />
-      {/* Grain stalk (center) */}
+      {/* Small olive leaf bottom-left */}
       <path
-        d="M24 38 L24 16"
-        stroke="#D9EDD9"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-      {/* Grain heads */}
-      <ellipse cx="24" cy="13" rx="4" ry="6" fill="#D9EDD9" opacity="0.95" />
-      <ellipse cx="19" cy="18" rx="3" ry="5" fill="#92BA59" opacity="0.8" transform="rotate(-25 19 18)" />
-      <ellipse cx="29" cy="18" rx="3" ry="5" fill="#6B760D" opacity="0.8" transform="rotate(25 29 18)" />
-      {/* Leaf right */}
-      <path
-        d="M34 34 C34 34 38 22 30 14 C30 14 30 28 34 34Z"
-        fill="#6B760D"
+        d="M8 38 C8 38 8 60 28 56 C28 56 16 48 8 38Z"
+        fill={oliveGreen}
         opacity="0.85"
       />
-      {/* Partners badge */}
-      <rect x="15" y="36" width="18" height="7" rx="3.5" fill="#92BA59" opacity="0.95" />
-      <text
-        x="24"
-        y="41.5"
-        textAnchor="middle"
-        fontSize="4.5"
-        fontFamily="Ubuntu, sans-serif"
-        fontWeight="700"
-        fill="#003D2E"
-        letterSpacing="0.5"
-      >
-        PARTNERS
-      </text>
     </svg>
   );
 
@@ -72,7 +67,7 @@ export default function AfricaGroLogo({
 
   return (
     <span
-      className={`inline-flex items-center gap-2.5 ${className}`}
+      className={`inline-flex items-center gap-2 ${className}`}
       style={{ lineHeight: 1 }}
     >
       {Icon}
@@ -80,35 +75,26 @@ export default function AfricaGroLogo({
         <span style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
           <span
             style={{
-              fontSize: s.text,
+              fontSize: s.textH,
               fontFamily: "var(--font-ubuntu, 'Ubuntu', sans-serif)",
               fontWeight: 700,
-              color: "var(--text-primary)",
-              letterSpacing: "-0.01em",
+              color: textColor,
+              letterSpacing: "-0.02em",
               lineHeight: 1,
             }}
           >
-            <span style={{ color: "var(--ag-lime)" }}>A</span>FRICA
-            <span style={{ color: "var(--ag-lime)" }}> G</span>RO
-            <span
-              style={{
-                fontSize: s.text * 0.55,
-                color: "var(--ag-lime)",
-                verticalAlign: "super",
-                fontWeight: 400,
-              }}
-            >
-              ®
-            </span>
+            AFRICA GRO
+            <sup style={{ fontSize: s.textH * 0.4, fontWeight: 400, verticalAlign: "super" }}>®</sup>
           </span>
           <span
             style={{
-              fontSize: s.sub,
-              fontFamily: "monospace",
-              color: "var(--text-muted)",
-              letterSpacing: "0.15em",
+              fontSize: s.partnersFontSize,
+              fontFamily: "var(--font-ubuntu, 'Ubuntu', sans-serif)",
+              fontWeight: 400,
+              color: dark ? "rgba(255,255,255,0.6)" : oliveGreen,
+              letterSpacing: "0.18em",
               textTransform: "uppercase",
-              lineHeight: 1,
+              lineHeight: 1.2,
             }}
           >
             Partners

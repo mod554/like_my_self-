@@ -94,28 +94,33 @@ export default function Home() {
 
         <div className="ag-container" style={{ position: "relative" }}>
           {/* Brand */}
-          <div style={{ marginBottom: "32px" }}>
+          <div style={{ marginBottom: "36px" }}>
             <AfricaGroLogo size="lg" />
+            <p style={{
+              marginTop: "10px", fontSize: 13, color: "var(--ag-olive)",
+              fontStyle: "italic", fontFamily: "var(--font-ubuntu, sans-serif)",
+              letterSpacing: "0.01em",
+            }}>
+              Bâtir aujourd&apos;hui, semer l&apos;avenir, récolter la valeur de demain.
+            </p>
           </div>
 
           {/* Tagline */}
           <div style={{ maxWidth: "640px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <span
-                style={{
-                  fontSize: 10, fontFamily: "monospace", letterSpacing: "0.15em",
-                  textTransform: "uppercase", color: "var(--ag-lime)",
-                  background: "rgba(146,186,89,0.1)", border: "1px solid rgba(146,186,89,0.2)",
-                  padding: "3px 10px", borderRadius: "20px",
-                }}
-              >
+              <span style={{
+                fontSize: 10, fontFamily: "monospace", letterSpacing: "0.15em",
+                textTransform: "uppercase", color: "var(--ag-lime)",
+                background: "rgba(146,186,89,0.1)", border: "1px solid rgba(146,186,89,0.2)",
+                padding: "3px 10px", borderRadius: "20px",
+              }}>
                 Terminal de marché agricole v1.0
               </span>
             </div>
-            <h1
-              className="font-display"
-              style={{ fontSize: "clamp(28px,4vw,44px)", color: "var(--text-primary)", lineHeight: 1.15, marginBottom: "16px" }}
-            >
+            <h1 className="font-display" style={{
+              fontSize: "clamp(26px,3.5vw,42px)", color: "var(--text-primary)",
+              lineHeight: 1.15, marginBottom: "16px",
+            }}>
               Veille de marché &amp;{" "}
               <span className="ag-gradient-text">analyse d&apos;investissement</span>{" "}
               pour les filières africaines
