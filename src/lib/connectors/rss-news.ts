@@ -173,59 +173,61 @@ export class RssNewsConnector implements Connector {
         customFields: { item: ["summary", "description", "media:description"] },
       });
 
-      for (const flux of FLUX_RSS) {
-        try {
-          const feed = await parser.parseURL(flux.url);
+      // Fetch all feeds in parallel with individual timeouts
+      const feedResults = await Promise.allSettled(
+        FLUX_RSS.map((flux) => parser.parseURL(flux.url).then((feed) => ({ flux, feed })))
+      );
 
-          for (const item of feed.items ?? []) {
-            const titre = item.title?.trim() ?? "";
-            const contenu = item.contentSnippet ?? item.summary ?? item.content ?? "";
-            const lien = item.link?.trim() ?? "";
-            const datePublication = item.pubDate ? new Date(item.pubDate) : new Date();
+      for (const feedResult of feedResults) {
+        if (feedResult.status === "rejected") {
+          const msg = feedResult.reason instanceof Error ? feedResult.reason.message : String(feedResult.reason);
+          resultat.erreurs.push(`Flux inconnu: ${msg}`);
+          resultat.nbErreurs++;
+          continue;
+        }
 
-            if (!titre || !lien) continue;
+        const { flux, feed } = feedResult.value;
+        for (const item of feed.items ?? []) {
+          const titre = item.title?.trim() ?? "";
+          const contenu = item.contentSnippet ?? item.summary ?? item.content ?? "";
+          const lien = item.link?.trim() ?? "";
+          const datePublication = item.pubDate ? new Date(item.pubDate) : new Date();
 
-            // Filtrer par mots-clés
-            const filieresConcernees = articleConcerneFilieres(titre, contenu, flux.filieres);
-            // Si aucun match ET la source est généraliste (pas de filieres spécifiques), skip
-            if (filieresConcernees.length === 0) continue;
+          if (!titre || !lien) continue;
 
-            for (const filiereCode of filieresConcernees) {
-              const filiereId = filiereMap[filiereCode];
-              if (!filiereId) continue;
+          const filieresConcernees = articleConcerneFilieres(titre, contenu, flux.filieres);
+          if (filieresConcernees.length === 0) continue;
 
-              // Anti-doublon : vérifier si cet article existe déjà pour cette filière
-              const existe = await prisma.actualite.findFirst({
-                where: { lien, filiereId },
-                select: { id: true },
+          for (const filiereCode of filieresConcernees) {
+            const filiereId = filiereMap[filiereCode];
+            if (!filiereId) continue;
+
+            const existe = await prisma.actualite.findFirst({
+              where: { lien, filiereId },
+              select: { id: true },
+            });
+            if (existe) continue;
+
+            try {
+              await prisma.actualite.create({
+                data: {
+                  filiereId,
+                  titre: titre.slice(0, 255),
+                  lien,
+                  source: flux.source,
+                  resume: contenu.slice(0, 600) || undefined,
+                  datePublication,
+                },
               });
-              if (existe) continue;
-
-              try {
-                await prisma.actualite.create({
-                  data: {
-                    filiereId,
-                    titre: titre.slice(0, 255),
-                    lien,
-                    source: flux.source,
-                    resume: contenu.slice(0, 600) || undefined,
-                    datePublication,
-                  },
-                });
-                resultat.nbImportes++;
-              } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                if (!msg.includes("Unique constraint")) {
-                  resultat.erreurs.push(`"${titre.slice(0, 40)}": ${msg}`);
-                  resultat.nbErreurs++;
-                }
+              resultat.nbImportes++;
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              if (!msg.includes("Unique constraint")) {
+                resultat.erreurs.push(`"${titre.slice(0, 40)}": ${msg}`);
+                resultat.nbErreurs++;
               }
             }
           }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          resultat.erreurs.push(`Flux ${flux.source}: ${msg}`);
-          resultat.nbErreurs++;
         }
       }
 

@@ -49,6 +49,11 @@ const MARCHES_INIT = [
   { code: "ACCRA_MAIS",         nom: "Accra — Maïs",                      zoneCode: "GHANA",         devise: "GHS", type: "GROSSISTE" },
   { code: "LAGOS_MAIS",         nom: "Lagos — Maïs",                      zoneCode: "NIGERIA",       devise: "NGN", type: "GROSSISTE" },
   { code: "NIAMEY_MAIS",        nom: "Niamey — Maïs",                     zoneCode: "NIGER",         devise: "XOF", type: "GROSSISTE" },
+  { code: "LAGOS_COLA",         nom: "Lagos — Cola",                      zoneCode: "NIGERIA",       devise: "NGN", type: "GROSSISTE" },
+  { code: "ABIDJAN_COLA",       nom: "Abidjan — Cola",                    zoneCode: "COTE_IVOIRE",   devise: "XOF", type: "GROSSISTE" },
+  { code: "ACCRA_COLA",         nom: "Accra — Cola",                      zoneCode: "GHANA",         devise: "GHS", type: "GROSSISTE" },
+  { code: "COTONOU_COLA",       nom: "Cotonou — Cola",                    zoneCode: "BENIN",         devise: "XOF", type: "GROSSISTE" },
+  { code: "DAKAR_COLA",         nom: "Dakar — Cola",                      zoneCode: "SENEGAL",       devise: "XOF", type: "GROSSISTE" },
 ];
 
 // Produits requis par les connecteurs (filiereCode référencé)

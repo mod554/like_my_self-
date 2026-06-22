@@ -3,9 +3,8 @@
 // Exécute uniquement les connecteurs légers : RSS news + taux de change
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
-import { prisma } from "@/lib/db";
 import { RssNewsConnector } from "@/lib/connectors/rss-news";
 import { TauxChangeLiveConnector } from "@/lib/connectors/taux-change";
 
@@ -15,69 +14,20 @@ export async function GET(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const results = [];
+  // Each connector handles its own logging internally — run in parallel
+  const [tauxResult, rssResult] = await Promise.allSettled([
+    new TauxChangeLiveConnector().run(),
+    new RssNewsConnector().run(),
+  ]);
 
-  // Taux de change (rapide, ~2s)
-  try {
-    const taux = new TauxChangeLiveConnector();
-    const r = await taux.run();
-    const source = await prisma.source.findFirst({ where: { code: taux.code } });
-    if (source) {
-      const statut = r.nbErreurs === 0 ? "OK" : r.nbImportes > 0 ? "PARTIEL" : "ERREUR";
-      await Promise.all([
-        prisma.connectorLog.create({
-          data: {
-            sourceId: source.id,
-            debut: r.debut, fin: r.fin, statut,
-            nbImportes: r.nbImportes, nbErreurs: r.nbErreurs,
-            message: r.nbErreurs === 0 ? `OK — ${r.nbImportes} taux importés` : r.erreurs.join("; "),
-          },
-        }),
-        prisma.source.update({
-          where: { id: source.id },
-          data: {
-            derniereExecution: r.fin,
-            statutDernier: statut,
-            messageErreur: r.nbErreurs === 0 ? null : r.erreurs[0] ?? null,
-          },
-        }),
-      ]);
-    }
-    results.push({ code: taux.code, succes: r.nbErreurs === 0, nbImportes: r.nbImportes });
-  } catch (err) {
-    results.push({ code: "TAUX_CHANGE_LIVE", succes: false, erreur: err instanceof Error ? err.message : "Erreur" });
-  }
-
-  // Actualités RSS (15 sources, ~15-20s)
-  try {
-    const rss = new RssNewsConnector();
-    const r = await rss.run();
-    const source = await prisma.source.findFirst({ where: { code: rss.code } });
-    if (source) {
-      const statut = r.nbErreurs === 0 ? "OK" : r.nbImportes > 0 ? "PARTIEL" : "ERREUR";
-      await Promise.all([
-        prisma.connectorLog.create({
-          data: {
-            sourceId: source.id,
-            debut: r.debut, fin: r.fin, statut,
-            nbImportes: r.nbImportes, nbErreurs: r.nbErreurs,
-            message: r.nbErreurs === 0 ? `OK — ${r.nbImportes} articles` : r.erreurs.slice(0, 2).join("; "),
-          },
-        }),
-        prisma.source.update({
-          where: { id: source.id },
-          data: {
-            derniereExecution: r.fin,
-            statutDernier: statut,
-            messageErreur: r.nbErreurs === 0 ? null : r.erreurs[0] ?? null,
-          },
-        }),
-      ]);
-    }
-    results.push({ code: rss.code, succes: r.nbErreurs === 0, nbImportes: r.nbImportes });
-  } catch (err) {
-    results.push({ code: "RSS_NEWS_AGRI", succes: false, erreur: err instanceof Error ? err.message : "Erreur" });
-  }
+  const results = [
+    tauxResult.status === "fulfilled"
+      ? { code: "TAUX_CHANGE_LIVE", succes: tauxResult.value.nbErreurs === 0, nbImportes: tauxResult.value.nbImportes }
+      : { code: "TAUX_CHANGE_LIVE", succes: false, erreur: tauxResult.reason instanceof Error ? tauxResult.reason.message : "Erreur" },
+    rssResult.status === "fulfilled"
+      ? { code: "RSS_NEWS_AGRI", succes: rssResult.value.nbErreurs === 0, nbImportes: rssResult.value.nbImportes }
+      : { code: "RSS_NEWS_AGRI", succes: false, erreur: rssResult.reason instanceof Error ? rssResult.reason.message : "Erreur" },
+  ];
 
   return Response.json({ ok: true, ts: new Date().toISOString(), results });
 }
