@@ -8,6 +8,61 @@ interface Props {
   compact?: boolean;
 }
 
+export function InitBddButton() {
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
+  const router = useRouter();
+
+  async function init() {
+    setLoading(true);
+    setMsg(null);
+    setIsError(false);
+    try {
+      const res = await fetch("/api/init", { method: "POST" });
+      const data = await res.json() as { ok: boolean; summary: string; errors: string[] };
+      setIsError(!data.ok);
+      setMsg(data.summary);
+      if (data.ok) router.refresh();
+    } catch {
+      setIsError(true);
+      setMsg("Erreur réseau");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      {msg && (
+        <span style={{
+          fontSize: 11, fontFamily: "monospace",
+          color: isError ? "#E05252" : "#4A9B6F",
+          background: isError ? "rgba(224,82,82,0.08)" : "rgba(74,155,111,0.1)",
+          padding: "4px 10px", borderRadius: "6px",
+        }}>
+          {isError ? "✗" : "✓"} {msg}
+        </span>
+      )}
+      <button
+        onClick={init}
+        disabled={loading}
+        style={{
+          display: "flex", alignItems: "center", gap: "6px",
+          padding: "8px 16px", borderRadius: "8px", cursor: loading ? "not-allowed" : "pointer",
+          background: loading ? "var(--bg-elevated)" : "rgba(0,61,46,0.08)",
+          color: loading ? "var(--text-muted)" : "var(--ag-forest)",
+          border: "1px solid rgba(0,61,46,0.2)",
+          fontSize: 13, fontWeight: 600,
+          transition: "all 150ms ease",
+        }}
+      >
+        {loading ? "⏳ Initialisation…" : "⚙ Initialiser la BDD"}
+      </button>
+    </div>
+  );
+}
+
 export default function ConnecteurActions({ code, compact = false }: Props) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);

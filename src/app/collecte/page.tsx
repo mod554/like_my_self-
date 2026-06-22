@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import { CONNECTEURS } from "@/lib/connectors";
-import ConnecteurActions from "@/components/ConnecteurActions";
+import ConnecteurActions, { InitBddButton } from "@/components/ConnecteurActions";
 
 async function getConnecteurStatus() {
   const sources = await prisma.source.findMany({
@@ -69,7 +69,10 @@ export default async function CollectePage() {
             <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
               Tableau de bord connecteurs
             </h1>
-            <ConnecteurActions />
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <InitBddButton />
+              <ConnecteurActions />
+            </div>
           </div>
         </div>
 
