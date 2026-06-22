@@ -18,7 +18,15 @@ async function getMarketData() {
           prixReleves: {
             orderBy: { dateReleve: "desc" },
             take: 60,
-            include: { marche: { select: { code: true, nom: true } } },
+            select: {
+              valeur: true,
+              devise: true,
+              unite: true,
+              dateReleve: true,
+              typePrix: true,
+              fiabilite: true,
+              marche: { select: { code: true, nom: true } },
+            },
           },
         },
       },

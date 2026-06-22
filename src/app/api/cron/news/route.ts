@@ -23,17 +23,25 @@ export async function GET(req: Request) {
     const r = await taux.run();
     const source = await prisma.source.findFirst({ where: { code: taux.code } });
     if (source) {
-      await prisma.connectorLog.create({
-        data: {
-          sourceId: source.id,
-          debut: r.debut,
-          fin: r.fin,
-          statut: r.nbErreurs === 0 ? "OK" : r.nbImportes > 0 ? "PARTIEL" : "ERREUR",
-          nbImportes: r.nbImportes,
-          nbErreurs: r.nbErreurs,
-          message: r.nbErreurs === 0 ? `OK — ${r.nbImportes} taux importés` : r.erreurs.join("; "),
-        },
-      });
+      const statut = r.nbErreurs === 0 ? "OK" : r.nbImportes > 0 ? "PARTIEL" : "ERREUR";
+      await Promise.all([
+        prisma.connectorLog.create({
+          data: {
+            sourceId: source.id,
+            debut: r.debut, fin: r.fin, statut,
+            nbImportes: r.nbImportes, nbErreurs: r.nbErreurs,
+            message: r.nbErreurs === 0 ? `OK — ${r.nbImportes} taux importés` : r.erreurs.join("; "),
+          },
+        }),
+        prisma.source.update({
+          where: { id: source.id },
+          data: {
+            derniereExecution: r.fin,
+            statutDernier: statut,
+            messageErreur: r.nbErreurs === 0 ? null : r.erreurs[0] ?? null,
+          },
+        }),
+      ]);
     }
     results.push({ code: taux.code, succes: r.nbErreurs === 0, nbImportes: r.nbImportes });
   } catch (err) {
@@ -46,17 +54,25 @@ export async function GET(req: Request) {
     const r = await rss.run();
     const source = await prisma.source.findFirst({ where: { code: rss.code } });
     if (source) {
-      await prisma.connectorLog.create({
-        data: {
-          sourceId: source.id,
-          debut: r.debut,
-          fin: r.fin,
-          statut: r.nbErreurs === 0 ? "OK" : r.nbImportes > 0 ? "PARTIEL" : "ERREUR",
-          nbImportes: r.nbImportes,
-          nbErreurs: r.nbErreurs,
-          message: r.nbErreurs === 0 ? `OK — ${r.nbImportes} articles` : r.erreurs.slice(0, 2).join("; "),
-        },
-      });
+      const statut = r.nbErreurs === 0 ? "OK" : r.nbImportes > 0 ? "PARTIEL" : "ERREUR";
+      await Promise.all([
+        prisma.connectorLog.create({
+          data: {
+            sourceId: source.id,
+            debut: r.debut, fin: r.fin, statut,
+            nbImportes: r.nbImportes, nbErreurs: r.nbErreurs,
+            message: r.nbErreurs === 0 ? `OK — ${r.nbImportes} articles` : r.erreurs.slice(0, 2).join("; "),
+          },
+        }),
+        prisma.source.update({
+          where: { id: source.id },
+          data: {
+            derniereExecution: r.fin,
+            statutDernier: statut,
+            messageErreur: r.nbErreurs === 0 ? null : r.erreurs[0] ?? null,
+          },
+        }),
+      ]);
     }
     results.push({ code: rss.code, succes: r.nbErreurs === 0, nbImportes: r.nbImportes });
   } catch (err) {

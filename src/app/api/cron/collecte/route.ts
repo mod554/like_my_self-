@@ -19,19 +19,29 @@ export async function GET(req: Request) {
 
       const source = await prisma.source.findFirst({ where: { code: connecteur.code } });
       if (source) {
-        await prisma.connectorLog.create({
-          data: {
-            sourceId: source.id,
-            debut: result.debut,
-            fin: result.fin,
-            statut: succes ? "OK" : "ERREUR",
-            nbImportes: result.nbImportes,
-            nbErreurs: result.nbErreurs,
-            message: succes
-              ? `OK — ${result.nbImportes} éléments importés`
-              : result.erreurs.join("; "),
-          },
-        });
+        await Promise.all([
+          prisma.connectorLog.create({
+            data: {
+              sourceId: source.id,
+              debut: result.debut,
+              fin: result.fin,
+              statut: succes ? "OK" : "ERREUR",
+              nbImportes: result.nbImportes,
+              nbErreurs: result.nbErreurs,
+              message: succes
+                ? `OK — ${result.nbImportes} éléments importés`
+                : result.erreurs.join("; "),
+            },
+          }),
+          prisma.source.update({
+            where: { id: source.id },
+            data: {
+              derniereExecution: result.fin,
+              statutDernier: succes ? "OK" : "ERREUR",
+              messageErreur: succes ? null : result.erreurs[0] ?? null,
+            },
+          }),
+        ]);
       }
 
       results.push({ code: connecteur.code, succes, nbImportes: result.nbImportes });
