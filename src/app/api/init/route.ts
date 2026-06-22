@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 const SOURCES_INIT = [
   { code: "WORLD_BANK_PINK",     nom: "World Bank — Pink Sheet",                        type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "MENSUEL",   description: "Prix mensuels des matières premières — source de référence mondiale" },
   { code: "FAO_FPMA",            nom: "FAO — FPMA Food Price Monitoring",               type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "HEBDO",     description: "Prix alimentaires en Afrique de l'Ouest — FAO FPMA Tool" },
-  { code: "USDA_FAS",            nom: "USDA — Foreign Agricultural Service",            type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "MENSUEL",   description: "IMF Primary Commodity Prices — maïs mondial" },
+  { code: "USDA_FAS_PSD",        nom: "IMF — Primary Commodity Prices (maïs mondial)",  type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "MENSUEL",   description: "IMF Primary Commodity Prices — maïs mondial" },
   { code: "CONSEIL_ANACARDE_CI", nom: "Conseil Anacarde CI — Prix bord-champ",          type: "HTML", fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Prix bord-champ RCN Côte d'Ivoire via FAOSTAT" },
   { code: "RESIMAO",             nom: "RESIMAO — Systèmes d'Information des Marchés",   type: "HTML", fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "Prix collectés sur les marchés de détail et de gros en Afrique de l'Ouest" },
   { code: "INDEXMUNDI",          nom: "IndexMundi — Commodity Prices",                  type: "HTML", fiabiliteDefaut: "INDICATIF", frequence: "HEBDO",     description: "Prix historiques commodités — maïs, cajou" },
