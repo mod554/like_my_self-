@@ -35,7 +35,8 @@ export default async function FilierePage({
 }) {
   const { code } = await params;
 
-  let filiere: Awaited<ReturnType<typeof prisma.filiere.findUnique>> = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let filiere: any = null;
   try {
     filiere = await prisma.filiere.findUnique({
       where: { code: code.toUpperCase() },
@@ -59,8 +60,8 @@ export default async function FilierePage({
 
   if (!filiere) notFound();
 
-  const principaux = filiere.produits.filter((p) => !p.estDerive);
-  const derives = filiere.produits.filter((p) => p.estDerive);
+  const principaux = filiere.produits.filter((p: any) => !p.estDerive);
+  const derives = filiere.produits.filter((p: any) => p.estDerive);
   const meta = FILIERE_META[filiere.code] ?? {
     accent: "var(--ag-lime)", accentBg: "rgba(146,186,89,0.06)", accentBorder: "rgba(146,186,89,0.15)",
     badge: filiere.code, badgeBg: "rgba(90,122,90,0.12)", badgeColor: "#5A7A5A",
@@ -188,7 +189,7 @@ export default async function FilierePage({
                 </span>
               </div>
               <div style={{ padding: "8px" }}>
-                {principaux.map((p) => (
+                {principaux.map((p: any) => (
                   <Link
                     key={p.code}
                     href={`/referentiel/${code.toLowerCase()}/${p.code.toLowerCase()}`}
@@ -258,7 +259,7 @@ export default async function FilierePage({
                   </span>
                 </div>
                 <div style={{ padding: "8px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "4px" }}>
-                  {derives.map((p) => (
+                  {derives.map((p: any) => (
                     <Link
                       key={p.code}
                       href={`/referentiel/${code.toLowerCase()}/${p.code.toLowerCase()}`}
@@ -318,7 +319,7 @@ export default async function FilierePage({
               </div>
             ) : (
               <div>
-                {filiere.actualites.map((a, i) => (
+                {filiere.actualites.map((a: any, i: number) => (
                   <div
                     key={a.id}
                     style={{

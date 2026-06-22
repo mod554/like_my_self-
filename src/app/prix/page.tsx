@@ -4,10 +4,8 @@ import PrixForm from "@/components/prix/PrixForm";
 import Link from "next/link";
 
 export default async function PrixPage() {
-  let produits: Awaited<ReturnType<typeof prisma.produit.findMany>> = [];
-  let marches: Awaited<ReturnType<typeof prisma.marche.findMany>> = [];
-  let sources: Awaited<ReturnType<typeof prisma.source.findMany>> = [];
-  let derniers: Awaited<ReturnType<typeof prisma.prixReleve.findMany>> = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let produits: any[] = [], marches: any[] = [], sources: any[] = [], derniers: any[] = [];
   try {
     [produits, marches, sources] = await Promise.all([
       prisma.produit.findMany({ orderBy: [{ filiere: { code: "asc" } }, { code: "asc" }], include: { filiere: { select: { code: true, nom: true } } } }),

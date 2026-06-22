@@ -25,7 +25,8 @@ const FILIERE_META: Record<string, {
 };
 
 export default async function ReferentielPage() {
-  let filieres: Awaited<ReturnType<typeof prisma.filiere.findMany>> = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let filieres: any[] = [];
   try {
     filieres = await prisma.filiere.findMany({
       orderBy: { code: "asc" },
@@ -84,8 +85,8 @@ export default async function ReferentielPage() {
               badge: f.code, badgeBg: "rgba(90,122,90,0.12)", badgeColor: "#5A7A5A",
               ticker: f.code, icon: "📦",
             };
-            const principaux = f.produits.filter((p) => !p.estDerive).length;
-            const derives = f.produits.filter((p) => p.estDerive).length;
+            const principaux = f.produits.filter((p: any) => !p.estDerive).length;
+            const derives = f.produits.filter((p: any) => p.estDerive).length;
 
             return (
               <Link

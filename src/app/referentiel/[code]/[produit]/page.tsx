@@ -44,7 +44,8 @@ export default async function ProduitPage({
 }) {
   const { code, produit } = await params;
 
-  let p: Awaited<ReturnType<typeof prisma.produit.findUnique>> = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let p: any = null;
   try {
     p = await prisma.produit.findUnique({
       where: { code: produit.toUpperCase() },
@@ -305,7 +306,7 @@ export default async function ProduitPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {p.prixReleves.map((pr) => (
+                    {p.prixReleves.map((pr: any) => (
                       <tr key={pr.id}>
                         <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{formatDate(pr.dateReleve)}</td>
                         <td title={pr.marche.nom} style={{ fontFamily: "monospace", color: "var(--text-primary)" }}>{pr.marche.code}</td>
@@ -340,7 +341,7 @@ export default async function ProduitPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {p.structuresCout.map((c) => (
+                    {p.structuresCout.map((c: any) => (
                       <tr key={c.id}>
                         <td style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--text-primary)" }}>{c.maillon}</td>
                         <td style={{ fontFamily: "monospace" }}>{c.poste.replace(/_/g, " ")}</td>
@@ -364,7 +365,7 @@ export default async function ProduitPage({
                 <p className="ag-section-label">Produits dérivés ({p.derives.length})</p>
               </div>
               <div style={{ padding: "12px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "8px" }}>
-                {p.derives.map((d) => (
+                {p.derives.map((d: any) => (
                   <Link
                     key={d.code}
                     href={`/referentiel/${code.toLowerCase()}/${d.code.toLowerCase()}`}
