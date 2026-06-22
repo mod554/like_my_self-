@@ -17,6 +17,11 @@ jobs:
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
+      - name: Push DB schema
+        run: |
+          export $(grep -v '^#' .vercel/.env.production.local | xargs)
+          npx prisma db push --accept-data-loss
+
       - name: Build project
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
 
