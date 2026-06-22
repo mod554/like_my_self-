@@ -15,20 +15,26 @@ export async function GET(req: Request) {
   for (const connecteur of CONNECTEURS) {
     try {
       const result = await connecteur.run();
+      const succes = result.nbErreurs === 0;
 
-      await prisma.connectorLog.create({
-        data: {
-          sourceId: (await prisma.source.findFirst({ where: { code: connecteur.code } }))?.id ?? "",
-          statut: result.succes ? "OK" : "ERREUR",
-          nbPrixCollectes: result.prixAjoutes,
-          nbActualites: result.actualitesAjoutees,
-          message: result.succes ? `OK — ${result.prixAjoutes} prix, ${result.actualitesAjoutees} actualités` : result.erreur,
-          dateDebut: new Date(),
-          dateFin: new Date(),
-        },
-      });
+      const source = await prisma.source.findFirst({ where: { code: connecteur.code } });
+      if (source) {
+        await prisma.connectorLog.create({
+          data: {
+            sourceId: source.id,
+            statut: succes ? "OK" : "ERREUR",
+            nbPrixCollectes: result.nbImportes,
+            nbActualites: 0,
+            message: succes
+              ? `OK — ${result.nbImportes} éléments importés`
+              : result.erreurs.join("; "),
+            dateDebut: result.debut,
+            dateFin: result.fin,
+          },
+        });
+      }
 
-      results.push({ code: connecteur.code, succes: result.succes, prixAjoutes: result.prixAjoutes });
+      results.push({ code: connecteur.code, succes, nbImportes: result.nbImportes });
     } catch (err) {
       results.push({ code: connecteur.code, succes: false, erreur: err instanceof Error ? err.message : "Erreur" });
     }
