@@ -22,14 +22,14 @@ export async function GET(req: Request) {
         await prisma.connectorLog.create({
           data: {
             sourceId: source.id,
+            debut: result.debut,
+            fin: result.fin,
             statut: succes ? "OK" : "ERREUR",
-            nbPrixCollectes: result.nbImportes,
-            nbActualites: 0,
+            nbImportes: result.nbImportes,
+            nbErreurs: result.nbErreurs,
             message: succes
               ? `OK — ${result.nbImportes} éléments importés`
               : result.erreurs.join("; "),
-            dateDebut: result.debut,
-            dateFin: result.fin,
           },
         });
       }

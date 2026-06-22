@@ -22,7 +22,6 @@ async function getMarketData() {
           prixReleves: {
             orderBy: { dateReleve: "desc" },
             take: 60,
-            select: { valeur: true, devise: true, unite: true, dateReleve: true, fiabilite: true, typePrix: true },
             include: { marche: { select: { code: true, nom: true } } },
           },
         },
@@ -202,7 +201,7 @@ export default async function MarchePage() {
                       <tr key={i}>
                         <td style={{ fontFamily: "monospace", fontWeight: 600, color: r.accent }}>{r.produitCode}</td>
                         <td style={{ fontFamily: "monospace" }}>{FILIERE_ICON[r.filiereCode]} {r.filiereNom}</td>
-                        <td style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{(r as {marche?: {code?: string}}).marche?.code ?? "—"}</td>
+                        <td style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{r.marche?.code ?? "—"}</td>
                         <td style={{ textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: r.accent }}>
                           {Number(r.valeur).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}
                         </td>
