@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // GET /api/connectors — liste tous les connecteurs avec leur statut en BD
 // POST /api/connectors — déclenche un ou tous les connecteurs
 
