@@ -2,13 +2,9 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import PrixChartWrapper from "@/components/charts/PrixChartWrapper";
+import LiveNewsFeed from "@/components/live/LiveNewsFeed";
 
-// Mapping filière → couleur accent
-const FILIERE_COLOR: Record<string, string> = {
-  MAIS:  "#92BA59",
-  CAJOU: "#B89B3A",
-  COLA:  "#8A9E1A",
-};
+const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
 const FILIERE_ICON: Record<string, string> = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰" };
 
 async function getMarketData() {
@@ -26,14 +22,19 @@ async function getMarketData() {
           },
         },
       },
-      actualites: {
-        orderBy: { datePublication: "desc" },
-        take: 8,
-        select: { id: true, titre: true, lien: true, source: true, datePublication: true },
-      },
     },
   });
-  return filieres;
+
+  // Fil d'actualité : 60 articles pour affichage initial (client en demandera plus)
+  const news = await prisma.actualite.findMany({
+    orderBy: { datePublication: "desc" },
+    take: 60,
+    include: {
+      filiere: { select: { code: true, nom: true } },
+    },
+  });
+
+  return { filieres, news };
 }
 
 function formatPrix(v: unknown, devise: string) {
@@ -53,13 +54,7 @@ function calcVariation(releves: Array<{ valeur: unknown }>) {
 }
 
 export default async function MarchePage() {
-  const filieres = await getMarketData();
-
-  // Toutes actualités confondues
-  const allActus = filieres
-    .flatMap((f) => f.actualites.map((a) => ({ ...a, filiereNom: f.nom, filiereCode: f.code })))
-    .sort((a, b) => new Date(b.datePublication).getTime() - new Date(a.datePublication).getTime())
-    .slice(0, 10);
+  const { filieres, news } = await getMarketData();
 
   return (
     <div style={{ flex: 1, padding: "32px 0 64px" }}>
@@ -72,6 +67,9 @@ export default async function MarchePage() {
             <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
               Tableau de bord des prix
             </h1>
+            <p style={{ marginTop: "6px", fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>
+              Prix en temps réel · Taux de change mis à jour chaque heure · Actualités toutes les 5 minutes
+            </p>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <span className="ag-status-dot" />
@@ -79,7 +77,7 @@ export default async function MarchePage() {
           </div>
         </div>
 
-        {/* KPI strip — un par filière × produit principal */}
+        {/* KPI strip */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "12px", marginBottom: "24px" }}>
           {filieres.map((f) => {
             const accent = FILIERE_COLOR[f.code] ?? "var(--ag-lime)";
@@ -89,10 +87,7 @@ export default async function MarchePage() {
               const hausse = variation !== null && variation >= 0;
               return (
                 <Link key={p.id} href={`/referentiel/${f.code.toLowerCase()}/${p.code.toLowerCase()}`} style={{ textDecoration: "none" }}>
-                  <div
-                    className="ag-kpi"
-                    style={{ borderLeft: `3px solid ${accent}`, cursor: "pointer" }}
-                  >
+                  <div className="ag-kpi" style={{ borderLeft: `3px solid ${accent}`, cursor: "pointer" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
                       <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", letterSpacing: "0.06em" }}>
                         {FILIERE_ICON[f.code]} {p.code}
@@ -129,9 +124,9 @@ export default async function MarchePage() {
         </div>
 
         {/* Charts + actualités */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "16px", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "20px", alignItems: "start" }}>
 
-          {/* Charts */}
+          {/* Charts + tableau */}
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {filieres.map((f) => {
               const accent = FILIERE_COLOR[f.code] ?? "var(--ag-lime)";
@@ -145,13 +140,7 @@ export default async function MarchePage() {
                   }));
 
                 return (
-                  <div
-                    key={p.id}
-                    style={{
-                      background: "var(--bg-surface)", border: "1px solid var(--border-subtle)",
-                      borderRadius: "10px", overflow: "hidden",
-                    }}
-                  >
+                  <div key={p.id} style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: "10px" }}>
                       <span style={{ fontSize: 16 }}>{FILIERE_ICON[f.code]}</span>
                       <div>
@@ -175,7 +164,7 @@ export default async function MarchePage() {
               });
             })}
 
-            {/* Heatmap variation 30 derniers jours (simulé via table) */}
+            {/* Tableau derniers relevés */}
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
               <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
                 <p className="ag-section-label">Derniers relevés toutes filières</p>
@@ -197,7 +186,7 @@ export default async function MarchePage() {
                           accent: FILIERE_COLOR[f.code] ?? "var(--ag-lime)",
                         }))
                       )
-                    ).slice(0, 15).map((r, i) => (
+                    ).slice(0, 20).map((r, i) => (
                       <tr key={i}>
                         <td style={{ fontFamily: "monospace", fontWeight: 600, color: r.accent }}>{r.produitCode}</td>
                         <td style={{ fontFamily: "monospace" }}>{FILIERE_ICON[r.filiereCode]} {r.filiereNom}</td>
@@ -227,61 +216,29 @@ export default async function MarchePage() {
             </div>
           </div>
 
-          {/* Actualités sidebar */}
-          <div
-            style={{
-              background: "var(--bg-surface)", border: "1px solid var(--border-subtle)",
-              borderRadius: "10px", overflow: "hidden", position: "sticky", top: "80px",
-            }}
-          >
-            <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: "8px" }}>
-              <span className="ag-status-dot" />
-              <p className="ag-section-label">Fil d&apos;actualité</p>
+          {/* Fil d'actualité live — auto-refresh 5 minutes */}
+          <div style={{ position: "sticky", top: "80px" }}>
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
+              <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-subtle)" }}>
+                <p className="ag-section-label">Fil d&apos;actualité en direct</p>
+              </div>
+              <div style={{ padding: "14px", maxHeight: "calc(100vh - 180px)", overflowY: "auto" }}>
+                <LiveNewsFeed
+                  initialNews={news.map((a) => ({
+                    id: a.id,
+                    titre: a.titre,
+                    lien: a.lien,
+                    source: a.source,
+                    resume: a.resume ?? null,
+                    datePublication: a.datePublication.toISOString(),
+                    dateCollecte: a.dateCollecte.toISOString(),
+                    filiere: a.filiere ? { code: a.filiere.code, nom: a.filiere.nom } : null,
+                  }))}
+                  limit={80}
+                  refreshInterval={5 * 60 * 1000}
+                />
+              </div>
             </div>
-
-            {allActus.length === 0 ? (
-              <div style={{ padding: "24px 18px", textAlign: "center" }}>
-                <p style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>
-                  Déclenchez le connecteur RSS
-                </p>
-                <Link href="/collecte" style={{ fontSize: 11, color: "var(--ag-lime)", textDecoration: "none", display: "block", marginTop: "8px" }}>
-                  → Page collecte
-                </Link>
-              </div>
-            ) : (
-              <div>
-                {allActus.map((a, i) => {
-                  const accent = FILIERE_COLOR[a.filiereCode] ?? "var(--ag-lime)";
-                  return (
-                    <div
-                      key={a.id}
-                      style={{
-                        padding: "12px 18px",
-                        borderBottom: i < allActus.length - 1 ? "1px solid var(--border-subtle)" : "none",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "5px" }}>
-                        <span style={{ fontSize: 10, color: accent }}>{FILIERE_ICON[a.filiereCode]}</span>
-                        <span style={{ fontSize: 9, fontFamily: "monospace", color: accent, background: `${accent}18`, padding: "1px 5px", borderRadius: "3px" }}>
-                          {a.filiereNom}
-                        </span>
-                        <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", marginLeft: "auto" }}>
-                          {new Date(a.datePublication).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
-                        </span>
-                      </div>
-                      <a href={a.lien} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-                        <p style={{
-                          fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4, margin: 0,
-                          display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
-                        }}>
-                          {a.titre}
-                        </p>
-                      </a>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
         </div>

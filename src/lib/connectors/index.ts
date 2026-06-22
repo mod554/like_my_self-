@@ -8,9 +8,11 @@ import { ConseilAnacardeCiConnector } from "./conseil-anacarde";
 import { ResimaoConnector } from "./resimao";
 import { RssNewsConnector } from "./rss-news";
 import { IndexMundiConnector } from "./indexmundi";
+import { TauxChangeLiveConnector } from "./taux-change";
 import type { Connector } from "./base";
 
 export const CONNECTEURS: Connector[] = [
+  new TauxChangeLiveConnector(),
   new WorldBankConnector(),
   new FaoFpmaConnector(),
   new UsdaFasConnector(),

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import AfricaGroLogo from "@/components/brand/AfricaGroLogo";
+import LiveTicker from "@/components/live/LiveTicker";
 
 const NAV = [
   { href: "/referentiel", label: "Référentiel" },
@@ -24,25 +25,14 @@ export default function Header() {
       zIndex: 50,
       backdropFilter: "blur(16px)",
     }}>
-      {/* Ticker strip */}
+      {/* Ticker strip — prices live, auto-refresh toutes les 5min */}
       <div style={{
         background: "var(--ag-forest)",
         borderBottom: "1px solid rgba(146,186,89,0.12)",
         padding: "5px 0",
       }}>
-        <div className="ag-container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span className="ag-status-dot" />
-              <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--ag-lime)", letterSpacing: "0.1em", fontWeight: 700 }}>LIVE</span>
-            </span>
-            <div style={{ display: "flex", gap: "20px", fontSize: 11, fontFamily: "monospace", color: "var(--text-secondary)" }}>
-              <span><span style={{ color: "var(--text-muted)" }}>MAIS · ZC  </span><span style={{ color: "var(--ag-lime)" }}>USD/T</span></span>
-              <span><span style={{ color: "var(--text-muted)" }}>CAJOU · RCN  </span><span style={{ color: "var(--ag-lime)" }}>XOF/T</span></span>
-              <span><span style={{ color: "var(--text-muted)" }}>COLA · AOF  </span><span style={{ color: "var(--ag-lime)" }}>XOF/KG</span></span>
-            </div>
-          </div>
-          <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)" }}>EUR/XOF · 655.957</span>
+        <div className="ag-container">
+          <LiveTicker refreshInterval={5 * 60 * 1000} />
         </div>
       </div>
 

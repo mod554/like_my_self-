@@ -1,6 +1,6 @@
-// Connecteur RSS — Agrégateur d'actualités agricoles (maïs, cajou, cola)
-// Sources : FAO News, Reuters Commodities, USDA RSS, OCA Cajou, West Africa Commodities
-// Fréquence : toutes les 6h
+// Connecteur RSS — Agrégateur d'actualités agricoles (maïs, cajou, cola, AOF)
+// Sources : 15+ flux RSS publics — FAO, USDA, World Bank, Reuters, Africa Report…
+// Fréquence : toutes les 30 minutes
 
 import Parser from "rss-parser";
 import { prisma } from "@/lib/db";
@@ -12,15 +12,18 @@ const SOURCE_CODE = "RSS_NEWS_AGRI";
 interface FluxRSS {
   url: string;
   source: string;
-  filieres: string[]; // codes filières concernées
+  filieres: string[]; // codes filières — [] = toutes
   fiabilite: string;
+  timeout?: number;
 }
 
+// 15 flux RSS couvrant agriculture, marchés de matières premières, Afrique de l'Ouest
 const FLUX_RSS: FluxRSS[] = [
+  // ── Institutions internationales ──────────────────────────────────────────
   {
     url: "https://www.fao.org/news/rss-feed/en",
     source: "FAO — Food and Agriculture Organization",
-    filieres: ["MAIS", "CAJOU"],
+    filieres: ["MAIS", "CAJOU", "COLA"],
     fiabilite: "OFFICIEL",
   },
   {
@@ -30,30 +33,107 @@ const FLUX_RSS: FluxRSS[] = [
     fiabilite: "OFFICIEL",
   },
   {
-    url: "https://www.reuters.com/news/archive/commoditiesNews.rss",
-    source: "Reuters Commodities",
+    url: "https://www.worldbank.org/en/news/rss.xml",
+    source: "World Bank — News",
+    filieres: ["MAIS", "CAJOU", "COLA"],
+    fiabilite: "OFFICIEL",
+  },
+  {
+    url: "https://www.ifad.org/en/web/guest/news-rss",
+    source: "IFAD — International Fund for Agricultural Development",
+    filieres: ["MAIS", "CAJOU"],
+    fiabilite: "OFFICIEL",
+  },
+  // ── Marchés & commodités ──────────────────────────────────────────────────
+  {
+    url: "https://feeds.content.dowjones.io/public/rss/mw_realestate",
+    source: "MarketWatch — Commodities",
+    filieres: ["MAIS", "CAJOU"],
+    fiabilite: "INDICATIF",
+  },
+  {
+    url: "https://agfax.com/feed/",
+    source: "AgFax — Agriculture News",
+    filieres: ["MAIS"],
+    fiabilite: "INDICATIF",
+  },
+  {
+    url: "https://www.agriculture.com/rss.xml",
+    source: "Agriculture.com — Farm News",
+    filieres: ["MAIS"],
+    fiabilite: "INDICATIF",
+  },
+  {
+    url: "https://www.grain.org/en/article/feed",
+    source: "GRAIN — Agriculture & Biodiversity",
+    filieres: ["MAIS", "CAJOU", "COLA"],
+    fiabilite: "INDICATIF",
+  },
+  // ── Afrique ───────────────────────────────────────────────────────────────
+  {
+    url: "https://www.theafricareport.com/feed",
+    source: "The Africa Report",
     filieres: ["MAIS", "CAJOU", "COLA"],
     fiabilite: "INDICATIF",
   },
   {
-    url: "https://agritrade.cta.int/Agriculture/Commodities/Cashew-nuts.html?output=rss",
-    source: "ACP-EU Trade — Cashew",
-    filieres: ["CAJOU"],
+    url: "https://www.businessamlive.com/feed/",
+    source: "Business AM Live — Nigeria",
+    filieres: ["COLA", "CAJOU"],
     fiabilite: "INDICATIF",
   },
   {
-    url: "https://www.ifoam.bio/rss.xml",
-    source: "IFOAM — Organic Agriculture",
-    filieres: ["MAIS", "CAJOU"],
+    url: "https://www.graphic.com.gh/rss/news.rss",
+    source: "Daily Graphic — Ghana",
+    filieres: ["CAJOU", "COLA", "MAIS"],
     fiabilite: "INDICATIF",
+  },
+  {
+    url: "https://www.jeuneafrique.com/feed/",
+    source: "Jeune Afrique",
+    filieres: ["MAIS", "CAJOU", "COLA"],
+    fiabilite: "INDICATIF",
+  },
+  // ── Environnement & durabilité ────────────────────────────────────────────
+  {
+    url: "https://news.mongabay.com/feed/",
+    source: "Mongabay — Environmental News",
+    filieres: ["CAJOU", "COLA"],
+    fiabilite: "INDICATIF",
+  },
+  {
+    url: "https://www.ifpri.org/rss.xml",
+    source: "IFPRI — Food Policy Research",
+    filieres: ["MAIS", "CAJOU"],
+    fiabilite: "OFFICIEL",
+  },
+  // ── Sécurité alimentaire & prix ───────────────────────────────────────────
+  {
+    url: "https://reliefweb.int/updates/rss.xml?search[primary_country]=CIV",
+    source: "ReliefWeb — Côte d'Ivoire",
+    filieres: ["CAJOU", "COLA"],
+    fiabilite: "OFFICIEL",
   },
 ];
 
 // Mots-clés pour filtrer les articles pertinents par filière
 const KEYWORDS: Record<string, string[]> = {
-  MAIS: ["maïs", "mais", "corn", "maize", "céréales", "cereals", "coton", "CBOT", "grain"],
-  CAJOU: ["cajou", "cashew", "anacarde", "RCN", "noix de cajou", "Côte d'Ivoire cajou"],
-  COLA: ["cola", "kola", "kola nut", "noix de cola", "West Africa"],
+  MAIS: [
+    "maïs", "mais", "corn", "maize", "céréales", "cereals",
+    "CBOT", "grain", "wheat", "soy", "soja", "feed grain",
+    "crop", "harvest", "récolte", "agriculture", "farming",
+    "food security", "sécurité alimentaire", "WASDE", "USDA",
+  ],
+  CAJOU: [
+    "cajou", "cashew", "anacarde", "RCN", "noix de cajou",
+    "Côte d'Ivoire", "W320", "W240", "kernel", "amande",
+    "nut", "nuts", "noix", "West Africa nuts",
+  ],
+  COLA: [
+    "cola", "kola", "kola nut", "noix de cola", "bitter kola",
+    "West Africa", "Afrique de l'Ouest", "Nigeria agriculture",
+    "Lagos market", "marché Lagos",
+  ],
 };
 
 function articleConcerneFilieres(titre: string, contenu: string, filieresCibles: string[]): string[] {
@@ -62,12 +142,12 @@ function articleConcerneFilieres(titre: string, contenu: string, filieresCibles:
     const mots = KEYWORDS[code] ?? [];
     return mots.some((mot) => texte.includes(mot.toLowerCase()));
   });
-};
+}
 
 export class RssNewsConnector implements Connector {
   code = SOURCE_CODE;
-  nom = "Agrégateur RSS — Actualités agricoles mondiales";
-  frequenceCron = "0 */6 * * *"; // Toutes les 6h
+  nom = "Agrégateur RSS — 15 sources · actualités agricoles mondiales & AOF";
+  frequenceCron = "*/30 * * * *"; // Toutes les 30 minutes
 
   async run(): Promise<ConnectorResult> {
     const debut = new Date();
@@ -85,9 +165,12 @@ export class RssNewsConnector implements Connector {
       const filiereMap = Object.fromEntries(filieres.map((f) => [f.code, f.id]));
 
       const parser = new Parser({
-        timeout: 30_000,
-        headers: { "User-Agent": "LikeMyself-AgriTerminal/1.0 RSS Reader" },
-        customFields: { item: ["summary", "description"] },
+        timeout: 20_000,
+        headers: {
+          "User-Agent": "AfricaGro-AgriTerminal/1.0 RSS Reader (+https://africagro.com)",
+          "Accept": "application/rss+xml, application/xml, text/xml, */*",
+        },
+        customFields: { item: ["summary", "description", "media:description"] },
       });
 
       for (const flux of FLUX_RSS) {
@@ -95,21 +178,28 @@ export class RssNewsConnector implements Connector {
           const feed = await parser.parseURL(flux.url);
 
           for (const item of feed.items ?? []) {
-            const titre = item.title ?? "";
+            const titre = item.title?.trim() ?? "";
             const contenu = item.contentSnippet ?? item.summary ?? item.content ?? "";
-            const lien = item.link ?? "";
+            const lien = item.link?.trim() ?? "";
             const datePublication = item.pubDate ? new Date(item.pubDate) : new Date();
 
             if (!titre || !lien) continue;
 
             // Filtrer par mots-clés
             const filieresConcernees = articleConcerneFilieres(titre, contenu, flux.filieres);
+            // Si aucun match ET la source est généraliste (pas de filieres spécifiques), skip
             if (filieresConcernees.length === 0) continue;
 
-            // Créer une actualité par filière concernée
             for (const filiereCode of filieresConcernees) {
               const filiereId = filiereMap[filiereCode];
               if (!filiereId) continue;
+
+              // Anti-doublon : vérifier si cet article existe déjà pour cette filière
+              const existe = await prisma.actualite.findFirst({
+                where: { lien, filiereId },
+                select: { id: true },
+              });
+              if (existe) continue;
 
               try {
                 await prisma.actualite.create({
@@ -118,16 +208,15 @@ export class RssNewsConnector implements Connector {
                     titre: titre.slice(0, 255),
                     lien,
                     source: flux.source,
-                    resume: contenu.slice(0, 500) || undefined,
+                    resume: contenu.slice(0, 600) || undefined,
                     datePublication,
                   },
                 });
                 resultat.nbImportes++;
               } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
-                // Ignorer les doublons (même lien + même filière)
-                if (!msg.includes("Unique constraint") && !msg.includes("duplicate")) {
-                  resultat.erreurs.push(`Article "${titre.slice(0, 50)}": ${msg}`);
+                if (!msg.includes("Unique constraint")) {
+                  resultat.erreurs.push(`"${titre.slice(0, 40)}": ${msg}`);
                   resultat.nbErreurs++;
                 }
               }
@@ -141,18 +230,18 @@ export class RssNewsConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK";
+      const statut = resultat.nbErreurs === FLUX_RSS.length ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK";
 
       await prisma.source.update({
         where: { code: SOURCE_CODE },
-        data: { statutDernier: statut, messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null },
+        data: { statutDernier: statut, messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 2).join(" | ") : null },
       });
       await prisma.connectorLog.create({
         data: {
           sourceId: source.id, debut, fin, statut,
           nbImportes: resultat.nbImportes, nbErreurs: resultat.nbErreurs,
-          message: `${resultat.nbImportes} articles importés`,
-          detail: { erreurs: resultat.erreurs },
+          message: `${resultat.nbImportes} articles importés (${FLUX_RSS.length} sources)`,
+          detail: { erreurs: resultat.erreurs.slice(0, 5) },
         },
       });
 

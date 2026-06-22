@@ -434,6 +434,21 @@ async function main() {
       },
     }),
     prisma.source.upsert({
+      where: { code: "TAUX_CHANGE_LIVE" },
+      update: {},
+      create: {
+        code: "TAUX_CHANGE_LIVE",
+        nom: "Taux de change en temps réel — ECB / open.er-api.com",
+        type: "API",
+        endpoint: "https://open.er-api.com/v6/latest/USD",
+        frequence: "QUOTIDIEN",
+        fiabiliteDefaut: "OFFICIEL",
+        licence: "PUBLIC",
+        description: "Taux de change USD/XOF, EUR/USD, USD/NGN — source ECB via open.er-api.com. XOF ancré légalement à EUR (655.957).",
+        actif: true,
+      },
+    }),
+    prisma.source.upsert({
       where: { code: "SEED_EXEMPLE" },
       update: {},
       create: {
