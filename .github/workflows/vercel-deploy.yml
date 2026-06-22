@@ -22,7 +22,10 @@ jobs:
 
       - name: Push DB schema
         run: |
-          export $(grep -v '^#' .vercel/.env.production.local | xargs)
+          set -a
+          # shellcheck disable=SC1091
+          source .vercel/.env.production.local
+          set +a
           ./node_modules/.bin/prisma db push --accept-data-loss
 
       - name: Deploy to Vercel
