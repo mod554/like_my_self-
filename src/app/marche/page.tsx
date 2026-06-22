@@ -63,7 +63,7 @@ export default async function MarchePage() {
         {/* Header */}
         <div style={{ marginBottom: "28px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
           <div>
-            <p className="ag-section-label" style={{ marginBottom: "6px" }}>Terminal de marché · AfricaGro Partners</p>
+            <p className="ag-section-label" style={{ marginBottom: "6px" }}>Terminal de marché · Africa Agro Partners</p>
             <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
               Tableau de bord des prix
             </h1>

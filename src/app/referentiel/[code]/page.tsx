@@ -68,7 +68,7 @@ export default async function FilierePage({
 
         {/* Breadcrumb */}
         <div style={{ marginBottom: "24px", display: "flex", alignItems: "center", gap: "6px", fontSize: 12, fontFamily: "monospace", color: "var(--text-muted)" }}>
-          <Link href="/" style={{ color: "var(--text-muted)", textDecoration: "none" }}>AfricaGro</Link>
+          <Link href="/" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Africa Agro</Link>
           <span style={{ color: "var(--border-default)" }}>›</span>
           <Link href="/referentiel" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Référentiel</Link>
           <span style={{ color: "var(--border-default)" }}>›</span>

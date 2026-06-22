@@ -72,19 +72,19 @@ export default function LiveTicker({ initialData, refreshInterval = 5 * 60 * 100
       <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
         <span
           className="ag-status-dot"
-          style={pulse ? { boxShadow: "0 0 6px var(--ag-lime)", transform: "scale(1.3)" } : undefined}
+          style={pulse ? { boxShadow: "0 0 6px #92BA59", transform: "scale(1.3)", background: "#92BA59" } : { background: "#92BA59" }}
         />
-        <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--ag-lime)", letterSpacing: "0.1em", fontWeight: 700 }}>
+        <span style={{ fontSize: 10, fontFamily: "monospace", color: "#92BA59", letterSpacing: "0.1em", fontWeight: 700 }}>
           LIVE
         </span>
       </span>
 
-      <div style={{ display: "flex", gap: "20px", fontSize: 11, fontFamily: "monospace", color: "var(--text-secondary)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "20px", fontSize: 11, fontFamily: "monospace", color: "rgba(255,255,255,0.75)", flexWrap: "wrap" }}>
         {items.length === 0 ? (
           <>
-            <span><span style={{ color: "var(--text-muted)" }}>MAIS · ZC  </span><span style={{ color: "var(--ag-lime)" }}>—</span></span>
-            <span><span style={{ color: "var(--text-muted)" }}>CAJOU · RCN  </span><span style={{ color: "var(--ag-lime)" }}>—</span></span>
-            <span><span style={{ color: "var(--text-muted)" }}>COLA · AOF  </span><span style={{ color: "var(--ag-lime)" }}>—</span></span>
+            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>MAIS · ZC  </span><span style={{ color: "#92BA59" }}>—</span></span>
+            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>CAJOU · RCN  </span><span style={{ color: "#92BA59" }}>—</span></span>
+            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>COLA · AOF  </span><span style={{ color: "#92BA59" }}>—</span></span>
           </>
         ) : (
           items.map((item) => {
@@ -92,7 +92,7 @@ export default function LiveTicker({ initialData, refreshInterval = 5 * 60 * 100
             const arrow = item.hausse === true ? "▲" : item.hausse === false ? "▼" : "";
             return (
               <span key={item.code} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ color: "var(--text-muted)" }}>
+                <span style={{ color: "rgba(255,255,255,0.5)" }}>
                   {item.filiere} · {item.code}
                 </span>
                 <span style={{ color }}>
@@ -110,7 +110,7 @@ export default function LiveTicker({ initialData, refreshInterval = 5 * 60 * 100
       </div>
 
       {taux && (
-        <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", marginLeft: "auto" }}>
+        <span style={{ fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.5)", marginLeft: "auto" }}>
           EUR/XOF · {taux.EUR_XOF.toFixed(3)}
           {" · "}EUR/USD · {(1 / taux.EUR_USD).toFixed(4)}
         </span>

@@ -64,7 +64,7 @@ export default async function CollectePage() {
 
         {/* Header */}
         <div style={{ marginBottom: "28px" }}>
-          <p className="ag-section-label" style={{ marginBottom: "6px" }}>Collecte automatique · AfricaGro Partners</p>
+          <p className="ag-section-label" style={{ marginBottom: "6px" }}>Collecte automatique · Africa Agro Partners</p>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
             <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
               Tableau de bord connecteurs

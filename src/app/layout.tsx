@@ -18,7 +18,7 @@ const ubuntuMono = Ubuntu_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AfricaGro Partners — Terminal de marché agricole",
+  title: "Africa Agro Partners — Terminal de marché agricole",
   description:
     "Plateforme de veille, prix et analyse d'investissement pour les filières maïs, cajou et cola en Afrique de l'Ouest.",
   keywords: "agriculture, cajou, maïs, cola, Afrique Ouest, marché, investissement, prix",
@@ -36,7 +36,7 @@ export default function RootLayout({
         <main className="flex-1 flex flex-col">{children}</main>
         <footer style={{ borderTop: "1px solid var(--border-subtle)" }}>
           <div className="ag-container" style={{ padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span className="ag-section-label">© 2026 AfricaGro Partners · Terminal v1.0</span>
+            <span className="ag-section-label">© 2026 Africa Agro Partners · Terminal v1.0</span>
             <span className="ag-section-label">USD · EUR · XOF · GHS · NGN</span>
           </div>
         </footer>

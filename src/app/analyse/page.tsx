@@ -229,7 +229,7 @@ export default async function AnalysePage() {
 
         {/* ── Header ── */}
         <div style={{ marginBottom: "28px" }}>
-          <p className="ag-section-label" style={{ marginBottom: "6px" }}>Analyse &amp; Investissement · AfricaGro Partners</p>
+          <p className="ag-section-label" style={{ marginBottom: "6px" }}>Analyse &amp; Investissement · Africa Agro Partners</p>
           <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
             Opportunités d&apos;investissement
           </h1>

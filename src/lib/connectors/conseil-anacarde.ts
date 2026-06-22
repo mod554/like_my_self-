@@ -58,7 +58,7 @@ async function fetchFaostatCashewPrices(): Promise<FaostatRecord[]> {
 
   const url = `${FAOSTAT_BASE}?${params}`;
   const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "AfricaGro-AgriTerminal/1.0" },
+    headers: { Accept: "application/json", "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
     signal: AbortSignal.timeout(45_000),
   });
 

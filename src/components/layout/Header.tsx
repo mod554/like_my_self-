@@ -18,17 +18,18 @@ export default function Header() {
 
   return (
     <header style={{
-      background: "rgba(8,13,10,0.96)",
+      background: "rgba(255,255,255,0.97)",
       borderBottom: "1px solid var(--border-subtle)",
       position: "sticky",
       top: 0,
       zIndex: 50,
       backdropFilter: "blur(16px)",
+      boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
     }}>
       {/* Ticker strip — prices live, auto-refresh toutes les 5min */}
       <div style={{
         background: "var(--ag-forest)",
-        borderBottom: "1px solid rgba(146,186,89,0.12)",
+        borderBottom: "1px solid rgba(90,138,42,0.2)",
         padding: "5px 0",
       }}>
         <div className="ag-container">
@@ -56,7 +57,7 @@ export default function Header() {
                 fontWeight: isActive ? 600 : 400,
                 color: isActive ? "#FFFFFF" : "var(--text-secondary)",
                 background: isActive ? "var(--ag-forest)" : "transparent",
-                border: isActive ? "1px solid rgba(146,186,89,0.2)" : "1px solid transparent",
+                border: isActive ? "1px solid rgba(0,61,46,0.3)" : "1px solid transparent",
                 textDecoration: "none",
                 transition: "all 150ms ease",
                 letterSpacing: "0.01em",

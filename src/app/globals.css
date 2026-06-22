@@ -1,50 +1,49 @@
 @import "tailwindcss";
 
-/* ── AfricaGro Partners — Design System ───────────────────────────────────── */
+/* ── Africa Agro Partners — Design System ─────────────────────────────────── */
 
 :root {
   /* Brand palette */
-  --ag-black:       #000000;
-  --ag-forest:      #003D2E;   /* vert forêt profond */
+  --ag-forest:      #003D2E;   /* vert forêt */
   --ag-olive:       #6B760D;   /* olive */
-  --ag-lime:        #92BA59;   /* vert lime accent */
+  --ag-lime:        #5A8A2A;   /* vert accent (plus foncé sur fond blanc) */
 
-  /* Surfaces dark terminal */
-  --bg-base:        #080D0A;   /* noir vert profond */
-  --bg-surface:     #0D1710;   /* surface carte */
-  --bg-elevated:    #122018;   /* surbrillance */
-  --bg-panel:       #091210;   /* panneaux latéraux */
+  /* Surfaces light */
+  --bg-base:        #FFFFFF;
+  --bg-surface:     #F6F9F6;
+  --bg-elevated:    #EDF4ED;
+  --bg-panel:       #F0F6F0;
 
   /* Borders */
-  --border-subtle:  #1A2E1E;
-  --border-default: #224029;
-  --border-accent:  #2D6040;
+  --border-subtle:  #D8E8D8;
+  --border-default: #B8D4B8;
+  --border-accent:  #7AB87A;
 
   /* Text */
-  --text-primary:   #D9EDD9;   /* blanc vert */
-  --text-secondary: #7AA87A;   /* vert moyen */
-  --text-muted:     #3D5C3D;   /* vert sombre */
-  --text-inverse:   #080D0A;
+  --text-primary:   #0D1A0D;
+  --text-secondary: #2D5530;
+  --text-muted:     #6B8A6B;
+  --text-inverse:   #FFFFFF;
 
   /* Data colors */
-  --data-up:        #92BA59;   /* lime — hausse */
-  --data-down:      #E05252;   /* rouge — baisse */
-  --data-neutral:   #5A7A5A;   /* neutre */
-  --data-official:  #4A9B6F;   /* officiel */
-  --data-indicatif: #92BA59;   /* indicatif */
-  --data-estime:    #B89B3A;   /* estimé */
-  --data-exemple:   #5A7A5A;   /* exemple */
+  --data-up:        #3A7A1A;   /* vert sombre — hausse */
+  --data-down:      #C0392B;   /* rouge sombre — baisse */
+  --data-neutral:   #5A7A5A;
+  --data-official:  #1A7A50;
+  --data-indicatif: #5A8A2A;
+  --data-estime:    #8A6A1A;
+  --data-exemple:   #7A8A7A;
 
   /* Gradients */
-  --gradient-hero:  linear-gradient(135deg, #080D0A 0%, #0D2218 50%, #051A10 100%);
-  --gradient-card:  linear-gradient(145deg, #0D1710 0%, #091210 100%);
-  --gradient-lime:  linear-gradient(135deg, #92BA59 0%, #6B760D 100%);
-  --gradient-forest:linear-gradient(135deg, #003D2E 0%, #001F18 100%);
+  --gradient-hero:   linear-gradient(135deg, #F6F9F6 0%, #EDF4ED 50%, #E8F4E8 100%);
+  --gradient-card:   linear-gradient(145deg, #FFFFFF 0%, #F6F9F6 100%);
+  --gradient-lime:   linear-gradient(135deg, #5A8A2A 0%, #6B760D 100%);
+  --gradient-forest: linear-gradient(135deg, #003D2E 0%, #005040 100%);
 
   /* Shadows */
-  --shadow-card:    0 1px 3px rgba(0,0,0,0.5), 0 0 0 1px rgba(26,46,30,0.6);
-  --shadow-glow:    0 0 20px rgba(146,186,89,0.08);
-  --shadow-forest:  0 4px 24px rgba(0,61,46,0.4);
+  --shadow-card:    0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(184,212,184,0.5);
+  --shadow-glow:    0 0 20px rgba(90,138,42,0.12);
+  --shadow-forest:  0 4px 24px rgba(0,61,46,0.12);
 
   /* Transitions */
   --t-fast:  150ms ease;
@@ -84,12 +83,12 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── AfricaGro custom components ──────────────────────────────────────────── */
+/* ── Africa Agro custom components ────────────────────────────────────────── */
 
-/* Ticker strip */
+/* Ticker strip — keep dark green for brand identity */
 .ag-ticker {
   background: var(--ag-forest);
-  border-bottom: 1px solid var(--border-accent);
+  border-bottom: 1px solid rgba(90,138,42,0.3);
   overflow: hidden;
 }
 
@@ -122,23 +121,24 @@ body {
 }
 
 /* Badge fiabilité */
-.badge-officiel   { background: rgba(74,155,111,0.15); color: #4A9B6F; border: 1px solid rgba(74,155,111,0.3); }
-.badge-indicatif  { background: rgba(146,186,89,0.12); color: #92BA59; border: 1px solid rgba(146,186,89,0.25); }
-.badge-estime     { background: rgba(184,155,58,0.12); color: #B89B3A; border: 1px solid rgba(184,155,58,0.25); }
-.badge-exemple    { background: rgba(90,122,90,0.12);  color: #5A7A5A; border: 1px solid rgba(90,122,90,0.25); }
+.badge-officiel   { background: rgba(26,122,80,0.1);  color: #1A7A50; border: 1px solid rgba(26,122,80,0.25); }
+.badge-indicatif  { background: rgba(90,138,42,0.1);  color: #5A8A2A; border: 1px solid rgba(90,138,42,0.25); }
+.badge-estime     { background: rgba(138,106,26,0.1); color: #8A6A1A; border: 1px solid rgba(138,106,26,0.25); }
+.badge-exemple    { background: rgba(122,138,122,0.1);color: #7A8A7A; border: 1px solid rgba(122,138,122,0.25); }
 
 /* Status indicator */
 .ag-status-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--data-up);
-  box-shadow: 0 0 6px var(--data-up);
+  box-shadow: 0 0 6px rgba(58,122,26,0.5);
   animation: pulse-green 2s ease-in-out infinite;
+  display: inline-block;
 }
 
 @keyframes pulse-green {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--data-up); }
-  50%       { opacity: 0.6; box-shadow: 0 0 12px var(--data-up); }
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
 }
 
 /* Scrollbar */
@@ -147,7 +147,7 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ag-lime); }
 
-/* Table data terminal */
+/* Table data */
 .ag-table {
   width: 100%;
   border-collapse: collapse;
@@ -166,11 +166,11 @@ body {
 }
 .ag-table td {
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(26,46,30,0.4);
+  border-bottom: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   transition: background var(--t-fast);
 }
-.ag-table tr:hover td { background: rgba(18,32,24,0.8); }
+.ag-table tr:hover td { background: var(--bg-elevated); }
 .ag-table .val-up   { color: var(--data-up); }
 .ag-table .val-down { color: var(--data-down); }
 
@@ -183,12 +183,6 @@ body {
   background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
   background-size: 1000px 100%;
   animation: shimmer 1.5s infinite linear;
-}
-
-/* Glow text accent */
-.ag-glow {
-  color: var(--ag-lime);
-  text-shadow: 0 0 20px rgba(146,186,89,0.4);
 }
 
 /* Gradient text */

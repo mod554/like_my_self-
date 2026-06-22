@@ -32,7 +32,7 @@ interface FrankfurterResponse {
 async function fetchRatesOpenErApi(base: string): Promise<Record<string, number> | null> {
   const url = `https://open.er-api.com/v6/latest/${base}`;
   const res = await fetch(url, {
-    headers: { "User-Agent": "AfricaGro-AgriTerminal/1.0" },
+    headers: { "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) return null;
@@ -46,7 +46,7 @@ async function fetchRatesFrankfurter(base: string, targets: string[]): Promise<R
   if (!t) return null;
   const url = `https://api.frankfurter.app/latest?from=${base}&to=${t}`;
   const res = await fetch(url, {
-    headers: { "User-Agent": "AfricaGro-AgriTerminal/1.0" },
+    headers: { "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) return null;

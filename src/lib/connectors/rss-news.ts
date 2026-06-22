@@ -167,7 +167,7 @@ export class RssNewsConnector implements Connector {
       const parser = new Parser({
         timeout: 20_000,
         headers: {
-          "User-Agent": "AfricaGro-AgriTerminal/1.0 RSS Reader (+https://africagro.com)",
+          "User-Agent": "AfricaAgro-AgriTerminal/1.0 RSS Reader (+https://africaagro.com)",
           "Accept": "application/rss+xml, application/xml, text/xml, */*",
         },
         customFields: { item: ["summary", "description", "media:description"] },

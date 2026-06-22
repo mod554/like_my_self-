@@ -82,7 +82,7 @@ export default async function ProduitPage({
 
         {/* Breadcrumb */}
         <div style={{ marginBottom: "20px", display: "flex", alignItems: "center", gap: "6px", fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>
-          <Link href="/" style={{ color: "var(--text-muted)", textDecoration: "none" }}>AfricaGro</Link>
+          <Link href="/" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Africa Agro</Link>
           <span>›</span>
           <Link href="/referentiel" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Référentiel</Link>
           <span>›</span>
