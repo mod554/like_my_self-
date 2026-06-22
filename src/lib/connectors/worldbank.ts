@@ -75,7 +75,7 @@ export class WorldBankConnector implements Connector {
 
       const json = await response.json();
       // L'API World Bank renvoie [metadata, data]
-      const donnees: WBDataPoint[] = Array.isArray(json) ? json[1] ?? [] : [];
+      const donnees: WBDataPoint[] = Array.isArray(json) && Array.isArray(json[1]) ? json[1] : [];
 
       for (const point of donnees) {
         if (point.value === null) continue;

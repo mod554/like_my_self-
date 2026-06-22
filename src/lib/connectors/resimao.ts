@@ -46,7 +46,33 @@ const PRODUIT_MAP: Record<string, string> = {
   "kola": "COLA_ROUGE",
 };
 
-// Mapping marchés RESIMAO → codes BD (principaux)
+// Mapping produit+marché → code BD (clé = "produit:marche")
+const MARCHE_PRODUIT_MAP: Record<string, Record<string, string>> = {
+  "MAIS_GRAIN": {
+    "abidjan": "ABIDJAN_MAIS",
+    "ouagadougou": "OUAGA_MAIS",
+    "bamako": "BAMAKO_MAIS",
+    "niamey": "NIAMEY_MAIS",
+    "dakar": "DAKAR_MAIS",
+    "lomé": "LOME_MAIS",
+    "lome": "LOME_MAIS",
+    "cotonou": "COTONOU_MAIS",
+    "lagos": "LAGOS_MAIS",
+    "accra": "ACCRA_MAIS",
+  },
+  "CAJOU_RCN": {
+    "abidjan": "ABIDJAN_RCN",
+  },
+  "COLA_ROUGE": {
+    "lagos": "LAGOS_COLA",
+    "abidjan": "ABIDJAN_COLA",
+    "accra": "ACCRA_COLA",
+    "cotonou": "COTONOU_COLA",
+    "dakar": "DAKAR_COLA",
+  },
+};
+
+// Fallback map (mais only) kept for compatibility
 const MARCHE_MAP: Record<string, string> = {
   "abidjan": "ABIDJAN_MAIS",
   "ouagadougou": "OUAGA_MAIS",
@@ -54,6 +80,7 @@ const MARCHE_MAP: Record<string, string> = {
   "niamey": "NIAMEY_MAIS",
   "dakar": "DAKAR_MAIS",
   "lomé": "LOME_MAIS",
+  "lome": "LOME_MAIS",
   "cotonou": "COTONOU_MAIS",
   "lagos": "LAGOS_MAIS",
   "accra": "ACCRA_MAIS",
@@ -182,9 +209,10 @@ export class ResimaoConnector implements Connector {
         }
         if (!produitCode) continue;
 
-        // Trouver le marché correspondant
+        // Trouver le marché correspondant selon le produit
         let marcheCode: string | null = null;
-        for (const [key, val] of Object.entries(MARCHE_MAP)) {
+        const produitMap = MARCHE_PRODUIT_MAP[produitCode] ?? MARCHE_MAP;
+        for (const [key, val] of Object.entries(produitMap)) {
           if (releve.marche.includes(key) || releve.pays.toLowerCase().includes(key)) {
             marcheCode = val;
             break;

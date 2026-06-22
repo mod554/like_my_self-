@@ -1,0 +1,83 @@
+name: Deploy to Vercel Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build project
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Push DB schema
+        run: |
+          # Extract DATABASE_URL from Vercel env file (handles quoted values)
+          DB_URL=$(python3 -c "
+          import re, sys
+          try:
+            with open('.vercel/.env.production.local') as f:
+              for line in f:
+                line = line.strip()
+                m = re.match(r'^DATABASE_URL=[\"\\x27]?(.+?)[\"\\x27]?\$', line)
+                if m:
+                  print(m.group(1))
+                  sys.exit(0)
+          except: pass
+          ")
+          if [ -n "\$DB_URL" ]; then
+            echo "DATABASE_URL found, pushing schema..."
+            DATABASE_URL="\$DB_URL" ./node_modules/.bin/prisma db push --accept-data-loss \
+              && echo "Schema pushed successfully" \
+              || echo "Schema push failed (non-blocking)"
+          else
+            echo "DATABASE_URL not found in env file — skipping schema push"
+          fi
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> $GITHUB_OUTPUT
+
+      - name: Initialize database
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          if [ -z "$URL" ]; then
+            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
+          fi
+          echo "Calling /api/init on $URL"
+          curl -sf -X POST "$URL/api/init" -H "Content-Type: application/json" \
+            && echo "Init OK" || echo "Init call failed (may need ADMIN_SECRET)"
+
+      - name: Trigger all connectors
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          if [ -z "$URL" ]; then
+            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
+          fi
+          echo "Calling /api/connectors on $URL"
+          curl -s -X POST "$URL/api/connectors" \
+            -H "Content-Type: application/json" -d '{"tous":true}' \
+            | python3 -c "
+          import json,sys
+          try:
+            d=json.load(sys.stdin)
+            rs=d.get('resultats',[])
+            ok=sum(1 for r in rs if not r.get('erreur'))
+            print(f'{ok}/{len(rs)} connectors OK')
+            for r in rs:
+              if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"]}')
+              else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\",0)} importés')
+          except: print('Could not parse response')
+          " || echo "Connectors call failed"
