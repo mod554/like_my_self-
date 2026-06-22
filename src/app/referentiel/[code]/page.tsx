@@ -346,10 +346,10 @@ export default async function FilierePage({
 
             <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border-subtle)", background: "var(--bg-panel)" }}>
               <Link
-                href="/api/connectors"
-                style={{ fontSize: 10, fontFamily: "monospace", color: "var(--ag-lime)", textDecoration: "none", letterSpacing: "0.06em" }}
+                href="/collecte"
+                style={{ fontSize: 10, fontFamily: "monospace", color: "var(--ag-olive)", textDecoration: "none", letterSpacing: "0.06em" }}
               >
-                → Déclencher collecte RSS
+                → Gérer la collecte automatique
               </Link>
             </div>
           </div>

@@ -88,7 +88,7 @@ export default function LiveTicker({ initialData, refreshInterval = 5 * 60 * 100
           </>
         ) : (
           items.map((item) => {
-            const color = item.hausse === true ? "var(--data-up)" : item.hausse === false ? "var(--data-down)" : "var(--ag-lime)";
+            const color = item.hausse === true ? "#92BA59" : item.hausse === false ? "#E05252" : "#92BA59";
             const arrow = item.hausse === true ? "▲" : item.hausse === false ? "▼" : "";
             return (
               <span key={item.code} style={{ display: "flex", alignItems: "center", gap: "4px" }}>

@@ -32,33 +32,36 @@ function formatVal(v: number) {
   return v.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
 }
 
-const CustomTooltip = ({ active, payload, label }: {
-  active?: boolean; payload?: Array<{ value: number; payload: DataPoint }>; label?: string;
-}) => {
-  if (!active || !payload?.length) return null;
-  const point = payload[0];
-  return (
-    <div
-      style={{
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border-accent)",
-        borderRadius: "8px",
-        padding: "10px 14px",
-        fontSize: 12,
-        fontFamily: "monospace",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-      }}
-    >
-      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>{label}</div>
-      <div style={{ color: "var(--ag-lime)", fontWeight: 700, fontSize: 16 }}>
-        {formatVal(point.value)}
+function makeTooltip(couleur: string) {
+  return function CustomTooltip({ active, payload, label }: {
+    active?: boolean; payload?: Array<{ value: number; payload: DataPoint }>; label?: string;
+  }) {
+    if (!active || !payload?.length) return null;
+    const point = payload[0];
+    return (
+      <div
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-default)",
+          borderRadius: "8px",
+          padding: "10px 14px",
+          fontSize: 12,
+          fontFamily: "monospace",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+        }}
+      >
+        <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>{label}</div>
+        <div style={{ color: couleur, fontWeight: 700, fontSize: 16 }}>
+          {formatVal(point.value)}
+        </div>
+        <div style={{ color: "var(--text-muted)", fontSize: 10 }}>{point.payload.devise}</div>
       </div>
-      <div style={{ color: "var(--text-muted)", fontSize: 10 }}>{point.payload.devise}</div>
-    </div>
-  );
-};
+    );
+  };
+}
 
 export default function PrixChart({ data, couleur = "#92BA59", titre, unite, devise }: PrixChartProps) {
+  const CustomTooltip = makeTooltip(couleur);
   if (!data.length) {
     return (
       <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -75,7 +78,7 @@ export default function PrixChart({ data, couleur = "#92BA59", titre, unite, dev
   const avg = valeurs.reduce((a, b) => a + b, 0) / valeurs.length;
   const derniere = valeurs[valeurs.length - 1];
   const premiere = valeurs[0];
-  const variation = ((derniere - premiere) / premiere) * 100;
+  const variation = premiere !== 0 ? ((derniere - premiere) / premiere) * 100 : 0;
 
   return (
     <div>
@@ -100,7 +103,7 @@ export default function PrixChart({ data, couleur = "#92BA59", titre, unite, dev
               <stop offset="100%" stopColor={couleur} stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(26,46,30,0.6)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
           <XAxis
             dataKey="date"
             tick={{ fontSize: 9, fill: "var(--text-muted)", fontFamily: "monospace" }}
