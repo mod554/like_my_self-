@@ -35,22 +35,27 @@ export default async function FilierePage({
 }) {
   const { code } = await params;
 
-  const filiere = await prisma.filiere.findUnique({
-    where: { code: code.toUpperCase() },
-    include: {
-      produits: {
-        orderBy: [{ estDerive: "asc" }, { code: "asc" }],
-        include: {
-          _count: { select: { prixReleves: true } },
-          derives: { select: { id: true } },
+  let filiere: Awaited<ReturnType<typeof prisma.filiere.findUnique>> = null;
+  try {
+    filiere = await prisma.filiere.findUnique({
+      where: { code: code.toUpperCase() },
+      include: {
+        produits: {
+          orderBy: [{ estDerive: "asc" }, { code: "asc" }],
+          include: {
+            _count: { select: { prixReleves: true } },
+            derives: { select: { id: true } },
+          },
+        },
+        actualites: {
+          orderBy: { datePublication: "desc" },
+          take: 6,
         },
       },
-      actualites: {
-        orderBy: { datePublication: "desc" },
-        take: 6,
-      },
-    },
-  });
+    });
+  } catch (e) {
+    console.error("FilierePage DB error:", e);
+  }
 
   if (!filiere) notFound();
 

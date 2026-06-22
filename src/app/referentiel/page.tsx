@@ -25,13 +25,18 @@ const FILIERE_META: Record<string, {
 };
 
 export default async function ReferentielPage() {
-  const filieres = await prisma.filiere.findMany({
-    orderBy: { code: "asc" },
-    include: {
-      produits: { select: { id: true, estDerive: true } },
-      _count: { select: { actualites: true } },
-    },
-  });
+  let filieres: Awaited<ReturnType<typeof prisma.filiere.findMany>> = [];
+  try {
+    filieres = await prisma.filiere.findMany({
+      orderBy: { code: "asc" },
+      include: {
+        produits: { select: { id: true, estDerive: true } },
+        _count: { select: { actualites: true } },
+      },
+    });
+  } catch (e) {
+    console.error("ReferentielPage DB error:", e);
+  }
 
   const totalProduits = filieres.reduce((a, f) => a + f.produits.length, 0);
 

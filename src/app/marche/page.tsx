@@ -62,7 +62,13 @@ function calcVariation(releves: Array<{ valeur: unknown }>) {
 }
 
 export default async function MarchePage() {
-  const { filieres, news } = await getMarketData();
+  let filieres: Awaited<ReturnType<typeof getMarketData>>["filieres"] = [];
+  let news: Awaited<ReturnType<typeof getMarketData>>["news"] = [];
+  try {
+    ({ filieres, news } = await getMarketData());
+  } catch (e) {
+    console.error("MarchePage getMarketData error:", e);
+  }
 
   return (
     <div style={{ flex: 1, padding: "32px 0 64px" }}>
