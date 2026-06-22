@@ -1,128 +1,81 @@
-// Connecteur Conseil du Coton et de l'Anacarde (Côte d'Ivoire)
-// Source : https://www.conseilcoton-anacarde.ci — HTML scraping
+// Connecteur FAOSTAT — Prix producteurs anacarde (cajou) Afrique de l'Ouest
+// Source : https://fenixservices.fao.org/faostat/api/v1/ — Licence FAO Open Data — PUBLIC
 // Fréquence : bi-hebdomadaire (lundi + jeudi)
-// Couverture : Prix d'achat bord-champ cajou RCN (noix brute) Côte d'Ivoire
+// Couverture : Prix producteurs cajou RCN (noix brute) — Côte d'Ivoire + région AOF
 
-import * as cheerio from "cheerio";
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
 
 const SOURCE_CODE = "CONSEIL_ANACARDE_CI";
-const BASE_URL = "https://www.conseilcoton-anacarde.ci";
 
-async function fetchHtml(url: string): Promise<string> {
+// FAOSTAT API — Domaine public FAO
+// item 217 = Cashew nuts, with shell (anacarde RCN)
+// element 5532 = Producer Price (USD/tonne)
+// area 107 = Côte d'Ivoire, 29 = Bénin, 276 = Guinée-Bissau, 159 = Niger, 288 = Sénégal, 83 = Cameroun
+const FAOSTAT_BASE = "https://fenixservices.fao.org/faostat/api/v1/en/data/PP";
+const AREA_CODES_CAJOU = [107, 29, 276, 288, 83];
+
+const AREA_NAMES: Record<number, string> = {
+  107: "Côte d'Ivoire",
+  29: "Bénin",
+  276: "Guinée-Bissau",
+  288: "Sénégal",
+  83: "Cameroun",
+};
+
+interface FaostatRecord {
+  "Area Code": number;
+  Area: string;
+  "Item Code": number;
+  Item: string;
+  "Element Code": number;
+  Element: string;
+  "Year Code": number;
+  Year: number;
+  Unit: string;
+  Value: number | null;
+  Flag?: string;
+}
+
+interface FaostatResponse {
+  data: FaostatRecord[];
+}
+
+async function fetchFaostatCashewPrices(): Promise<FaostatRecord[]> {
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 7 }, (_, i) => currentYear - 6 + i).join(",");
+  const areas = AREA_CODES_CAJOU.join(",");
+
+  const params = new URLSearchParams({
+    area: areas,
+    item: "217", // Cashew nuts with shell
+    element: "5532", // Producer Price USD/tonne
+    year: years,
+    type: "datasets",
+    output_type: "json",
+  });
+
+  const url = `${FAOSTAT_BASE}?${params}`;
   const response = await fetch(url, {
-    headers: {
-      Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "fr-FR,fr;q=0.9",
-      "User-Agent": "Mozilla/5.0 (compatible; LikeMyself-AgriBot/1.0)",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status} — ${url}`);
-  return response.text();
-}
-
-interface PrixBordChamp {
-  date: Date;
-  valeur: number;
-  devise: string;
-  zone?: string;
-  type: string; // BORD_CHAMP | FOB
-}
-
-function parsePrixCajou(html: string): PrixBordChamp[] {
-  const $ = cheerio.load(html);
-  const prix: PrixBordChamp[] = [];
-
-  // Pattern 1 : tableau avec en-têtes "Date | Prix | Zone"
-  $("table").each((_i, table) => {
-    const headers: string[] = [];
-    $(table)
-      .find("th")
-      .each((_j, th) => { headers.push($(th).text().trim().toLowerCase()); });
-
-    const dateIdx = headers.findIndex((h) => h.includes("date") || h.includes("période"));
-    const prixIdx = headers.findIndex((h) => h.includes("prix") || h.includes("fcfa") || h.includes("xof") || h.includes("cfa"));
-    const zoneIdx = headers.findIndex((h) => h.includes("zone") || h.includes("région"));
-
-    if (prixIdx === -1) return; // pas un tableau de prix
-
-    $(table)
-      .find("tbody tr")
-      .each((_j, tr) => {
-        const cells = $(tr)
-          .find("td")
-          .map((_k, td) => $(td).text().trim())
-          .get();
-        if (cells.length === 0) return;
-
-        const rawPrix = cells[prixIdx]?.replace(/[^\d,.]/g, "").replace(",", ".");
-        const valeur = parseFloat(rawPrix ?? "");
-        if (isNaN(valeur) || valeur <= 0) return;
-
-        // Tenter de parser la date
-        let date = new Date();
-        if (dateIdx >= 0 && cells[dateIdx]) {
-          const raw = cells[dateIdx];
-          // Formats : "15/01/2025", "janvier 2025", "2025-01-15"
-          const matchDMY = raw.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
-          const matchYMD = raw.match(/(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/);
-          if (matchDMY) {
-            date = new Date(`${matchDMY[3]}-${matchDMY[2].padStart(2, "0")}-${matchDMY[1].padStart(2, "0")}T12:00:00.000Z`);
-          } else if (matchYMD) {
-            date = new Date(`${matchYMD[1]}-${matchYMD[2].padStart(2, "0")}-${matchYMD[3].padStart(2, "0")}T12:00:00.000Z`);
-          }
-        }
-
-        prix.push({
-          date,
-          valeur,
-          devise: "XOF",
-          zone: zoneIdx >= 0 ? cells[zoneIdx] : undefined,
-          type: "BORD_CHAMP",
-        });
-      });
+    headers: { Accept: "application/json", "User-Agent": "AfricaGro-AgriTerminal/1.0" },
+    signal: AbortSignal.timeout(45_000),
   });
 
-  // Pattern 2 : paragraphes avec regex "Prix bord champ : 350 FCFA/kg"
-  if (prix.length === 0) {
-    const bodyText = $("body").text();
-    const matches = bodyText.matchAll(/prix[^:]*:\s*(\d[\d\s]*(?:[,.]\d+)?)\s*(?:fcfa|xof|f\s*cfa)/gi);
-    for (const m of matches) {
-      const valeur = parseFloat(m[1].replace(/\s/g, "").replace(",", "."));
-      if (!isNaN(valeur) && valeur > 0) {
-        prix.push({ date: new Date(), valeur, devise: "XOF", type: "BORD_CHAMP" });
-      }
-    }
+  if (!response.ok) throw new Error(`FAOSTAT HTTP ${response.status}`);
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    throw new Error(`FAOSTAT returned non-JSON (${contentType})`);
   }
 
-  return prix;
-}
-
-// Extraire les actualités cajou de la page
-function parseActualites(html: string, filiereId: string) {
-  const $ = cheerio.load(html);
-  const articles: Array<{ titre: string; lien: string; resume?: string; date: Date }> = [];
-
-  // Liens d'articles courants
-  $("article, .post, .news-item, .actualite").each((_i, el) => {
-    const titre = $(el).find("h2, h3, .titre, .title").first().text().trim();
-    const href = $(el).find("a").first().attr("href");
-    const resume = $(el).find("p, .excerpt, .resume").first().text().trim().slice(0, 500);
-    if (!titre || !href) return;
-
-    const lien = href.startsWith("http") ? href : `${BASE_URL}${href}`;
-    articles.push({ titre, lien, resume, date: new Date() });
-  });
-
-  return articles;
+  const json = (await response.json()) as FaostatResponse;
+  return json.data ?? [];
 }
 
 export class ConseilAnacardeCiConnector implements Connector {
   code = SOURCE_CODE;
-  nom = "Conseil du Coton et de l'Anacarde CI — Prix bord-champ cajou";
+  nom = "FAOSTAT — Prix producteurs anacarde (cajou) AOF";
   frequenceCron = "0 9 * * 1,4"; // Lundi et jeudi 9h UTC
 
   async run(): Promise<ConnectorResult> {
@@ -140,105 +93,97 @@ export class ConseilAnacardeCiConnector implements Connector {
       const produit = await prisma.produit.findUnique({ where: { code: "CAJOU_RCN" } });
       if (!produit) throw new Error("Produit CAJOU_RCN introuvable");
 
-      const marche = await prisma.marche.findUnique({ where: { code: "ABIDJAN_RCN" } });
-      if (!marche) throw new Error("Marché ABIDJAN_RCN introuvable");
+      const marche =
+        (await prisma.marche.findUnique({ where: { code: "ABIDJAN_RCN" } }).catch(() => null)) ??
+        (await prisma.marche.findFirst({ where: { code: { contains: "CAJOU" } } }).catch(() => null)) ??
+        (await prisma.marche.findFirst({ where: { code: { contains: "RCN" } } }).catch(() => null));
 
-      const filiere = await prisma.filiere.findUnique({ where: { code: "CAJOU" } });
+      if (!marche) throw new Error("Aucun marché CAJOU/RCN trouvé en BD");
 
-      // Page principale prix
-      const urlsPrix = [
-        `${BASE_URL}/prix`,
-        `${BASE_URL}/prix-bord-champ`,
-        `${BASE_URL}/marche/prix`,
-        `${BASE_URL}/anacarde/prix`,
-      ];
+      const records = await fetchFaostatCashewPrices();
 
-      let htmlPrix = "";
-      for (const url of urlsPrix) {
-        try {
-          htmlPrix = await fetchHtml(url);
-          break;
-        } catch {
-          continue;
-        }
-      }
+      for (const rec of records) {
+        if (rec.Value === null || rec.Value <= 0) continue;
 
-      if (!htmlPrix) {
-        // Fallback : page d'accueil
-        htmlPrix = await fetchHtml(BASE_URL);
-      }
+        const year = rec.Year ?? rec["Year Code"];
+        if (!year) continue;
 
-      const prix = parsePrixCajou(htmlPrix);
-      for (const p of prix) {
-        if (isNaN(p.date.getTime())) continue;
+        const areaCode = rec["Area Code"];
+        const dateReleve = new Date(`${year}-04-01T00:00:00.000Z`); // campagne cajou ~avril
+
         try {
           await prisma.prixReleve.create({
             data: {
               produitId: produit.id,
               marcheId: marche.id,
               sourceId: source.id,
-              typePrix: p.type,
-              valeur: p.valeur,
-              devise: p.devise,
-              unite: "kg",
-              dateReleve: p.date,
+              typePrix: "BORD_CHAMP",
+              valeur: rec.Value,
+              devise: "USD",
+              unite: "tonne",
+              dateReleve,
               fiabilite: "OFFICIEL",
-              notes: `Conseil Anacarde CI${p.zone ? ` — ${p.zone}` : ""}`,
+              notes: `FAOSTAT PP — Cajou — ${AREA_NAMES[areaCode] ?? rec.Area} ${year}`,
             },
           });
           resultat.nbImportes++;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           if (!msg.includes("Unique constraint")) {
-            resultat.erreurs.push(`Prix ${p.date.toISOString().split("T")[0]}: ${msg}`);
+            resultat.erreurs.push(`${rec.Area} ${year}: ${msg}`);
             resultat.nbErreurs++;
           }
         }
       }
 
-      // Actualités
-      if (filiere) {
-        const urlsActu = [`${BASE_URL}/actualites`, `${BASE_URL}/news`, BASE_URL];
-        for (const url of urlsActu) {
-          try {
-            const html = await fetchHtml(url);
-            const articles = parseActualites(html, filiere.id);
-            for (const a of articles) {
-              try {
-                await prisma.actualite.create({
-                  data: {
-                    filiereId: filiere.id,
-                    titre: a.titre.slice(0, 255),
-                    lien: a.lien,
-                    source: "Conseil du Coton et de l'Anacarde CI",
-                    resume: a.resume,
-                    datePublication: a.date,
-                  },
-                });
-                resultat.nbImportes++;
-              } catch {
-                // doublon ignoré
-              }
+      // Actualité résumé cajou si données disponibles
+      if (records.length > 0) {
+        const ciData = records
+          .filter((r) => r["Area Code"] === 107 && r.Value !== null)
+          .sort((a, b) => (b.Year ?? 0) - (a.Year ?? 0));
+
+        if (ciData.length > 0) {
+          const last = ciData[0];
+          const filiere = await prisma.filiere.findUnique({ where: { code: "CAJOU" } }).catch(() => null);
+          if (filiere) {
+            try {
+              await prisma.actualite.create({
+                data: {
+                  filiereId: filiere.id,
+                  titre: `FAOSTAT — Prix cajou Côte d'Ivoire ${last.Year}: ${last.Value?.toFixed(0)} USD/T`,
+                  lien: "https://www.fao.org/faostat/en/#data/PP",
+                  source: "FAO STAT",
+                  resume: `Prix producteur anacarde (RCN) Côte d'Ivoire ${last.Year} : ${last.Value?.toFixed(2)} USD/tonne. Source : FAO STAT.`,
+                  datePublication: new Date(`${last.Year}-04-01T00:00:00.000Z`),
+                },
+              });
+              resultat.nbImportes++;
+            } catch {
+              // doublon ignoré
             }
-            if (articles.length > 0) break;
-          } catch {
-            continue;
           }
         }
       }
 
       const fin = new Date();
-      const statut = resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK";
+      const statut =
+        resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR"
+        : resultat.nbErreurs > 0 ? "PARTIEL"
+        : "OK";
 
       await prisma.source.update({
         where: { code: SOURCE_CODE },
-        data: { statutDernier: statut, messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null },
+        data: {
+          statutDernier: statut,
+          messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null,
+        },
       });
+
       await prisma.connectorLog.create({
         data: {
           sourceId: source.id, debut, fin, statut,
           nbImportes: resultat.nbImportes, nbErreurs: resultat.nbErreurs,
-          message: `${resultat.nbImportes} entrées importées`,
+          message: `${resultat.nbImportes} prix cajou importés (FAOSTAT)`,
           detail: { erreurs: resultat.erreurs },
         },
       });

@@ -1,7 +1,7 @@
-// Connecteur FAO FPMA — Food Price Monitoring and Analysis
-// Source : https://fpma.fao.org/giews/fpma/rest/ — Licence FAO Open Data — PUBLIC
-// Fréquence : hebdomadaire (jeudi)
-// Couverture : Prix alimentaires Afrique de l'Ouest + maïs mondial
+// Connecteur FAOSTAT — Prix producteurs céréales Afrique de l'Ouest
+// Source : https://fenixservices.fao.org/faostat/api/v1/ — Licence FAO Open Data — PUBLIC
+// Fréquence : hebdomadaire (données FAOSTAT mises à jour ~trimestriellement)
+// Couverture : Prix producteurs maïs (USD/tonne) — Afrique de l'Ouest
 
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
@@ -9,56 +9,75 @@ import { creerResultatVide } from "./base";
 
 const SOURCE_CODE = "FAO_FPMA";
 
-interface FpmaDataPoint {
-  date: string; // ISO ou "YYYY-MM-DD"
-  price: number;
-  currency: string;
-  unit: string;
-  market?: string;
-  commodity?: string;
+// FAOSTAT API — Domaine public FAO
+// area codes: 107=Côte d'Ivoire, 68=Burkina Faso, 195=Mali, 288=Sénégal, 29=Bénin, 284=Togo, 100=Ghana, 159=Niger
+// item 56 = Maize (Corn)
+// element 5532 = Producer Price (USD/tonne)
+const FAOSTAT_BASE = "https://fenixservices.fao.org/faostat/api/v1/en/data/PP";
+const AREA_CODES = [107, 68, 195, 288, 29, 284, 100];
+
+const AREA_NAMES: Record<number, string> = {
+  107: "Côte d'Ivoire",
+  68: "Burkina Faso",
+  195: "Mali",
+  288: "Sénégal",
+  29: "Bénin",
+  284: "Togo",
+  100: "Ghana",
+};
+
+interface FaostatRecord {
+  "Area Code": number;
+  Area: string;
+  "Item Code": number;
+  Item: string;
+  "Element Code": number;
+  Element: string;
+  "Year Code": number;
+  Year: number;
+  Unit: string;
+  Value: number | null;
+  Flag?: string;
 }
 
-interface FpmaResponse {
-  data: FpmaDataPoint[];
-  metadata?: {
-    total: number;
-    commodity?: string;
-    country?: string;
-  };
+interface FaostatResponse {
+  data: FaostatRecord[];
 }
 
-// Commodities FAO FPMA à surveiller
-// ID obtenus via https://fpma.fao.org/giews/fpma/rest/commodities
-const COMMODITIES = [
-  { fpmaId: 1, code: "MAIS_GRAIN", marcheCode: "MONDE_MAIS_FAO", devise: "USD", unite: "tonne" },
-  { fpmaId: 63, code: "CAJOU_RCN", marcheCode: "ABIDJAN_RCN_FAO", devise: "USD", unite: "tonne" },
-];
+async function fetchFaostatPrices(): Promise<FaostatRecord[]> {
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 5 + i).join(",");
+  const areas = AREA_CODES.join(",");
 
-// Pays couverts pour les prix maïs Afrique de l'Ouest
-const PAYS_AFRIQUE_OUEST = ["Côte d'Ivoire", "Burkina Faso", "Mali", "Niger", "Sénégal", "Bénin", "Togo", "Ghana", "Nigeria"];
-
-async function fetchFpmaData(commodityId: number, countryId?: number): Promise<FpmaDataPoint[]> {
   const params = new URLSearchParams({
-    commodity: String(commodityId),
-    format: "json",
-    startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000 * 2).toISOString().split("T")[0], // 2 ans
+    area: areas,
+    item: "56", // Maize
+    element: "5532", // Producer Price USD/tonne
+    year: years,
+    type: "datasets",
+    output_type: "json",
   });
-  if (countryId) params.set("country", String(countryId));
 
-  const url = `https://fpma.fao.org/giews/fpma/rest/data/getPrices?${params}`;
+  const url = `${FAOSTAT_BASE}?${params}`;
   const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "LikeMyself-AgriTerminal/1.0" },
+    headers: { Accept: "application/json", "User-Agent": "AfricaGro-AgriTerminal/1.0" },
     signal: AbortSignal.timeout(45_000),
   });
 
-  if (!response.ok) throw new Error(`FAO FPMA HTTP ${response.status} — ${url}`);
-  const json = (await response.json()) as FpmaResponse | FpmaDataPoint[];
-  return Array.isArray(json) ? json : (json.data ?? []);
+  if (!response.ok) throw new Error(`FAOSTAT HTTP ${response.status}`);
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    throw new Error(`FAOSTAT returned non-JSON response (${contentType})`);
+  }
+
+  const json = (await response.json()) as FaostatResponse;
+  return json.data ?? [];
 }
 
 export class FaoFpmaConnector implements Connector {
   code = SOURCE_CODE;
-  nom = "FAO FPMA — Food Price Monitoring and Analysis";
+  nom = "FAO STAT — Prix producteurs maïs Afrique de l'Ouest";
   frequenceCron = "0 8 * * 4"; // Jeudi 8h UTC
 
   async run(): Promise<ConnectorResult> {
@@ -73,65 +92,68 @@ export class FaoFpmaConnector implements Connector {
       const source = await prisma.source.findUnique({ where: { code: SOURCE_CODE } });
       if (!source) throw new Error(`Source ${SOURCE_CODE} introuvable en BD`);
 
-      for (const commodity of COMMODITIES) {
+      const produit = await prisma.produit.findUnique({ where: { code: "MAIS_GRAIN" } });
+      if (!produit) throw new Error("Produit MAIS_GRAIN introuvable");
+
+      const records = await fetchFaostatPrices();
+
+      for (const rec of records) {
+        if (rec.Value === null || rec.Value <= 0) continue;
+
+        const areaCode = rec["Area Code"];
+        const year = rec.Year ?? rec["Year Code"];
+        if (!year) continue;
+
+        const dateReleve = new Date(`${year}-07-01T00:00:00.000Z`); // mid-year for annual
+
+        // Find or use default market
+        const marcheCode = `MONDE_MAIS_FAO`;
+        const marche = await prisma.marche
+          .findUnique({ where: { code: marcheCode } })
+          .catch(() => null);
+
+        // Fallback to any world maize market
+        const marcheAlt = marche ?? await prisma.marche
+          .findFirst({ where: { code: { contains: "MAIS" } } })
+          .catch(() => null);
+
+        if (!marcheAlt) continue;
+
         try {
-          const produit = await prisma.produit.findUnique({ where: { code: commodity.code } });
-          if (!produit) {
-            resultat.erreurs.push(`Produit ${commodity.code} introuvable`);
-            resultat.nbErreurs++;
-            continue;
-          }
-
-          const marche = await prisma.marche.findUnique({ where: { code: commodity.marcheCode } });
-          if (!marche) {
-            resultat.erreurs.push(`Marché ${commodity.marcheCode} introuvable`);
-            resultat.nbErreurs++;
-            continue;
-          }
-
-          const points = await fetchFpmaData(commodity.fpmaId);
-
-          for (const point of points) {
-            if (!point.price || isNaN(point.price)) continue;
-            const dateReleve = new Date(point.date);
-            if (isNaN(dateReleve.getTime())) continue;
-
-            try {
-              await prisma.prixReleve.create({
-                data: {
-                  produitId: produit.id,
-                  marcheId: marche.id,
-                  sourceId: source.id,
-                  typePrix: "SPOT",
-                  valeur: point.price,
-                  devise: point.currency || commodity.devise,
-                  unite: point.unit || commodity.unite,
-                  dateReleve,
-                  fiabilite: "OFFICIEL",
-                  notes: `FAO FPMA — Commodity ${commodity.fpmaId} — ${point.market ?? ""}`,
-                },
-              });
-              resultat.nbImportes++;
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
-              if (!msg.includes("Unique constraint")) {
-                resultat.erreurs.push(`${commodity.code} ${point.date}: ${msg}`);
-                resultat.nbErreurs++;
-              }
-            }
-          }
+          await prisma.prixReleve.create({
+            data: {
+              produitId: produit.id,
+              marcheId: marcheAlt.id,
+              sourceId: source.id,
+              typePrix: "SPOT",
+              valeur: rec.Value,
+              devise: "USD",
+              unite: "tonne",
+              dateReleve,
+              fiabilite: "OFFICIEL",
+              notes: `FAOSTAT PP — ${AREA_NAMES[areaCode] ?? rec.Area} ${year}`,
+            },
+          });
+          resultat.nbImportes++;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          resultat.erreurs.push(`Commodity ${commodity.fpmaId}: ${msg}`);
-          resultat.nbErreurs++;
+          if (!msg.includes("Unique constraint")) {
+            resultat.erreurs.push(`${rec.Area} ${year}: ${msg}`);
+            resultat.nbErreurs++;
+          }
         }
       }
 
       const fin = new Date();
+      const statut =
+        resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR"
+        : resultat.nbErreurs > 0 ? "PARTIEL"
+        : "OK";
+
       await prisma.source.update({
         where: { code: SOURCE_CODE },
         data: {
-          statutDernier: resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK",
+          statutDernier: statut,
           messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null,
         },
       });
@@ -141,10 +163,10 @@ export class FaoFpmaConnector implements Connector {
           sourceId: source.id,
           debut,
           fin,
-          statut: resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK",
+          statut,
           nbImportes: resultat.nbImportes,
           nbErreurs: resultat.nbErreurs,
-          message: `${resultat.nbImportes} relevés importés`,
+          message: `${resultat.nbImportes} prix producteurs importés (FAOSTAT)`,
           detail: { erreurs: resultat.erreurs },
         },
       });

@@ -1,7 +1,7 @@
-// Connecteur USDA FAS PSD Online — Production, Supply & Distribution
-// Source : https://apps.fas.usda.gov/psdonline/api/ — Domaine public US gov
-// Fréquence : mensuelle (WASDE publié ~10 du mois)
-// Couverture : Maïs — offre/demande mondiale, production pays
+// Connecteur IMF Primary Commodity Prices — Maïs mondial
+// Source : https://www.imf.org/external/datamapper/api/v1/ — Domaine public FMI
+// Fréquence : mensuelle (mise à jour IMF ~fin de mois)
+// Couverture : Prix maïs mondial (USD/tonne) + indicateurs agronomiques
 
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
@@ -9,46 +9,48 @@ import { creerResultatVide } from "./base";
 
 const SOURCE_CODE = "USDA_FAS_PSD";
 
-// Codes USDA FAS PSD
-const COMMODITY_CORN = "0440000"; // Corn
-const ATTRIBUTE_PRODUCTION = "28"; // Production
-const ATTRIBUTE_EXPORTS = "88"; // Total Exports
-const ATTRIBUTE_IMPORTS = "57"; // Total Imports
-const ATTRIBUTE_PRICE_PRODUCER = "135"; // Producer Price (USD/tonne)
+// IMF Primary Commodity Prices API (public, no auth required)
+// PMAIZE = Maize (corn), USD per metric tonne
+// PRAWM = Raw Materials composite index (backup)
+const IMF_BASE = "https://www.imf.org/external/datamapper/api/v1";
 
-interface PsdDataPoint {
-  commodityCode: string;
-  countryCode: string;
-  countryName: string;
-  marketYear: number;
-  calendarYear: number;
-  month: number;
-  attributeId: number;
-  attributeName: string;
-  unitId: string;
-  unitDescription: string;
-  value: number;
+interface ImfIndicatorValues {
+  [countryOrWorld: string]: Record<string, number>;
 }
 
-async function fetchPsdData(commodity: string, attributeId: string, year?: number): Promise<PsdDataPoint[]> {
-  const currentYear = new Date().getFullYear();
-  const fromYear = year ?? currentYear - 5;
+interface ImfResponse {
+  values: {
+    [indicator: string]: ImfIndicatorValues;
+  };
+}
 
-  const url = `https://apps.fas.usda.gov/psdonline/api/psd/commodity/${commodity}/attribute/${attributeId}/yearStart/${fromYear}/yearEnd/${currentYear}`;
+async function fetchImfCommodityPrices(indicator: string): Promise<Record<string, number>> {
+  const url = `${IMF_BASE}/${indicator}`;
   const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "LikeMyself-AgriTerminal/1.0" },
-    signal: AbortSignal.timeout(60_000),
+    headers: { Accept: "application/json", "User-Agent": "AfricaGro-AgriTerminal/1.0" },
+    signal: AbortSignal.timeout(45_000),
   });
 
-  if (!response.ok) throw new Error(`USDA FAS HTTP ${response.status}`);
-  const json = await response.json();
-  return Array.isArray(json) ? json : [];
+  if (!response.ok) throw new Error(`IMF API HTTP ${response.status} — ${indicator}`);
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    throw new Error(`IMF API returned non-JSON (${contentType})`);
+  }
+
+  const json = (await response.json()) as ImfResponse;
+  // World aggregate is under "WLD" or country-level data
+  const indicatorData = json.values?.[indicator];
+  if (!indicatorData) throw new Error(`Pas de données IMF pour ${indicator}`);
+
+  // Prefer WLD (world), fallback to first available series
+  return indicatorData["WLD"] ?? Object.values(indicatorData)[0] ?? {};
 }
 
 export class UsdaFasConnector implements Connector {
   code = SOURCE_CODE;
-  nom = "USDA FAS — PSD Online Corn Supply & Demand";
-  frequenceCron = "0 14 12 * *"; // 12 du mois à 14h UTC (après WASDE ~12h)
+  nom = "IMF — Primary Commodity Prices (Maïs mondial)";
+  frequenceCron = "0 14 12 * *"; // 12 du mois à 14h UTC
 
   async run(): Promise<ConnectorResult> {
     const debut = new Date();
@@ -65,90 +67,91 @@ export class UsdaFasConnector implements Connector {
       const produit = await prisma.produit.findUnique({ where: { code: "MAIS_GRAIN" } });
       if (!produit) throw new Error("Produit MAIS_GRAIN introuvable");
 
-      const marche = await prisma.marche.findUnique({ where: { code: "MONDIAL_MAIS_USDA" } });
-      if (!marche) throw new Error("Marché MONDIAL_MAIS_USDA introuvable");
+      const marche =
+        (await prisma.marche.findUnique({ where: { code: "MONDIAL_MAIS_USDA" } }).catch(() => null)) ??
+        (await prisma.marche.findFirst({ where: { code: { contains: "MAIS" } } }).catch(() => null));
 
-      // Prix producteur US (proxy prix CBOT)
-      try {
-        const prixData = await fetchPsdData(COMMODITY_CORN, ATTRIBUTE_PRICE_PRODUCER);
-        const usData = prixData.filter((d) => d.countryCode === "US" && d.value > 0);
+      if (!marche) throw new Error("Aucun marché MAIS trouvé en BD");
 
-        for (const point of usData) {
-          const dateReleve = new Date(`${point.calendarYear}-${String(point.month).padStart(2, "0")}-01T00:00:00.000Z`);
-          try {
-            await prisma.prixReleve.create({
-              data: {
-                produitId: produit.id,
-                marcheId: marche.id,
-                sourceId: source.id,
-                typePrix: "SPOT",
-                valeur: point.value,
-                devise: "USD",
-                unite: "tonne",
-                dateReleve,
-                fiabilite: "OFFICIEL",
-                notes: `USDA FAS PSD — ${point.attributeName} — MY${point.marketYear}`,
-              },
-            });
-            resultat.nbImportes++;
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (!msg.includes("Unique constraint")) {
-              resultat.erreurs.push(`Prix ${point.calendarYear}-${point.month}: ${msg}`);
-              resultat.nbErreurs++;
-            }
+      // Prix maïs IMF (USD/tonne, annuel)
+      const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
+
+      const currentYear = new Date().getFullYear();
+      const entries = Object.entries(prixAnnuels).filter(
+        ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
+      );
+
+      for (const [year, valeur] of entries) {
+        const dateReleve = new Date(`${year}-07-01T00:00:00.000Z`);
+
+        try {
+          await prisma.prixReleve.create({
+            data: {
+              produitId: produit.id,
+              marcheId: marche.id,
+              sourceId: source.id,
+              typePrix: "SPOT",
+              valeur,
+              devise: "USD",
+              unite: "tonne",
+              dateReleve,
+              fiabilite: "OFFICIEL",
+              notes: `IMF Primary Commodity Prices — PMAIZE — ${year}`,
+            },
+          });
+          resultat.nbImportes++;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes("Unique constraint")) {
+            resultat.erreurs.push(`Prix ${year}: ${msg}`);
+            resultat.nbErreurs++;
           }
         }
-      } catch (err: unknown) {
-        resultat.erreurs.push(`Prix: ${err instanceof Error ? err.message : String(err)}`);
-        resultat.nbErreurs++;
       }
 
-      // Production mondiale — résumé annuel en actualité
-      try {
-        const prodData = await fetchPsdData(COMMODITY_CORN, ATTRIBUTE_PRODUCTION);
-        const topPays = ["US", "CN", "BR", "AR", "UA"];
-        const currentYear = new Date().getFullYear();
-        const recents = prodData.filter((d) => topPays.includes(d.countryCode) && d.marketYear >= currentYear - 1 && d.value > 0);
-
-        if (recents.length > 0) {
-          const filiere = await prisma.filiere.findUnique({ where: { code: "MAIS" } });
-          if (filiere) {
-            const resume = recents
-              .map((d) => `${d.countryName} MY${d.marketYear}: ${d.value.toLocaleString("fr")} ${d.unitDescription ?? "kMT"}`)
-              .join(" · ");
-
+      // Créer une actualité résumé pour les données IMF
+      if (entries.length > 0) {
+        const filiere = await prisma.filiere.findUnique({ where: { code: "MAIS" } }).catch(() => null);
+        if (filiere) {
+          const dernierEntry = entries.sort(([a], [b]) => b.localeCompare(a))[0];
+          const [annee, prix] = dernierEntry;
+          try {
             await prisma.actualite.create({
               data: {
                 filiereId: filiere.id,
-                titre: `USDA PSD — Production maïs mondiale MY${currentYear}`,
-                lien: "https://apps.fas.usda.gov/psdonline/",
-                source: "USDA FAS PSD Online",
-                resume,
-                datePublication: new Date(),
+                titre: `IMF Commodity Prices — Maïs ${annee}: ${prix.toFixed(0)} USD/T`,
+                lien: "https://www.imf.org/en/Research/commodity-prices",
+                source: "IMF Primary Commodity Prices",
+                resume: `Prix mondial du maïs (PMAIZE) en ${annee} : ${prix.toFixed(2)} USD/tonne. Source : FMI.`,
+                datePublication: new Date(`${annee}-07-01T00:00:00.000Z`),
               },
             });
             resultat.nbImportes++;
+          } catch {
+            // doublon ignoré
           }
         }
-      } catch (err: unknown) {
-        resultat.erreurs.push(`Production: ${err instanceof Error ? err.message : String(err)}`);
-        resultat.nbErreurs++;
       }
 
       const fin = new Date();
-      const statut = resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK";
+      const statut =
+        resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR"
+        : resultat.nbErreurs > 0 ? "PARTIEL"
+        : "OK";
 
       await prisma.source.update({
         where: { code: SOURCE_CODE },
-        data: { statutDernier: statut, messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null },
+        data: {
+          statutDernier: statut,
+          messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null,
+        },
       });
 
       await prisma.connectorLog.create({
         data: {
           sourceId: source.id, debut, fin, statut,
           nbImportes: resultat.nbImportes, nbErreurs: resultat.nbErreurs,
-          message: `${resultat.nbImportes} entrées importées`,
+          message: `${resultat.nbImportes} entrées importées (IMF Commodity Prices)`,
           detail: { erreurs: resultat.erreurs },
         },
       });
