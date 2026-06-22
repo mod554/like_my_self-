@@ -50,7 +50,12 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 export default async function CollectePage() {
-  const sources = await getConnecteurStatus();
+  let sources: Awaited<ReturnType<typeof getConnecteurStatus>> = [];
+  try {
+    sources = await getConnecteurStatus();
+  } catch (e) {
+    console.error("CollectePage DB error:", e);
+  }
 
   const sourceMap = Object.fromEntries(sources.map((s) => [s.code, s]));
 

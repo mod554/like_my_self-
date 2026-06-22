@@ -201,7 +201,14 @@ const FIABILITE_STYLE: Record<string, { color: string; bg: string; label: string
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function AnalysePage() {
-  const { filieres, xofPerUsd, eurPerUsd } = await getAnalyseData();
+  let filieres: Awaited<ReturnType<typeof getAnalyseData>>["filieres"] = [];
+  let xofPerUsd = 655.957;
+  let eurPerUsd = 1.08;
+  try {
+    ({ filieres, xofPerUsd, eurPerUsd } = await getAnalyseData());
+  } catch (e) {
+    console.error("AnalysePage DB error:", e);
+  }
 
   const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
   const FILIERE_ICON: Record<string, string>  = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰" };

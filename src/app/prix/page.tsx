@@ -4,22 +4,28 @@ import PrixForm from "@/components/prix/PrixForm";
 import Link from "next/link";
 
 export default async function PrixPage() {
-  const [produits, marches, sources] = await Promise.all([
-    prisma.produit.findMany({ orderBy: [{ filiere: { code: "asc" } }, { code: "asc" }], include: { filiere: { select: { code: true, nom: true } } } }),
-    prisma.marche.findMany({ orderBy: { code: "asc" }, include: { zone: { select: { nom: true } } } }),
-    prisma.source.findMany({ where: { actif: true, type: "MANUEL" }, orderBy: { code: "asc" } }),
-  ]);
-
-  // Derniers relevés
-  const derniers = await prisma.prixReleve.findMany({
-    orderBy: { dateCollecte: "desc" },
-    take: 20,
-    include: {
-      produit: { select: { code: true, nom: true, filiere: { select: { code: true } } } },
-      marche: { select: { code: true, nom: true } },
-      source: { select: { code: true } },
-    },
-  });
+  let produits: Awaited<ReturnType<typeof prisma.produit.findMany>> = [];
+  let marches: Awaited<ReturnType<typeof prisma.marche.findMany>> = [];
+  let sources: Awaited<ReturnType<typeof prisma.source.findMany>> = [];
+  let derniers: Awaited<ReturnType<typeof prisma.prixReleve.findMany>> = [];
+  try {
+    [produits, marches, sources] = await Promise.all([
+      prisma.produit.findMany({ orderBy: [{ filiere: { code: "asc" } }, { code: "asc" }], include: { filiere: { select: { code: true, nom: true } } } }),
+      prisma.marche.findMany({ orderBy: { code: "asc" }, include: { zone: { select: { nom: true } } } }),
+      prisma.source.findMany({ where: { actif: true, type: "MANUEL" }, orderBy: { code: "asc" } }),
+    ]);
+    derniers = await prisma.prixReleve.findMany({
+      orderBy: { dateCollecte: "desc" },
+      take: 20,
+      include: {
+        produit: { select: { code: true, nom: true, filiere: { select: { code: true } } } },
+        marche: { select: { code: true, nom: true } },
+        source: { select: { code: true } },
+      },
+    });
+  } catch (e) {
+    console.error("PrixPage DB error:", e);
+  }
 
   const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
 

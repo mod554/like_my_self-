@@ -44,29 +44,34 @@ export default async function ProduitPage({
 }) {
   const { code, produit } = await params;
 
-  const p = await prisma.produit.findUnique({
-    where: { code: produit.toUpperCase() },
-    include: {
-      filiere: true,
-      parent: { select: { code: true, nom: true } },
-      derives: {
-        orderBy: { code: "asc" },
-        select: { id: true, code: true, nom: true, uniteRef: true, descriptionQualite: true },
-      },
-      prixReleves: {
-        orderBy: { dateReleve: "desc" },
-        take: 20,
-        include: {
-          marche: { select: { code: true, nom: true, type: true, devise: true } },
-          source: { select: { code: true, nom: true } },
+  let p: Awaited<ReturnType<typeof prisma.produit.findUnique>> = null;
+  try {
+    p = await prisma.produit.findUnique({
+      where: { code: produit.toUpperCase() },
+      include: {
+        filiere: true,
+        parent: { select: { code: true, nom: true } },
+        derives: {
+          orderBy: { code: "asc" },
+          select: { id: true, code: true, nom: true, uniteRef: true, descriptionQualite: true },
+        },
+        prixReleves: {
+          orderBy: { dateReleve: "desc" },
+          take: 20,
+          include: {
+            marche: { select: { code: true, nom: true, type: true, devise: true } },
+            source: { select: { code: true, nom: true } },
+          },
+        },
+        structuresCout: {
+          orderBy: [{ maillon: "asc" }, { poste: "asc" }],
+          include: { source: { select: { code: true } } },
         },
       },
-      structuresCout: {
-        orderBy: [{ maillon: "asc" }, { poste: "asc" }],
-        include: { source: { select: { code: true } } },
-      },
-    },
-  });
+    });
+  } catch (e) {
+    console.error("ProduitPage DB error:", e);
+  }
 
   if (!p || p.filiere.code !== code.toUpperCase()) notFound();
 
