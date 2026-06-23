@@ -5,6 +5,7 @@
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
+import { fetchJson } from "./http";
 
 const INDICATEUR_MAIS = "PMAIZMMT.USD"; // Prix maïs US (USD/tonne, mensuel)
 const SOURCE_CODE = "WORLD_BANK_PINK";
@@ -62,18 +63,9 @@ export class WorldBankConnector implements Connector {
       });
       if (!marche) throw new Error("Marché MONDIAL_MAIS_WB introuvable en BD");
 
-      // Appel API World Bank — 5 dernières années
+      // Appel API World Bank — 5 dernières années (avec retry)
       const url = `https://api.worldbank.org/v2/en/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`;
-      const response = await fetch(url, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API World Bank — HTTP ${response.status}`);
-      }
-
-      const json = await response.json();
+      const json = await fetchJson<[unknown, WBDataPoint[]]>(url, { retries: 3, timeoutMs: 30_000 });
       // L'API World Bank renvoie [metadata, data]
       const donnees: WBDataPoint[] = Array.isArray(json) && Array.isArray(json[1]) ? json[1] : [];
 

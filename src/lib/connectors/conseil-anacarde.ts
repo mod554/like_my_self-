@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
+import { fetchJson } from "./http";
 
 const SOURCE_CODE = "CONSEIL_ANACARDE_CI";
 
@@ -57,19 +58,7 @@ async function fetchFaostatCashewPrices(): Promise<FaostatRecord[]> {
   });
 
   const url = `${FAOSTAT_BASE}?${params}`;
-  const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
-    signal: AbortSignal.timeout(45_000),
-  });
-
-  if (!response.ok) throw new Error(`FAOSTAT HTTP ${response.status}`);
-
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("json")) {
-    throw new Error(`FAOSTAT returned non-JSON (${contentType})`);
-  }
-
-  const json = (await response.json()) as FaostatResponse;
+  const json = await fetchJson<FaostatResponse>(url, { timeoutMs: 45_000, retries: 3 });
   return json.data ?? [];
 }
 

@@ -7,6 +7,7 @@
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
+import { fetchJson } from "./http";
 
 const SOURCE_CODE = "TAUX_CHANGE_LIVE";
 
@@ -30,28 +31,26 @@ interface FrankfurterResponse {
 }
 
 async function fetchRatesOpenErApi(base: string): Promise<Record<string, number> | null> {
-  const url = `https://open.er-api.com/v6/latest/${base}`;
-  const res = await fetch(url, {
-    headers: { "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as ErApiResponse;
-  if (json.result !== "success") return null;
-  return json.rates;
+  try {
+    const url = `https://open.er-api.com/v6/latest/${base}`;
+    const json = await fetchJson<ErApiResponse>(url, { timeoutMs: 15_000, retries: 3 });
+    if (json.result !== "success") return null;
+    return json.rates;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchRatesFrankfurter(base: string, targets: string[]): Promise<Record<string, number> | null> {
   const t = targets.filter((c) => c !== "XOF").join(","); // Frankfurter ne supporte pas XOF
   if (!t) return null;
-  const url = `https://api.frankfurter.app/latest?from=${base}&to=${t}`;
-  const res = await fetch(url, {
-    headers: { "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as FrankfurterResponse;
-  return json.rates ?? null;
+  try {
+    const url = `https://api.frankfurter.app/latest?from=${base}&to=${t}`;
+    const json = await fetchJson<FrankfurterResponse>(url, { timeoutMs: 15_000, retries: 2 });
+    return json.rates ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export class TauxChangeLiveConnector implements Connector {

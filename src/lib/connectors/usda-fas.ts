@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
+import { fetchJson } from "./http";
 
 const SOURCE_CODE = "USDA_FAS_PSD";
 
@@ -26,19 +27,7 @@ interface ImfResponse {
 
 async function fetchImfCommodityPrices(indicator: string): Promise<Record<string, number>> {
   const url = `${IMF_BASE}/${indicator}`;
-  const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
-    signal: AbortSignal.timeout(45_000),
-  });
-
-  if (!response.ok) throw new Error(`IMF API HTTP ${response.status} — ${indicator}`);
-
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("json")) {
-    throw new Error(`IMF API returned non-JSON (${contentType})`);
-  }
-
-  const json = (await response.json()) as ImfResponse;
+  const json = await fetchJson<ImfResponse>(url, { timeoutMs: 45_000, retries: 3 });
   // World aggregate is under "WLD" or country-level data
   const indicatorData = json.values?.[indicator];
   if (!indicatorData) throw new Error(`Pas de données IMF pour ${indicator}`);

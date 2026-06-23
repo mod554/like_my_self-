@@ -1,12 +1,13 @@
-// Connecteur IndexMundi — Données historiques prix commodités
-// Source : https://www.indexmundi.com — HTML scraping (données historiques libres)
+// Connecteur IndexMundi — Prix historiques commodités agricoles
+// Source : https://www.indexmundi.com — HTML/JSON-in-page scraping
+// Stratégie : extraire JSON embarqué (Google Charts) puis fallback tableau HTML
 // Fréquence : mensuelle
-// Couverture : Maïs (prix USD/MT mensuel), Cajou (prix USD/MT annuel)
 
 import * as cheerio from "cheerio";
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
+import { fetchHtml } from "./http";
 
 const SOURCE_CODE = "INDEXMUNDI";
 
@@ -43,75 +44,68 @@ const PAGES: CommoditePage[] = [
   },
 ];
 
-async function fetchHtml(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "en-US,en;q=0.9",
-      "User-Agent": "Mozilla/5.0 (compatible; LikeMyself-AgriBot/1.0)",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status} — ${url}`);
-  return response.text();
-}
-
 interface DataPoint {
   date: Date;
   valeur: number;
 }
 
-function parseIndexMundi(html: string): DataPoint[] {
+function parseIndexMundiDate(raw: string): Date | null {
+  const matchMonthYear = raw.match(/([a-zéûàâ]+)[\s.\-]+(\d{4})/i);
+  const matchYearDash = raw.match(/^(\d{4})[/\-](\d{1,2})/);
+  const matchSlash = raw.match(/^(\d{1,2})[/](\d{4})$/);
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (matchMonthYear) {
+    const mois = MOIS_FR[matchMonthYear[1].toLowerCase().slice(0, 3)];
+    if (mois) return new Date(`${matchMonthYear[2]}-${String(mois).padStart(2, "0")}-01T00:00:00.000Z`);
+  }
+  if (matchIso) return new Date(`${matchIso[1]}-${matchIso[2]}-01T00:00:00.000Z`);
+  if (matchYearDash) return new Date(`${matchYearDash[1]}-${matchYearDash[2].padStart(2, "0")}-01T00:00:00.000Z`);
+  if (matchSlash) return new Date(`${matchSlash[2]}-${matchSlash[1].padStart(2, "0")}-01T00:00:00.000Z`);
+  return null;
+}
+
+// Strategy 1: extract JSON data embedded in page (Google Charts format — faster + more reliable)
+function extractJsonData(html: string): DataPoint[] {
+  const pattern = /data\.addRows\((\[\[[\s\S]*?\]\])\)/;
+  const match = html.match(pattern);
+  if (!match?.[1]) return [];
+  try {
+    const rows = JSON.parse(match[1]) as Array<[string, number]>;
+    return rows
+      .filter((r) => Array.isArray(r) && r.length >= 2)
+      .map((r) => ({ rawDate: String(r[0]), valeur: Number(r[1]) }))
+      .filter(({ valeur }) => !isNaN(valeur) && valeur > 0)
+      .map(({ rawDate, valeur }) => ({ date: parseIndexMundiDate(rawDate), valeur }))
+      .filter((p): p is DataPoint => p.date !== null);
+  } catch {
+    return [];
+  }
+}
+
+// Strategy 2: Cheerio HTML table parsing (fallback)
+function parseTableHtml(html: string): DataPoint[] {
   const $ = cheerio.load(html);
   const points: DataPoint[] = [];
 
-  // IndexMundi affiche un tableau avec colonnes Mois | Prix
   $("table").each((_i, table) => {
     const headers: string[] = [];
-    $(table)
-      .find("th")
-      .each((_j, th) => { headers.push($(th).text().trim().toLowerCase()); });
+    $(table).find("th").each((_j, th) => { headers.push($(th).text().trim().toLowerCase()); });
 
-    // Chercher colonnes date/prix
     const dateIdx = headers.findIndex((h) => h.includes("month") || h.includes("date") || h.includes("mois"));
     const prixIdx = headers.findIndex((h) => h.includes("price") || h.includes("prix") || h.includes("usd"));
+    if (prixIdx === -1 && headers.length < 2) return;
 
-    if (prixIdx === -1 && dateIdx === -1) return;
-
-    $(table)
-      .find("tbody tr, tr")
-      .each((_j, tr) => {
-        const cells = $(tr)
-          .find("td")
-          .map((_k, td) => $(td).text().trim())
-          .get();
-        if (cells.length < 2) return;
-
-        const rawDate = cells[dateIdx >= 0 ? dateIdx : 0];
-        const rawPrix = cells[prixIdx >= 0 ? prixIdx : 1];
-
-        const valeur = parseFloat(rawPrix?.replace(/[^\d.]/g, "") ?? "");
-        if (isNaN(valeur) || valeur <= 0) return;
-
-        // Parser "Jan 2020", "January 2020", "2020-01", "01/2020"
-        let date: Date | null = null;
-
-        const matchMonthYear = rawDate?.match(/([a-zéû]+)[\s.\-]+(\d{4})/i);
-        const matchYearDash = rawDate?.match(/(\d{4})[/\-](\d{1,2})/);
-        const matchSlash = rawDate?.match(/(\d{1,2})[/](\d{4})/);
-
-        if (matchMonthYear) {
-          const mois = MOIS_FR[matchMonthYear[1].toLowerCase().slice(0, 3)];
-          if (mois) date = new Date(`${matchMonthYear[2]}-${String(mois).padStart(2, "0")}-01T00:00:00.000Z`);
-        } else if (matchYearDash) {
-          date = new Date(`${matchYearDash[1]}-${matchYearDash[2].padStart(2, "0")}-01T00:00:00.000Z`);
-        } else if (matchSlash) {
-          date = new Date(`${matchSlash[2]}-${matchSlash[1].padStart(2, "0")}-01T00:00:00.000Z`);
-        }
-
-        if (!date || isNaN(date.getTime())) return;
-        points.push({ date, valeur });
-      });
+    $(table).find("tbody tr, tr").each((_j, tr) => {
+      const cells = $(tr).find("td").map((_k, td) => $(td).text().trim()).get();
+      if (cells.length < 2) return;
+      const rawDate = cells[dateIdx >= 0 ? dateIdx : 0] ?? "";
+      const rawPrix = cells[prixIdx >= 0 ? prixIdx : 1] ?? "";
+      const valeur = parseFloat(rawPrix.replace(/[^\d.]/g, ""));
+      if (isNaN(valeur) || valeur <= 0) return;
+      const date = parseIndexMundiDate(rawDate);
+      if (date) points.push({ date, valeur });
+    });
   });
 
   return points;
@@ -152,8 +146,13 @@ export class IndexMundiConnector implements Connector {
             continue;
           }
 
-          const html = await fetchHtml(page.url);
-          const points = parseIndexMundi(html);
+          const html = await fetchHtml(page.url, {
+            retries: 3,
+            headers: { "Referer": "https://www.indexmundi.com/" },
+          });
+          // Try embedded JSON first (faster), fall back to table HTML
+          let points = extractJsonData(html);
+          if (points.length === 0) points = parseTableHtml(html);
 
           for (const point of points) {
             try {
