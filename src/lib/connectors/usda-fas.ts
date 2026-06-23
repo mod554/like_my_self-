@@ -6,7 +6,6 @@
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
-import { fetchJson } from "./http";
 
 const SOURCE_CODE = "USDA_FAS_PSD";
 
@@ -26,14 +25,24 @@ interface ImfResponse {
 }
 
 async function fetchImfCommodityPrices(indicator: string): Promise<Record<string, number>> {
+  // IMF DataMapper API: GET /v1/{indicator} → { values: { PMAIZE: { WLD: { "2020": 165.1, ... } } } }
   const url = `${IMF_BASE}/${indicator}`;
-  const json = await fetchJson<ImfResponse>(url, { timeoutMs: 45_000, retries: 3 });
-  // World aggregate is under "WLD" or country-level data
+  const response = await fetch(url, {
+    headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!response.ok) throw new Error(`IMF API HTTP ${response.status} — ${indicator}`);
+  const json = await response.json() as ImfResponse;
   const indicatorData = json.values?.[indicator];
-  if (!indicatorData) throw new Error(`Pas de données IMF pour ${indicator}`);
-
-  // Prefer WLD (world), fallback to first available series
-  return indicatorData["WLD"] ?? Object.values(indicatorData)[0] ?? {};
+  if (!indicatorData) {
+    throw new Error(`Pas de données IMF pour ${indicator} — réponse: ${JSON.stringify(json).slice(0, 200)}`);
+  }
+  // WLD = world aggregate series
+  const series = indicatorData["WLD"] ?? Object.values(indicatorData)[0];
+  if (!series || Object.keys(series).length === 0) {
+    throw new Error(`Série IMF ${indicator} vide`);
+  }
+  return series;
 }
 
 export class UsdaFasConnector implements Connector {
@@ -123,8 +132,7 @@ export class UsdaFasConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut =
-        resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR"
+      const statut = resultat.nbImportes === 0 ? "ERREUR"
         : resultat.nbErreurs > 0 ? "PARTIEL"
         : "OK";
 

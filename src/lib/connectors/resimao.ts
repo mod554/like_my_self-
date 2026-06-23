@@ -1,55 +1,49 @@
 // Connecteur RESIMAO / WFP VAM — Prix marchés Afrique de l'Ouest
-// Source primaire : WFP VAM API (https://api.vam.wfp.org) — données JSON fiables
+// Source primaire : WFP VAM API v2 (https://api.vam.wfp.org/v2/Markets/FoodPrices)
 // Source secondaire : RESIMAO HTML (https://www.resimao.org) — fallback
-// Stratégie : API JSON avant HTML scraping (anti-pattern évité: scraper quand API existe)
 // Fréquence : hebdomadaire (mercredi)
 
 import * as cheerio from "cheerio";
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
-import { fetchJson, fetchHtmlFallback } from "./http";
 
 const SOURCE_CODE = "RESIMAO";
 const BASE_URL = "https://www.resimao.org";
 
-// WFP VAM API — données prix alimentaires Afrique de l'Ouest
-// https://api.vam.wfp.org — licence ouverte WFP
+// WFP VAM API v2 — correct endpoint as of 2025
+// GET /v2/Markets/FoodPrices?CountryCode={alpha2}&page=1&pageSize=500
 const WFP_API = "https://api.vam.wfp.org";
 
-// ISO3 country codes for West Africa
+// ISO alpha-2 country codes (WFP API uses alpha-2, not ISO3)
 const WFP_COUNTRIES = [
-  { iso3: "CIV", name: "Côte d'Ivoire" },
-  { iso3: "BFA", name: "Burkina Faso" },
-  { iso3: "MLI", name: "Mali" },
-  { iso3: "SEN", name: "Sénégal" },
-  { iso3: "BEN", name: "Bénin" },
-  { iso3: "TGO", name: "Togo" },
-  { iso3: "GHA", name: "Ghana" },
-  { iso3: "NGA", name: "Nigeria" },
-  { iso3: "NER", name: "Niger" },
+  { alpha2: "CI", name: "Côte d'Ivoire" },
+  { alpha2: "BF", name: "Burkina Faso" },
+  { alpha2: "ML", name: "Mali" },
+  { alpha2: "SN", name: "Sénégal" },
+  { alpha2: "BJ", name: "Bénin" },
+  { alpha2: "TG", name: "Togo" },
+  { alpha2: "GH", name: "Ghana" },
+  { alpha2: "NG", name: "Nigeria" },
+  { alpha2: "NE", name: "Niger" },
 ];
-
-interface WfpMarket {
-  marketId: number;
-  marketName: string;
-  admin1Name: string;
-}
 
 interface WfpPrice {
   commodityName: string;
   marketName: string;
-  priceFlagName: string;
-  priceTypeName: string;
-  currencyName: string;
+  priceFlagName?: string;
+  priceTypeName?: string;
+  currencyName?: string;
   unit: string;
   price: number;
-  date: string; // ISO date
+  date: string;
 }
 
 interface WfpPricesResponse {
   items?: WfpPrice[];
   data?: WfpPrice[];
+  records?: WfpPrice[];
+  value?: WfpPrice[];
 }
 
 interface MarcheReleve {
@@ -62,7 +56,6 @@ interface MarcheReleve {
   date: Date;
 }
 
-// Mapping produits RESIMAO → codes BD
 const PRODUIT_MAP: Record<string, string> = {
   "maïs": "MAIS_GRAIN",
   "mais": "MAIS_GRAIN",
@@ -70,11 +63,11 @@ const PRODUIT_MAP: Record<string, string> = {
   "maize": "MAIS_GRAIN",
   "noix de cajou": "CAJOU_RCN",
   "anacarde": "CAJOU_RCN",
+  "cashew": "CAJOU_RCN",
   "cola": "COLA_ROUGE",
   "kola": "COLA_ROUGE",
 };
 
-// Mapping produit+marché → code BD (clé = "produit:marche")
 const MARCHE_PRODUIT_MAP: Record<string, Record<string, string>> = {
   "MAIS_GRAIN": {
     "abidjan": "ABIDJAN_MAIS",
@@ -100,7 +93,6 @@ const MARCHE_PRODUIT_MAP: Record<string, Record<string, string>> = {
   },
 };
 
-// Fallback map (mais only) kept for compatibility
 const MARCHE_MAP: Record<string, string> = {
   "abidjan": "ABIDJAN_MAIS",
   "ouagadougou": "OUAGA_MAIS",
@@ -118,7 +110,6 @@ function parsePrixResimao(html: string): MarcheReleve[] {
   const $ = cheerio.load(html);
   const releves: MarcheReleve[] = [];
 
-  // Tableaux de prix
   $("table").each((_i, table) => {
     const headers: string[] = [];
     $(table)
@@ -153,16 +144,13 @@ function parsePrixResimao(html: string): MarcheReleve[] {
         const marcheRaw = (colonnes.marche >= 0 ? cells[colonnes.marche] : "").toLowerCase();
         const paysRaw = colonnes.pays >= 0 ? cells[colonnes.pays] : "";
 
-        // Déterminer la devise selon le pays
         const devise = paysRaw.toLowerCase().includes("ghana") ? "GHS"
           : paysRaw.toLowerCase().includes("nigeria") ? "NGN"
           : "XOF";
 
-        // Unité
         const uniteRaw = colonnes.unite >= 0 ? cells[colonnes.unite] : "kg";
         const unite = uniteRaw.toLowerCase().includes("tonne") || uniteRaw.toLowerCase().includes("100kg") ? "tonne" : "kg";
 
-        // Date
         let date = new Date();
         if (colonnes.date >= 0 && cells[colonnes.date]) {
           const raw = cells[colonnes.date];
@@ -172,38 +160,60 @@ function parsePrixResimao(html: string): MarcheReleve[] {
           }
         }
 
-        releves.push({
-          pays: paysRaw,
-          marche: marcheRaw,
-          produit: produitRaw,
-          prix: valeur,
-          devise,
-          unite,
-          date,
-        });
+        releves.push({ pays: paysRaw, marche: marcheRaw, produit: produitRaw, prix: valeur, devise, unite, date });
       });
   });
 
   return releves;
 }
 
-// WFP VAM API — fetch prices for a country (maize + cashew commodities)
-async function fetchWfpPrices(iso3: string): Promise<WfpPrice[]> {
+// WFP VAM API v2 — fetch food prices per country
+async function fetchWfpPrices(alpha2: string): Promise<WfpPrice[]> {
   try {
-    // WFP food prices endpoint — returns recent retail prices per market
-    const url = `${WFP_API}/v2/food_prices/${iso3}.json?commodity_name=Maize&commodity_name=Cashew+Nuts&commodity_name=Kola`;
-    const data = await fetchJson<WfpPricesResponse>(url, { timeoutMs: 20_000, retries: 2 });
-    return (data?.items ?? data?.data ?? []) as WfpPrice[];
+    const url = `${WFP_API}/v2/Markets/FoodPrices?CountryCode=${alpha2}&page=1&pageSize=500`;
+    const res = await fetch(url, {
+      headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/136.0.0.0" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as WfpPricesResponse;
+    const prices = data?.value ?? data?.items ?? data?.data ?? data?.records ?? [];
+    return prices as WfpPrice[];
   } catch {
-    // Try alternate endpoint format
+    return [];
+  }
+}
+
+async function fetchResimaoHtml(): Promise<MarcheReleve[]> {
+  const urlsEssai = [
+    `${BASE_URL}/prix`,
+    `${BASE_URL}/prix-marches`,
+    `${BASE_URL}/marches`,
+    `${BASE_URL}/donnees/prix`,
+    `${BASE_URL}/fr/prix`,
+    BASE_URL,
+  ];
+  for (const url of urlsEssai) {
     try {
-      const url2 = `${WFP_API}/FoodPrices/${iso3}?product=Maize`;
-      const data2 = await fetchJson<WfpPricesResponse>(url2, { timeoutMs: 20_000, retries: 1 });
-      return (data2?.items ?? data2?.data ?? []) as WfpPrice[];
+      const res = await fetch(url, {
+        headers: {
+          "Accept": "text/html,application/xhtml+xml",
+          "Accept-Language": "fr-FR,fr;q=0.9",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0",
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      if (html.length > 500) {
+        const releves = parsePrixResimao(html);
+        if (releves.length > 0) return releves;
+      }
     } catch {
-      return [];
+      continue;
     }
   }
+  return [];
 }
 
 function wfpPriceToReleve(p: WfpPrice, country: { name: string }): MarcheReleve {
@@ -241,49 +251,30 @@ export class ResimaoConnector implements Connector {
       const source = await prisma.source.findUnique({ where: { code: SOURCE_CODE } });
       if (!source) throw new Error(`Source ${SOURCE_CODE} introuvable en BD`);
 
-      // Strategy 1: WFP VAM API (JSON — more reliable than HTML scraping)
+      // Strategy 1: WFP VAM API v2
       let releves: MarcheReleve[] = [];
       for (const country of WFP_COUNTRIES) {
-        try {
-          const wfpPrices = await fetchWfpPrices(country.iso3);
-          releves.push(...wfpPrices.filter((p) => p.price > 0).map((p) => wfpPriceToReleve(p, country)));
-        } catch {
-          continue;
-        }
+        const wfpPrices = await fetchWfpPrices(country.alpha2);
+        releves.push(...wfpPrices.filter((p) => p.price > 0).map((p) => wfpPriceToReleve(p, country)));
       }
 
-      // Strategy 2: RESIMAO HTML fallback (if WFP returned nothing)
+      // Strategy 2: RESIMAO HTML fallback
       if (releves.length === 0) {
-        const urlsEssai = [
-          `${BASE_URL}/prix`,
-          `${BASE_URL}/prix-marches`,
-          `${BASE_URL}/marches`,
-          `${BASE_URL}/donnees/prix`,
-          `${BASE_URL}/fr/prix`,
-          BASE_URL,
-        ];
-        const result = await fetchHtmlFallback(urlsEssai, { retries: 2 });
-        if (result) releves = parsePrixResimao(result.html);
+        releves = await fetchResimaoHtml();
       }
 
       for (const releve of releves) {
-        // Trouver le produit correspondant
         let produitCode: string | null = null;
         for (const [key, val] of Object.entries(PRODUIT_MAP)) {
-          if (releve.produit.includes(key)) {
-            produitCode = val;
-            break;
-          }
+          if (releve.produit.includes(key)) { produitCode = val; break; }
         }
         if (!produitCode) continue;
 
-        // Trouver le marché correspondant selon le produit
         let marcheCode: string | null = null;
         const produitMap = MARCHE_PRODUIT_MAP[produitCode] ?? MARCHE_MAP;
         for (const [key, val] of Object.entries(produitMap)) {
           if (releve.marche.includes(key) || releve.pays.toLowerCase().includes(key)) {
-            marcheCode = val;
-            break;
+            marcheCode = val; break;
           }
         }
         if (!marcheCode) continue;
@@ -321,11 +312,16 @@ export class ResimaoConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK";
+      const statut = resultat.nbImportes === 0 ? "ERREUR"
+        : resultat.nbErreurs > 0 ? "PARTIEL"
+        : "OK";
+      const messageErreur = resultat.nbImportes === 0
+        ? "0 relevés collectés — WFP API et RESIMAO HTML indisponibles"
+        : resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null;
 
       await prisma.source.update({
         where: { code: SOURCE_CODE },
-        data: { statutDernier: statut, messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null },
+        data: { statutDernier: statut, messageErreur },
       });
       await prisma.connectorLog.create({
         data: {

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import { CONNECTEURS } from "@/lib/connectors";
 import ConnecteurActions, { InitBddButton } from "@/components/ConnecteurActions";
+import AutoCollecte from "@/components/AutoCollecte";
 
 async function getConnecteurStatus() {
   const sources = await prisma.source.findMany({
@@ -83,6 +84,15 @@ export default async function CollectePage() {
               >
                 🔍 diagnostic
               </a>
+              <a
+                href="/api/test-sources"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)", textDecoration: "none", padding: "4px 8px", border: "1px solid var(--border-subtle)", borderRadius: "4px" }}
+              >
+                🌐 test sources
+              </a>
+              <AutoCollecte />
               <InitBddButton />
               <ConnecteurActions />
             </div>

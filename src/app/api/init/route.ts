@@ -1,6 +1,5 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { runMigrate } from "@/lib/setup";
 
 export const dynamic = "force-dynamic";
 
@@ -22,46 +21,44 @@ const FILIERES_INIT = [
 ];
 
 const ZONES_INIT = [
-  { code: "MONDIAL",      nom: "Marché mondial",              type: "REGION" },
-  { code: "AFRIQUE_OUEST", nom: "Afrique de l'Ouest",         type: "REGION" },
-  { code: "COTE_IVOIRE",  nom: "Côte d'Ivoire",               type: "PAYS" },
-  { code: "BURKINA",      nom: "Burkina Faso",                 type: "PAYS" },
-  { code: "MALI",         nom: "Mali",                         type: "PAYS" },
-  { code: "SENEGAL",      nom: "Sénégal",                      type: "PAYS" },
-  { code: "BENIN",        nom: "Bénin",                        type: "PAYS" },
-  { code: "TOGO",         nom: "Togo",                         type: "PAYS" },
-  { code: "GHANA",        nom: "Ghana",                        type: "PAYS" },
-  { code: "NIGERIA",      nom: "Nigeria",                      type: "PAYS" },
-  { code: "NIGER",        nom: "Niger",                        type: "PAYS" },
+  { code: "MONDIAL",       nom: "Marché mondial",      type: "REGION" },
+  { code: "AFRIQUE_OUEST", nom: "Afrique de l'Ouest",  type: "REGION" },
+  { code: "COTE_IVOIRE",   nom: "Côte d'Ivoire",       type: "PAYS" },
+  { code: "BURKINA",       nom: "Burkina Faso",         type: "PAYS" },
+  { code: "MALI",          nom: "Mali",                 type: "PAYS" },
+  { code: "SENEGAL",       nom: "Sénégal",              type: "PAYS" },
+  { code: "BENIN",         nom: "Bénin",                type: "PAYS" },
+  { code: "TOGO",          nom: "Togo",                 type: "PAYS" },
+  { code: "GHANA",         nom: "Ghana",                type: "PAYS" },
+  { code: "NIGERIA",       nom: "Nigeria",              type: "PAYS" },
+  { code: "NIGER",         nom: "Niger",                type: "PAYS" },
 ];
 
-// Marchés requis par les connecteurs (zoneCode référencé)
 const MARCHES_INIT = [
-  { code: "MONDIAL_MAIS_WB",    nom: "Marché mondial maïs (World Bank)",  zoneCode: "MONDIAL",       devise: "USD", type: "BOURSE" },
-  { code: "MONDE_MAIS_FAO",     nom: "Marché mondial maïs (FAO)",         zoneCode: "MONDIAL",       devise: "USD", type: "BOURSE" },
-  { code: "MONDIAL_MAIS_USDA",  nom: "Marché mondial maïs (IMF/USDA)",    zoneCode: "MONDIAL",       devise: "USD", type: "BOURSE" },
-  { code: "ABIDJAN_RCN",        nom: "Abidjan — Cajou RCN",               zoneCode: "COTE_IVOIRE",   devise: "XOF", type: "FOB" },
-  { code: "ABIDJAN_MAIS",       nom: "Abidjan — Maïs",                    zoneCode: "COTE_IVOIRE",   devise: "XOF", type: "GROSSISTE" },
-  { code: "OUAGA_MAIS",         nom: "Ouagadougou — Maïs",                zoneCode: "BURKINA",       devise: "XOF", type: "GROSSISTE" },
-  { code: "BAMAKO_MAIS",        nom: "Bamako — Maïs",                     zoneCode: "MALI",          devise: "XOF", type: "GROSSISTE" },
-  { code: "DAKAR_MAIS",         nom: "Dakar — Maïs",                      zoneCode: "SENEGAL",       devise: "XOF", type: "GROSSISTE" },
-  { code: "COTONOU_MAIS",       nom: "Cotonou — Maïs",                    zoneCode: "BENIN",         devise: "XOF", type: "GROSSISTE" },
-  { code: "LOME_MAIS",          nom: "Lomé — Maïs",                       zoneCode: "TOGO",          devise: "XOF", type: "GROSSISTE" },
-  { code: "ACCRA_MAIS",         nom: "Accra — Maïs",                      zoneCode: "GHANA",         devise: "GHS", type: "GROSSISTE" },
-  { code: "LAGOS_MAIS",         nom: "Lagos — Maïs",                      zoneCode: "NIGERIA",       devise: "NGN", type: "GROSSISTE" },
-  { code: "NIAMEY_MAIS",        nom: "Niamey — Maïs",                     zoneCode: "NIGER",         devise: "XOF", type: "GROSSISTE" },
-  { code: "LAGOS_COLA",         nom: "Lagos — Cola",                      zoneCode: "NIGERIA",       devise: "NGN", type: "GROSSISTE" },
-  { code: "ABIDJAN_COLA",       nom: "Abidjan — Cola",                    zoneCode: "COTE_IVOIRE",   devise: "XOF", type: "GROSSISTE" },
-  { code: "ACCRA_COLA",         nom: "Accra — Cola",                      zoneCode: "GHANA",         devise: "GHS", type: "GROSSISTE" },
-  { code: "COTONOU_COLA",       nom: "Cotonou — Cola",                    zoneCode: "BENIN",         devise: "XOF", type: "GROSSISTE" },
-  { code: "DAKAR_COLA",         nom: "Dakar — Cola",                      zoneCode: "SENEGAL",       devise: "XOF", type: "GROSSISTE" },
+  { code: "MONDIAL_MAIS_WB",   nom: "Marché mondial maïs (World Bank)", zoneCode: "MONDIAL",     devise: "USD", type: "BOURSE" },
+  { code: "MONDE_MAIS_FAO",    nom: "Marché mondial maïs (FAO)",        zoneCode: "MONDIAL",     devise: "USD", type: "BOURSE" },
+  { code: "MONDIAL_MAIS_USDA", nom: "Marché mondial maïs (IMF/USDA)",   zoneCode: "MONDIAL",     devise: "USD", type: "BOURSE" },
+  { code: "ABIDJAN_RCN",       nom: "Abidjan — Cajou RCN",              zoneCode: "COTE_IVOIRE", devise: "XOF", type: "FOB" },
+  { code: "ABIDJAN_MAIS",      nom: "Abidjan — Maïs",                   zoneCode: "COTE_IVOIRE", devise: "XOF", type: "GROSSISTE" },
+  { code: "OUAGA_MAIS",        nom: "Ouagadougou — Maïs",               zoneCode: "BURKINA",     devise: "XOF", type: "GROSSISTE" },
+  { code: "BAMAKO_MAIS",       nom: "Bamako — Maïs",                    zoneCode: "MALI",        devise: "XOF", type: "GROSSISTE" },
+  { code: "DAKAR_MAIS",        nom: "Dakar — Maïs",                     zoneCode: "SENEGAL",     devise: "XOF", type: "GROSSISTE" },
+  { code: "COTONOU_MAIS",      nom: "Cotonou — Maïs",                   zoneCode: "BENIN",       devise: "XOF", type: "GROSSISTE" },
+  { code: "LOME_MAIS",         nom: "Lomé — Maïs",                      zoneCode: "TOGO",        devise: "XOF", type: "GROSSISTE" },
+  { code: "ACCRA_MAIS",        nom: "Accra — Maïs",                     zoneCode: "GHANA",       devise: "GHS", type: "GROSSISTE" },
+  { code: "LAGOS_MAIS",        nom: "Lagos — Maïs",                     zoneCode: "NIGERIA",     devise: "NGN", type: "GROSSISTE" },
+  { code: "NIAMEY_MAIS",       nom: "Niamey — Maïs",                    zoneCode: "NIGER",       devise: "XOF", type: "GROSSISTE" },
+  { code: "LAGOS_COLA",        nom: "Lagos — Cola",                     zoneCode: "NIGERIA",     devise: "NGN", type: "GROSSISTE" },
+  { code: "ABIDJAN_COLA",      nom: "Abidjan — Cola",                   zoneCode: "COTE_IVOIRE", devise: "XOF", type: "GROSSISTE" },
+  { code: "ACCRA_COLA",        nom: "Accra — Cola",                     zoneCode: "GHANA",       devise: "GHS", type: "GROSSISTE" },
+  { code: "COTONOU_COLA",      nom: "Cotonou — Cola",                   zoneCode: "BENIN",       devise: "XOF", type: "GROSSISTE" },
+  { code: "DAKAR_COLA",        nom: "Dakar — Cola",                     zoneCode: "SENEGAL",     devise: "XOF", type: "GROSSISTE" },
 ];
 
-// Produits requis par les connecteurs (filiereCode référencé)
 const PRODUITS_INIT = [
-  { code: "MAIS_GRAIN",  nom: "Maïs grain",        filiereCode: "MAIS",  uniteRef: "tonne", estDerive: false, description: "Maïs grain sec — prix CBOT/CME et marchés AOF" },
-  { code: "CAJOU_RCN",   nom: "Cajou RCN",          filiereCode: "CAJOU", uniteRef: "tonne", estDerive: false, description: "Noix de cajou brute (Raw Cashew Nut) — bord-champ CI" },
-  { code: "COLA_ROUGE",  nom: "Noix de cola rouge", filiereCode: "COLA",  uniteRef: "kg",    estDerive: false, description: "Noix de cola rouge (Cola nitida) — marché régional AOF" },
+  { code: "MAIS_GRAIN", nom: "Maïs grain",        filiereCode: "MAIS",  uniteRef: "tonne", estDerive: false, description: "Maïs grain sec — prix CBOT/CME et marchés AOF" },
+  { code: "CAJOU_RCN",  nom: "Cajou RCN",          filiereCode: "CAJOU", uniteRef: "tonne", estDerive: false, description: "Noix de cajou brute (Raw Cashew Nut) — bord-champ CI" },
+  { code: "COLA_ROUGE", nom: "Noix de cola rouge", filiereCode: "COLA",  uniteRef: "kg",    estDerive: false, description: "Noix de cola rouge (Cola nitida) — marché régional AOF" },
 ];
 
 async function upsertByCode<T extends { code: string }>(
@@ -93,14 +90,6 @@ export async function POST(req: NextRequest) {
   const adminKey = process.env.ADMIN_SECRET ?? process.env.CRON_SECRET;
   if (adminKey && authHeader !== `Bearer ${adminKey}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Always ensure tables exist before seeding (idempotent)
-  try {
-    await runMigrate();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ ok: false, error: `Migration failed: ${msg}`, created: [], existing: [], errors: [msg], summary: "0 créés, 0 existants, 1 erreurs" }, { status: 500 });
   }
 
   const created: string[] = [];

@@ -6,7 +6,6 @@
 import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
-import { fetchJson } from "./http";
 
 const SOURCE_CODE = "CONSEIL_ANACARDE_CI";
 
@@ -15,6 +14,7 @@ const SOURCE_CODE = "CONSEIL_ANACARDE_CI";
 // element 5532 = Producer Price (USD/tonne)
 // area 107 = Côte d'Ivoire, 29 = Bénin, 276 = Guinée-Bissau, 159 = Niger, 288 = Sénégal, 83 = Cameroun
 const FAOSTAT_BASE = "https://fenixservices.fao.org/faostat/api/v1/en/data/PP";
+const FAOSTAT_BASE_V2 = "https://faostat3.fao.org/faostat-gateway/go/api/en/data/PP";
 const AREA_CODES_CAJOU = [107, 29, 276, 288, 83];
 
 const AREA_NAMES: Record<number, string> = {
@@ -57,9 +57,22 @@ async function fetchFaostatCashewPrices(): Promise<FaostatRecord[]> {
     output_type: "json",
   });
 
-  const url = `${FAOSTAT_BASE}?${params}`;
-  const json = await fetchJson<FaostatResponse>(url, { timeoutMs: 45_000, retries: 3 });
-  return json.data ?? [];
+  for (const base of [FAOSTAT_BASE, FAOSTAT_BASE_V2]) {
+    try {
+      const url = `${base}?${params}`;
+      const response = await fetch(url, {
+        headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(45_000),
+      });
+      if (!response.ok) continue;
+      const json = await response.json() as FaostatResponse;
+      const data = json.data ?? [];
+      if (data.length > 0) return data;
+    } catch {
+      continue;
+    }
+  }
+  return [];
 }
 
 export class ConseilAnacardeCiConnector implements Connector {
@@ -155,8 +168,7 @@ export class ConseilAnacardeCiConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut =
-        resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR"
+      const statut = resultat.nbImportes === 0 ? "ERREUR"
         : resultat.nbErreurs > 0 ? "PARTIEL"
         : "OK";
 
