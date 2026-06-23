@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import { runMigrate } from "@/lib/setup";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,14 @@ export async function POST(req: NextRequest) {
   const adminKey = process.env.ADMIN_SECRET ?? process.env.CRON_SECRET;
   if (adminKey && authHeader !== `Bearer ${adminKey}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Always ensure tables exist before seeding (idempotent)
+  try {
+    await runMigrate();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: `Migration failed: ${msg}`, created: [], existing: [], errors: [msg], summary: "0 créés, 0 existants, 1 erreurs" }, { status: 500 });
   }
 
   const created: string[] = [];

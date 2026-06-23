@@ -30,10 +30,10 @@ jobs:
       - name: Disable Vercel deployment protection
         run: |
           echo "Removing deployment protection via Vercel API..."
-          curl -s -X PATCH "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=team_s7As6xWfTypDaVkuvuPtTBrg" \
+          curl -s -X PATCH "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=s7As6xWfTypDaVkuvuPtTBrg" \
             -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"ssoProtection":null,"passwordProtection":null,"deploymentProtection":0}' \
+            -d '{"ssoProtection":null,"passwordProtection":null,"vercelAuthenticationBypass":true,"deploymentProtectionBypassEnabled":true,"protectionBypassForAutomation":true}' \
             | python3 -c "
           import json,sys
           raw=sys.stdin.read()
