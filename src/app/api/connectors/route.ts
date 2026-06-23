@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // 5 min — running all connectors can take time
 // GET /api/connectors — liste tous les connecteurs avec leur statut en BD
 // POST /api/connectors — déclenche un ou tous les connecteurs
 

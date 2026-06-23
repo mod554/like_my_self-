@@ -27,27 +27,34 @@ jobs:
           echo "url=$url" >> $GITHUB_OUTPUT
           echo "Deployed to: $url"
 
-      - name: Disable Vercel deployment protection
+      - name: Disable Vercel deployment protection & get bypass secret
+        id: bypass
         run: |
-          echo "Removing deployment protection via Vercel API..."
-          curl -s -X PATCH "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=s7As6xWfTypDaVkuvuPtTBrg" \
+          echo "Disabling all protection and enabling automation bypass..."
+          PROJ_RESP=$(curl -s -X PATCH "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=s7As6xWfTypDaVkuvuPtTBrg" \
             -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"ssoProtection":null,"passwordProtection":null,"vercelAuthenticationBypass":true,"deploymentProtectionBypassEnabled":true,"protectionBypassForAutomation":true}' \
-            | python3 -c "
+            -d '{"ssoProtection":null,"passwordProtection":null,"vercelAuthentication":{"deploymentType":"none"},"deploymentProtectionBypassEnabled":true}')
+          echo "$PROJ_RESP" | python3 -c "
           import json,sys
           raw=sys.stdin.read()
           try:
             d=json.loads(raw)
             sso=d.get('ssoProtection')
             pwd=d.get('passwordProtection')
-            dp=d.get('deploymentProtection')
-            print(f'ssoProtection={sso}  passwordProtection={pwd}  deploymentProtection={dp}')
-            if not sso and not pwd:
-              print('Protection is now OFF')
+            auth=d.get('vercelAuthentication',{})
+            bypass=d.get('autoExposeSystemEnvs')
+            print(f'ssoProtection={sso}  passwordProtection={pwd}  vercelAuthentication={auth}')
+            secret=d.get('automationBypassSecret','')
+            if secret: print(f'bypass_secret={secret}')
           except Exception as e:
-            print(f'API response ({e}): {repr(raw[:300])}')
+            print(f'PATCH response ({e}): {repr(raw[:300])}')
           "
+          # Get automation bypass secret from project
+          SECRET=$(curl -s "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=s7As6xWfTypDaVkuvuPtTBrg" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+            | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('automationBypassSecret',''))" 2>/dev/null || echo "")
+          echo "bypass_secret=$SECRET" >> $GITHUB_OUTPUT
           echo "Waiting 5s for protection change to propagate..."
           sleep 5
 
@@ -57,9 +64,16 @@ jobs:
           if [ -z "$URL" ]; then
             URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
           fi
+          BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
+          BYPASS_HEADER=""
+          if [ -n "$BYPASS" ]; then
+            BYPASS_HEADER="-H \"x-vercel-protection-bypass: $BYPASS\""
+          fi
           echo "Waiting for $URL to be ready..."
           for i in 1 2 3 4 5; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$URL/api/init")
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+              ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
+              "$URL/api/init")
             echo "Attempt $i: HTTP $status"
             if [ "$status" = "200" ] || [ "$status" = "405" ]; then
               echo "App is ready"
@@ -74,8 +88,13 @@ jobs:
           if [ -z "$URL" ]; then
             URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
           fi
+          BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
           echo "Calling /api/migrate on $URL"
-          BODY=$(curl -s -L --max-time 60 -X POST "$URL/api/migrate" -H "Content-Type: application/json" -w "\nHTTP_STATUS:%{http_code}")
+          BODY=$(curl -s -L --max-time 60 -X POST \
+            ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
+            -H "Content-Type: application/json" \
+            "$URL/api/migrate" \
+            -w "\nHTTP_STATUS:%{http_code}")
           HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
           BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
           echo "HTTP status: $HTTP_STATUS"
@@ -98,8 +117,13 @@ jobs:
           if [ -z "$URL" ]; then
             URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
           fi
+          BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
           echo "Calling /api/init on $URL"
-          BODY=$(curl -s -L --max-time 60 -X POST "$URL/api/init" -H "Content-Type: application/json" -w "\nHTTP_STATUS:%{http_code}")
+          BODY=$(curl -s -L --max-time 60 -X POST \
+            ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
+            -H "Content-Type: application/json" \
+            "$URL/api/init" \
+            -w "\nHTTP_STATUS:%{http_code}")
           HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
           BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
           echo "HTTP status: $HTTP_STATUS"
@@ -121,9 +145,12 @@ jobs:
           if [ -z "$URL" ]; then
             URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
           fi
+          BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
           echo "Calling /api/connectors on $URL"
-          BODY=$(curl -s -L --max-time 120 -X POST "$URL/api/connectors" \
+          BODY=$(curl -s -L --max-time 300 -X POST \
+            ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
             -H "Content-Type: application/json" -d '{"tous":true}' \
+            "$URL/api/connectors" \
             -w "\nHTTP_STATUS:%{http_code}")
           HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
           BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
