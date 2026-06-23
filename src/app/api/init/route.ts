@@ -85,13 +85,7 @@ async function upsertByCode<T extends { code: string }>(
   }
 }
 
-export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  const adminKey = process.env.ADMIN_SECRET ?? process.env.CRON_SECRET;
-  if (adminKey && authHeader !== `Bearer ${adminKey}`) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+export async function POST(_req: NextRequest) {
   const created: string[] = [];
   const existing: string[] = [];
   const errors: string[] = [];

@@ -282,46 +282,73 @@ const MARCHES = [
 ];
 
 export async function runMigrate(): Promise<void> {
+  let errors = 0;
   for (const sql of DDL_STATEMENTS) {
-    await prisma.$executeRawUnsafe(sql);
+    try {
+      await prisma.$executeRawUnsafe(sql);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // "already exists" errors are expected on re-runs — safe to ignore
+      if (!msg.includes("already exists") && !msg.includes("duplicate_object")) {
+        console.error("[setup] DDL error:", msg.slice(0, 200));
+        errors++;
+      }
+    }
   }
-  console.log("[setup] migrate: all tables created/verified");
+  console.log(`[setup] migrate: tables created/verified (${errors} unexpected errors)`);
 }
 
-export async function runInit(): Promise<void> {
+export async function runInit(): Promise<{ created: number; errors: number }> {
+  let created = 0;
+  let errors = 0;
+
+  async function tryCreate<T>(fn: () => Promise<T>): Promise<boolean> {
+    try { await fn(); created++; return true; }
+    catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("Unique constraint") && !msg.includes("already exists")) {
+        console.error("[setup] init error:", msg.slice(0, 150));
+        errors++;
+      }
+      return false;
+    }
+  }
+
   for (const f of FILIERES) {
-    const exists = await prisma.filiere.findUnique({ where: { code: f.code } });
-    if (!exists) await prisma.filiere.create({ data: f });
+    const exists = await prisma.filiere.findUnique({ where: { code: f.code } }).catch(() => null);
+    if (!exists) await tryCreate(() => prisma.filiere.create({ data: f }));
   }
   for (const s of SOURCES) {
-    const exists = await prisma.source.findUnique({ where: { code: s.code } });
-    if (!exists) await prisma.source.create({ data: { ...s, actif: true, statutDernier: "INCONNU" } });
+    const exists = await prisma.source.findUnique({ where: { code: s.code } }).catch(() => null);
+    if (!exists) await tryCreate(() => prisma.source.create({ data: { ...s, actif: true, statutDernier: "INCONNU" } }));
   }
   for (const z of ZONES) {
-    const exists = await prisma.zone.findUnique({ where: { code: z.code } });
-    if (!exists) await prisma.zone.create({ data: z });
+    const exists = await prisma.zone.findUnique({ where: { code: z.code } }).catch(() => null);
+    if (!exists) await tryCreate(() => prisma.zone.create({ data: z }));
   }
   for (const p of PRODUITS) {
-    const exists = await prisma.produit.findUnique({ where: { code: p.code } });
+    const exists = await prisma.produit.findUnique({ where: { code: p.code } }).catch(() => null);
     if (!exists) {
-      const filiere = await prisma.filiere.findUnique({ where: { code: p.filiereCode } });
+      const filiere = await prisma.filiere.findUnique({ where: { code: p.filiereCode } }).catch(() => null);
       if (filiere) {
-        await prisma.produit.create({
+        await tryCreate(() => prisma.produit.create({
           data: { code: p.code, nom: p.nom, uniteRef: p.uniteRef, estDerive: p.estDerive, descriptionQualite: p.description, filiereId: filiere.id },
-        });
+        }));
       }
     }
   }
   for (const m of MARCHES) {
-    const exists = await prisma.marche.findUnique({ where: { code: m.code } });
+    const exists = await prisma.marche.findUnique({ where: { code: m.code } }).catch(() => null);
     if (!exists) {
-      const zone = await prisma.zone.findUnique({ where: { code: m.zoneCode } });
+      const zone = await prisma.zone.findUnique({ where: { code: m.zoneCode } }).catch(() => null);
       if (zone) {
-        await prisma.marche.create({
+        await tryCreate(() => prisma.marche.create({
           data: { code: m.code, nom: m.nom, zoneId: zone.id, devise: m.devise, type: m.type, actif: true },
-        });
+        }));
       }
     }
   }
-  console.log("[setup] init: reference data upserted");
+
+  console.log(`[setup] init: ${created} created, ${errors} errors`);
+  return { created, errors };
 }

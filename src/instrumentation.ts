@@ -5,8 +5,8 @@ export async function register() {
   try {
     const { runMigrate, runInit } = await import("./lib/setup");
     await runMigrate();
-    await runInit();
-    console.log("[instrumentation] DB ready");
+    const { created, errors } = await runInit();
+    console.log(`[instrumentation] DB ready — ${created} records seeded, ${errors} errors`);
   } catch (e) {
     console.error("[instrumentation] setup failed:", e instanceof Error ? e.message : e);
   }
