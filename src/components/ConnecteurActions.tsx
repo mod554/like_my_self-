@@ -83,13 +83,13 @@ export default function ConnecteurActions({ code, compact = false }: Props) {
         setMsg(data.erreur ? `Erreur: ${data.erreur}` : `${data.nbImportes ?? 0} entrées importées`);
       } else {
         // All connectors — run each individually in parallel to avoid single-request timeout
-        const { CONNECTEURS } = await import("@/lib/connectors");
+        const { CONNECTEUR_CODES } = await import("@/lib/connectors/codes");
         const results = await Promise.allSettled(
-          CONNECTEURS.map((c) =>
+          CONNECTEUR_CODES.map((code) =>
             fetch("/api/connectors", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code: c.code }),
+              body: JSON.stringify({ code }),
             }).then((r) => r.json() as Promise<{ nbImportes?: number; code?: string }>)
           )
         );
