@@ -29,11 +29,11 @@ jobs:
 
       - name: Disable Vercel deployment protection
         run: |
-          echo "Removing SSO/password protection via Vercel API..."
-          curl -s -X PATCH "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb" \
+          echo "Removing deployment protection via Vercel API..."
+          curl -s -X PATCH "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=team_s7As6xWfTypDaVkuvuPtTBrg" \
             -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"ssoProtection":null,"passwordProtection":null}' \
+            -d '{"ssoProtection":null,"passwordProtection":null,"deploymentProtection":0}' \
             | python3 -c "
           import json,sys
           raw=sys.stdin.read()
@@ -41,12 +41,15 @@ jobs:
             d=json.loads(raw)
             sso=d.get('ssoProtection')
             pwd=d.get('passwordProtection')
-            print(f'ssoProtection={sso}  passwordProtection={pwd}')
+            dp=d.get('deploymentProtection')
+            print(f'ssoProtection={sso}  passwordProtection={pwd}  deploymentProtection={dp}')
             if not sso and not pwd:
-              print('Protection is now OFF — app is publicly accessible')
+              print('Protection is now OFF')
           except Exception as e:
             print(f'API response ({e}): {repr(raw[:300])}')
           "
+          echo "Waiting 5s for protection change to propagate..."
+          sleep 5
 
       - name: Wait for deployment to warm up
         run: |
