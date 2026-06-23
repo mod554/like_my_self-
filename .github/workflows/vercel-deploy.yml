@@ -25,6 +25,24 @@ jobs:
         run: |
           url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
           echo "url=$url" >> $GITHUB_OUTPUT
+          echo "Deployed to: $url"
+
+      - name: Wait for deployment to warm up
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          if [ -z "$URL" ]; then
+            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
+          fi
+          echo "Waiting for $URL to be ready..."
+          for i in 1 2 3 4 5; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$URL/api/init")
+            echo "Attempt $i: HTTP $status"
+            if [ "$status" = "200" ] || [ "$status" = "405" ]; then
+              echo "App is ready"
+              break
+            fi
+            sleep 10
+          done
 
       - name: Apply DB schema via app
         run: |
@@ -33,17 +51,22 @@ jobs:
             URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
           fi
           echo "Calling /api/migrate on $URL"
-          curl -s -X POST "$URL/api/migrate" -H "Content-Type: application/json" \
-            | python3 -c "
-          import json,sys
-          try:
-            d=json.load(sys.stdin)
-            print(d.get('message','no message'))
-            counts=d.get('counts',[])
-            if counts: print('Tables:', ', '.join(counts))
-            if not d.get('ok'): print('ERROR:', d.get('error','unknown'))
-          except Exception as e: print(f'Could not parse: {e}')
-          " || echo "Migrate call failed (non-blocking)"
+          BODY=$(curl -s -L --max-time 60 -X POST "$URL/api/migrate" -H "Content-Type: application/json" -w "\nHTTP_STATUS:%{http_code}")
+          HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
+          echo "HTTP status: $HTTP_STATUS"
+          echo "$BODY" | python3 -c "
+import json,sys
+raw=sys.stdin.read()
+try:
+  d=json.loads(raw)
+  print(d.get('message','no message'))
+  counts=d.get('counts',[])
+  if counts: print('Tables:', ', '.join(counts))
+  if not d.get('ok'): print('ERROR:', d.get('error','unknown'))
+except Exception as e:
+  print(f'Could not parse ({e}): {repr(raw[:300])}')
+" || echo "Migrate call failed (non-blocking)"
 
       - name: Initialize reference data
         run: |
@@ -52,16 +75,21 @@ jobs:
             URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
           fi
           echo "Calling /api/init on $URL"
-          curl -s -X POST "$URL/api/init" -H "Content-Type: application/json" \
-            | python3 -c "
-          import json,sys
-          try:
-            d=json.load(sys.stdin)
-            print(d.get('summary','no summary'))
-            errs=d.get('errors',[])
-            if errs: print('Errors:', errs[:5])
-          except Exception as e: print(f'Could not parse: {e}')
-          " || echo "Init call failed (non-blocking)"
+          BODY=$(curl -s -L --max-time 60 -X POST "$URL/api/init" -H "Content-Type: application/json" -w "\nHTTP_STATUS:%{http_code}")
+          HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
+          echo "HTTP status: $HTTP_STATUS"
+          echo "$BODY" | python3 -c "
+import json,sys
+raw=sys.stdin.read()
+try:
+  d=json.loads(raw)
+  print(d.get('summary','no summary'))
+  errs=d.get('errors',[])
+  if errs: print('Errors:', errs[:5])
+except Exception as e:
+  print(f'Could not parse ({e}): {repr(raw[:300])}')
+" || echo "Init call failed (non-blocking)"
 
       - name: Trigger all connectors
         run: |
@@ -70,17 +98,23 @@ jobs:
             URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
           fi
           echo "Calling /api/connectors on $URL"
-          curl -s -X POST "$URL/api/connectors" \
+          BODY=$(curl -s -L --max-time 120 -X POST "$URL/api/connectors" \
             -H "Content-Type: application/json" -d '{"tous":true}' \
-            | python3 -c "
-          import json,sys
-          try:
-            d=json.load(sys.stdin)
-            rs=d.get('resultats',[])
-            ok=sum(1 for r in rs if not r.get('erreur'))
-            print(f'{ok}/{len(rs)} connectors OK')
-            for r in rs:
-              if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"]}')
-              else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\",0)} importés')
-          except: print('Could not parse response')
-          " || echo "Connectors call failed (non-blocking)"
+            -w "\nHTTP_STATUS:%{http_code}")
+          HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
+          echo "HTTP status: $HTTP_STATUS"
+          echo "$BODY" | python3 -c "
+import json,sys
+raw=sys.stdin.read()
+try:
+  d=json.loads(raw)
+  rs=d.get('resultats',[])
+  ok=sum(1 for r in rs if not r.get('erreur'))
+  print(f'{ok}/{len(rs)} connectors OK')
+  for r in rs:
+    if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"]}')
+    else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\",0)} importés')
+except Exception as e:
+  print(f'Could not parse response ({e}): {repr(raw[:300])}')
+" || echo "Connectors call failed (non-blocking)"
