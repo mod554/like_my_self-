@@ -74,7 +74,23 @@ export default async function CollectePage() {
             <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
               Tableau de bord connecteurs
             </h1>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+              <a
+                href="/api/diagnostic"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)", textDecoration: "none", padding: "4px 8px", border: "1px solid var(--border-subtle)", borderRadius: "4px" }}
+              >
+                🔍 diagnostic
+              </a>
+              <a
+                href="/api/test-sources"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)", textDecoration: "none", padding: "4px 8px", border: "1px solid var(--border-subtle)", borderRadius: "4px" }}
+              >
+                🌐 test sources
+              </a>
               <InitBddButton />
               <ConnecteurActions />
             </div>

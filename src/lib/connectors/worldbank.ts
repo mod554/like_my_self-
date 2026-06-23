@@ -6,7 +6,9 @@ import { prisma } from "@/lib/db";
 import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
 
-const INDICATEUR_MAIS = "PMAIZMMT.USD"; // Prix maïs US (USD/tonne, mensuel)
+// World Bank Global Economic Monitor Commodities — maize price USD/tonne monthly
+// Correct indicator: PMAIZMMT (no .USD suffix — currency is built-in to the series)
+const INDICATEUR_MAIS = "PMAIZMMT";
 const SOURCE_CODE = "WORLD_BANK_PINK";
 
 interface WBDataPoint {
@@ -14,12 +16,7 @@ interface WBDataPoint {
   value: number | null;
 }
 
-interface WBResponse {
-  data: WBDataPoint[];
-}
-
 function parseDate(wbDate: string): Date | null {
-  // Format : "2024M11" ou "2024"
   const matchMois = wbDate.match(/^(\d{4})M(\d{2})$/);
   if (matchMois) {
     return new Date(`${matchMois[1]}-${matchMois[2]}-01T00:00:00.000Z`);
@@ -31,6 +28,16 @@ function parseDate(wbDate: string): Date | null {
   return null;
 }
 
+async function fetchWBData(url: string): Promise<WBDataPoint[]> {
+  const res = await fetch(url, {
+    headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`API World Bank — HTTP ${res.status}`);
+  const json = await res.json() as [unknown, WBDataPoint[]];
+  return Array.isArray(json) && Array.isArray(json[1]) ? json[1] : [];
+}
+
 export class WorldBankConnector implements Connector {
   code = SOURCE_CODE;
   nom = "World Bank — Commodity Price Data (Pink Sheet)";
@@ -40,42 +47,36 @@ export class WorldBankConnector implements Connector {
     const debut = new Date();
     const resultat = creerResultatVide(SOURCE_CODE, debut);
 
-    // Marquer la source en cours
     await prisma.source.update({
       where: { code: SOURCE_CODE },
       data: { statutDernier: "EN_COURS", derniereExecution: debut },
     });
 
     try {
-      const source = await prisma.source.findUnique({
-        where: { code: SOURCE_CODE },
-      });
+      const source = await prisma.source.findUnique({ where: { code: SOURCE_CODE } });
       if (!source) throw new Error(`Source ${SOURCE_CODE} introuvable en BD`);
 
-      const produit = await prisma.produit.findUnique({
-        where: { code: "MAIS_GRAIN" },
-      });
+      const produit = await prisma.produit.findUnique({ where: { code: "MAIS_GRAIN" } });
       if (!produit) throw new Error("Produit MAIS_GRAIN introuvable en BD");
 
-      const marche = await prisma.marche.findUnique({
-        where: { code: "MONDIAL_MAIS_WB" },
-      });
+      const marche = await prisma.marche.findUnique({ where: { code: "MONDIAL_MAIS_WB" } });
       if (!marche) throw new Error("Marché MONDIAL_MAIS_WB introuvable en BD");
 
-      // Appel API World Bank — 5 dernières années
-      const url = `https://api.worldbank.org/v2/en/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`;
-      const response = await fetch(url, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API World Bank — HTTP ${response.status}`);
+      // World Bank API — /country/all/indicator/{id} for global commodity series
+      // mrv=60 = last 60 monthly values
+      const url = `https://api.worldbank.org/v2/country/all/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`;
+      let donnees: WBDataPoint[] = [];
+      try {
+        donnees = await fetchWBData(url);
+      } catch {
+        // Fallback: try the /en/indicator/ path (old format)
+        const url2 = `https://api.worldbank.org/v2/en/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`;
+        donnees = await fetchWBData(url2);
       }
 
-      const json = await response.json();
-      // L'API World Bank renvoie [metadata, data]
-      const donnees: WBDataPoint[] = Array.isArray(json) && Array.isArray(json[1]) ? json[1] : [];
+      if (donnees.length === 0) {
+        throw new Error(`World Bank API returned 0 data points for ${INDICATEUR_MAIS}`);
+      }
 
       for (const point of donnees) {
         if (point.value === null) continue;
@@ -104,7 +105,6 @@ export class WorldBankConnector implements Connector {
           });
           resultat.nbImportes++;
         } catch (err: unknown) {
-          // Ignorer les doublons (contrainte unique non posée ici, mais possible)
           const msg = err instanceof Error ? err.message : String(err);
           if (!msg.includes("Unique constraint")) {
             resultat.erreurs.push(`Erreur insertion ${point.date} : ${msg}`);
@@ -114,25 +114,22 @@ export class WorldBankConnector implements Connector {
       }
 
       const fin = new Date();
+      const statut = resultat.nbImportes === 0 ? "ERREUR"
+        : resultat.nbErreurs > 0 ? "PARTIEL"
+        : "OK";
+
       await prisma.source.update({
         where: { code: SOURCE_CODE },
         data: {
-          statutDernier: resultat.nbErreurs > 0 ? "PARTIEL" : "OK",
-          messageErreur:
-            resultat.erreurs.length > 0
-              ? resultat.erreurs.slice(0, 3).join(" | ")
-              : null,
+          statutDernier: statut,
+          messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null,
         },
       });
 
       await prisma.connectorLog.create({
         data: {
-          sourceId: source.id,
-          debut,
-          fin,
-          statut: resultat.nbErreurs > 0 ? "PARTIEL" : "OK",
-          nbImportes: resultat.nbImportes,
-          nbErreurs: resultat.nbErreurs,
+          sourceId: source.id, debut, fin, statut,
+          nbImportes: resultat.nbImportes, nbErreurs: resultat.nbErreurs,
           message: `${resultat.nbImportes} relevés importés`,
           detail: { erreurs: resultat.erreurs },
         },
@@ -142,20 +139,10 @@ export class WorldBankConnector implements Connector {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       const fin = new Date();
-
       await prisma.source
-        .update({
-          where: { code: SOURCE_CODE },
-          data: { statutDernier: "ERREUR", messageErreur: msg },
-        })
+        .update({ where: { code: SOURCE_CODE }, data: { statutDernier: "ERREUR", messageErreur: msg } })
         .catch(() => {});
-
-      return {
-        ...resultat,
-        nbErreurs: resultat.nbErreurs + 1,
-        erreurs: [...resultat.erreurs, msg],
-        fin,
-      };
+      return { ...resultat, nbErreurs: resultat.nbErreurs + 1, erreurs: [...resultat.erreurs, msg], fin };
     }
   }
 }

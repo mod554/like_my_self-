@@ -13,7 +13,11 @@ const SOURCE_CODE = "FAO_FPMA";
 // area codes: 107=Côte d'Ivoire, 68=Burkina Faso, 195=Mali, 288=Sénégal, 29=Bénin, 284=Togo, 100=Ghana, 159=Niger
 // item 56 = Maize (Corn)
 // element 5532 = Producer Price (USD/tonne)
-const FAOSTAT_BASE = "https://fenixservices.fao.org/faostat/api/v1/en/data/PP";
+// Primary: fenixservices (may be deprecated) → fallback: faostat3.fao.org
+const FAOSTAT_URLS = [
+  "https://fenixservices.fao.org/faostat/api/v1/en/data/PP",
+  "https://faostat3.fao.org/faostat-gateway/go/api/en/data/PP",
+];
 const AREA_CODES = [107, 68, 195, 288, 29, 284, 100];
 
 const AREA_NAMES: Record<number, string> = {
@@ -58,21 +62,22 @@ async function fetchFaostatPrices(): Promise<FaostatRecord[]> {
     output_type: "json",
   });
 
-  const url = `${FAOSTAT_BASE}?${params}`;
-  const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "AfricaAgro-AgriTerminal/1.0" },
-    signal: AbortSignal.timeout(45_000),
-  });
-
-  if (!response.ok) throw new Error(`FAOSTAT HTTP ${response.status}`);
-
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("json")) {
-    throw new Error(`FAOSTAT returned non-JSON response (${contentType})`);
+  for (const base of FAOSTAT_URLS) {
+    try {
+      const url = `${base}?${params}`;
+      const response = await fetch(url, {
+        headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(45_000),
+      });
+      if (!response.ok) continue;
+      const json = await response.json() as FaostatResponse;
+      const data = json.data ?? [];
+      if (data.length > 0) return data;
+    } catch {
+      continue;
+    }
   }
-
-  const json = (await response.json()) as FaostatResponse;
-  return json.data ?? [];
+  return [];
 }
 
 export class FaoFpmaConnector implements Connector {
@@ -106,13 +111,11 @@ export class FaoFpmaConnector implements Connector {
 
         const dateReleve = new Date(`${year}-07-01T00:00:00.000Z`); // mid-year for annual
 
-        // Find or use default market
         const marcheCode = `MONDE_MAIS_FAO`;
         const marche = await prisma.marche
           .findUnique({ where: { code: marcheCode } })
           .catch(() => null);
 
-        // Fallback to any world maize market
         const marcheAlt = marche ?? await prisma.marche
           .findFirst({ where: { code: { contains: "MAIS" } } })
           .catch(() => null);
@@ -145,27 +148,22 @@ export class FaoFpmaConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut =
-        resultat.nbErreurs > 0 && resultat.nbImportes === 0 ? "ERREUR"
+      const statut = resultat.nbImportes === 0 ? "ERREUR"
         : resultat.nbErreurs > 0 ? "PARTIEL"
         : "OK";
+      const messageErreur = resultat.nbImportes === 0
+        ? "0 prix collectés — FAOSTAT API indisponible ou aucune donnée récente"
+        : resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null;
 
       await prisma.source.update({
         where: { code: SOURCE_CODE },
-        data: {
-          statutDernier: statut,
-          messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null,
-        },
+        data: { statutDernier: statut, messageErreur },
       });
 
       await prisma.connectorLog.create({
         data: {
-          sourceId: source.id,
-          debut,
-          fin,
-          statut,
-          nbImportes: resultat.nbImportes,
-          nbErreurs: resultat.nbErreurs,
+          sourceId: source.id, debut, fin, statut,
+          nbImportes: resultat.nbImportes, nbErreurs: resultat.nbErreurs,
           message: `${resultat.nbImportes} prix producteurs importés (FAOSTAT)`,
           detail: { erreurs: resultat.erreurs },
         },
