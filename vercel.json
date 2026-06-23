@@ -3,13 +3,9 @@
   "framework": "nextjs",
   "installCommand": "npm install",
   "crons": [
-    {
-      "path": "/api/cron/collecte",
-      "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/news",
-      "schedule": "*/5 * * * *"
-    }
+    { "path": "/api/cron/taux",     "schedule": "* * * * *"    },
+    { "path": "/api/cron/news",     "schedule": "*/5 * * * *"  },
+    { "path": "/api/cron/prix",     "schedule": "0 * * * *"    },
+    { "path": "/api/cron/collecte", "schedule": "0 6 * * *"    }
   ]
 }
