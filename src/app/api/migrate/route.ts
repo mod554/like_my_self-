@@ -4,9 +4,9 @@ import { prisma } from "@/lib/db";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// SQL to create all tables if they don't exist — generated from prisma/schema.prisma
-// Run this once after deployment when DATABASE_URL was not available at build time.
-const CREATE_TABLES_SQL = `
+// Keep the SQL constant for reference only — actual migration uses runMigrate() from setup.ts
+// which runs each statement individually (required by @prisma/adapter-pg extended query protocol)
+const _UNUSED = `
 CREATE TABLE IF NOT EXISTS "Filiere" (
   "id" TEXT NOT NULL,
   "code" TEXT NOT NULL,
@@ -277,7 +277,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await prisma.$executeRawUnsafe(CREATE_TABLES_SQL);
+    const { runMigrate } = await import("@/lib/setup");
+    await runMigrate();
 
     // Verify tables are accessible
     const counts = await Promise.all([
