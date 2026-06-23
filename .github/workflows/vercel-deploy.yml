@@ -56,17 +56,17 @@ jobs:
           BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
           echo "HTTP status: $HTTP_STATUS"
           echo "$BODY" | python3 -c "
-import json,sys
-raw=sys.stdin.read()
-try:
-  d=json.loads(raw)
-  print(d.get('message','no message'))
-  counts=d.get('counts',[])
-  if counts: print('Tables:', ', '.join(counts))
-  if not d.get('ok'): print('ERROR:', d.get('error','unknown'))
-except Exception as e:
-  print(f'Could not parse ({e}): {repr(raw[:300])}')
-" || echo "Migrate call failed (non-blocking)"
+          import json,sys
+          raw=sys.stdin.read()
+          try:
+            d=json.loads(raw)
+            print(d.get('message','no message'))
+            counts=d.get('counts',[])
+            if counts: print('Tables:', ', '.join(counts))
+            if not d.get('ok'): print('ERROR:', d.get('error','unknown'))
+          except Exception as e:
+            print(f'Could not parse ({e}): {repr(raw[:300])}')
+          " || echo "Migrate call failed (non-blocking)"
 
       - name: Initialize reference data
         run: |
@@ -80,16 +80,16 @@ except Exception as e:
           BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
           echo "HTTP status: $HTTP_STATUS"
           echo "$BODY" | python3 -c "
-import json,sys
-raw=sys.stdin.read()
-try:
-  d=json.loads(raw)
-  print(d.get('summary','no summary'))
-  errs=d.get('errors',[])
-  if errs: print('Errors:', errs[:5])
-except Exception as e:
-  print(f'Could not parse ({e}): {repr(raw[:300])}')
-" || echo "Init call failed (non-blocking)"
+          import json,sys
+          raw=sys.stdin.read()
+          try:
+            d=json.loads(raw)
+            print(d.get('summary','no summary'))
+            errs=d.get('errors',[])
+            if errs: print('Errors:', errs[:5])
+          except Exception as e:
+            print(f'Could not parse ({e}): {repr(raw[:300])}')
+          " || echo "Init call failed (non-blocking)"
 
       - name: Trigger all connectors
         run: |
@@ -105,16 +105,16 @@ except Exception as e:
           BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
           echo "HTTP status: $HTTP_STATUS"
           echo "$BODY" | python3 -c "
-import json,sys
-raw=sys.stdin.read()
-try:
-  d=json.loads(raw)
-  rs=d.get('resultats',[])
-  ok=sum(1 for r in rs if not r.get('erreur'))
-  print(f'{ok}/{len(rs)} connectors OK')
-  for r in rs:
-    if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"]}')
-    else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\",0)} importés')
-except Exception as e:
-  print(f'Could not parse response ({e}): {repr(raw[:300])}')
-" || echo "Connectors call failed (non-blocking)"
+          import json,sys
+          raw=sys.stdin.read()
+          try:
+            d=json.loads(raw)
+            rs=d.get('resultats',[])
+            ok=sum(1 for r in rs if not r.get('erreur'))
+            print(f'{ok}/{len(rs)} connectors OK')
+            for r in rs:
+              if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"]}')
+              else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\",0)} importes')
+          except Exception as e:
+            print(f'Could not parse response ({e}): {repr(raw[:300])}')
+          " || echo "Connectors call failed (non-blocking)"
