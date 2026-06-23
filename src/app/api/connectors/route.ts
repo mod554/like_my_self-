@@ -38,31 +38,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({})) as { code?: string; tous?: boolean };
 
   async function runAndLog(connecteur: (typeof CONNECTEURS)[number]) {
-    const resultat = await connecteur.run();
-    const source = await prisma.source.findFirst({ where: { code: connecteur.code } });
-    if (source) {
-      const succes = resultat.nbErreurs === 0;
-      const statut = succes ? "OK" : resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR";
-      await Promise.all([
-        prisma.connectorLog.create({
-          data: {
-            sourceId: source.id,
-            debut: resultat.debut, fin: resultat.fin, statut,
-            nbImportes: resultat.nbImportes, nbErreurs: resultat.nbErreurs,
-            message: succes ? `OK — ${resultat.nbImportes} éléments` : resultat.erreurs.join("; "),
-          },
-        }),
-        prisma.source.update({
-          where: { id: source.id },
-          data: {
-            derniereExecution: resultat.fin,
-            statutDernier: statut,
-            messageErreur: succes ? null : resultat.erreurs[0] ?? null,
-          },
-        }),
-      ]);
-    }
-    return resultat;
+    // Each connector handles its own logging and source status updates internally
+    return connecteur.run();
   }
 
   if (body.tous) {
