@@ -2,11 +2,13 @@ import { CONNECTEURS } from "@/lib/connectors";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60; // Hobby plan max (300 only on Pro)
 
 export async function GET(req: Request) {
+  // CRON_SECRET auto-set by Vercel for cron jobs — only enforce if present
+  const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

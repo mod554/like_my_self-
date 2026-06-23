@@ -72,18 +72,30 @@ export default function ConnecteurActions({ code, compact = false }: Props) {
     setLoading(true);
     setMsg(null);
     try {
-      const body = code ? { code } : { tous: true };
-      const res = await fetch("/api/connectors", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json() as { nbImportes?: number; resultats?: Array<{ code: string; nbImportes?: number }> };
-      if (data.resultats) {
-        const total = data.resultats.reduce((a, r) => a + (r.nbImportes ?? 0), 0);
-        setMsg(`${total} entrées importées`);
+      if (code) {
+        // Single connector — one request
+        const res = await fetch("/api/connectors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json() as { nbImportes?: number; erreur?: string };
+        setMsg(data.erreur ? `Erreur: ${data.erreur}` : `${data.nbImportes ?? 0} entrées importées`);
       } else {
-        setMsg(`${data.nbImportes ?? 0} entrées importées`);
+        // All connectors — run each individually in parallel to avoid single-request timeout
+        const { CONNECTEURS } = await import("@/lib/connectors");
+        const results = await Promise.allSettled(
+          CONNECTEURS.map((c) =>
+            fetch("/api/connectors", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code: c.code }),
+            }).then((r) => r.json() as Promise<{ nbImportes?: number; code?: string }>)
+          )
+        );
+        const total = results.reduce((sum, r) => sum + (r.status === "fulfilled" ? (r.value?.nbImportes ?? 0) : 0), 0);
+        const errors = results.filter((r) => r.status === "rejected").length;
+        setMsg(errors > 0 ? `${total} importées — ${errors} erreurs` : `${total} entrées importées`);
       }
       router.refresh();
     } catch {

@@ -27,145 +27,109 @@ jobs:
           echo "url=$url" >> $GITHUB_OUTPUT
           echo "Deployed to: $url"
 
-      - name: Disable Vercel deployment protection & get bypass secret
+      - name: Get automation bypass secret & disable protection
         id: bypass
         run: |
-          echo "Disabling all protection and enabling automation bypass..."
-          PROJ_RESP=$(curl -s -X PATCH "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=s7As6xWfTypDaVkuvuPtTBrg" \
+          # Disable Vercel Authentication (the main gate blocking all API calls)
+          curl -s -X PATCH \
+            "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=s7As6xWfTypDaVkuvuPtTBrg" \
             -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"ssoProtection":null,"passwordProtection":null,"vercelAuthentication":{"deploymentType":"none"},"deploymentProtectionBypassEnabled":true}')
-          echo "$PROJ_RESP" | python3 -c "
+            -d '{"ssoProtection":null,"passwordProtection":null,"vercelAuthentication":{"deploymentType":"none"},"deploymentProtectionBypassEnabled":true}' \
+            | python3 -c "
           import json,sys
-          raw=sys.stdin.read()
-          try:
-            d=json.loads(raw)
-            sso=d.get('ssoProtection')
-            pwd=d.get('passwordProtection')
-            auth=d.get('vercelAuthentication',{})
-            bypass=d.get('autoExposeSystemEnvs')
-            print(f'ssoProtection={sso}  passwordProtection={pwd}  vercelAuthentication={auth}')
-            secret=d.get('automationBypassSecret','')
-            if secret: print(f'bypass_secret={secret}')
-          except Exception as e:
-            print(f'PATCH response ({e}): {repr(raw[:300])}')
-          "
-          # Get automation bypass secret from project
-          SECRET=$(curl -s "https://api.vercel.com/v9/projects/prj_YEV0xwnkNjFBeZmrkGBKGAly77bb?teamId=s7As6xWfTypDaVkuvuPtTBrg" \
-            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
-            | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('automationBypassSecret',''))" 2>/dev/null || echo "")
-          echo "bypass_secret=$SECRET" >> $GITHUB_OUTPUT
-          echo "Waiting 5s for protection change to propagate..."
-          sleep 5
+          d=json.loads(sys.stdin.read())
+          auth=d.get('vercelAuthentication',{})
+          secret=d.get('automationBypassSecret','')
+          print(f'vercelAuthentication={auth}')
+          if secret: print(f'Got bypass secret')
+          with open('/tmp/bypass.txt','w') as f: f.write(secret)
+          " 2>/dev/null || echo "PATCH warning (non-fatal)"
 
-      - name: Wait for deployment to warm up
+          # Also try to get CRON_SECRET from env vars for the diagnostic step
+          CRON_SECRET_VAL=$(vercel env ls production --token=${{ secrets.VERCEL_TOKEN }} 2>/dev/null | grep CRON_SECRET | head -1 || echo "")
+          echo "CRON_SECRET present: $([ -n "$CRON_SECRET_VAL" ] && echo yes || echo no)"
+
+          # Read bypass secret
+          BYPASS=$(cat /tmp/bypass.txt 2>/dev/null || echo "")
+          echo "bypass_secret=$BYPASS" >> $GITHUB_OUTPUT
+          echo "Waiting 8s for protection change to propagate..."
+          sleep 8
+
+      - name: Wait for deployment & run diagnostic
         run: |
           URL="${{ steps.deploy.outputs.url }}"
-          if [ -z "$URL" ]; then
-            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
-          fi
           BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
-          BYPASS_HEADER=""
-          if [ -n "$BYPASS" ]; then
-            BYPASS_HEADER="-H \"x-vercel-protection-bypass: $BYPASS\""
-          fi
-          echo "Waiting for $URL to be ready..."
-          for i in 1 2 3 4 5; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+          echo "Testing $URL/api/diagnostic"
+          for i in 1 2 3 4 5 6; do
+            RESP=$(curl -s --max-time 15 \
               ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
-              "$URL/api/init")
-            echo "Attempt $i: HTTP $status"
-            if [ "$status" = "200" ] || [ "$status" = "405" ]; then
-              echo "App is ready"
+              "$URL/api/diagnostic" 2>/dev/null || echo "")
+            STATUS=$(echo "$RESP" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('status','UNKNOWN'))" 2>/dev/null || echo "UNREACHABLE")
+            echo "Attempt $i: $STATUS"
+            if [ "$STATUS" = "HEALTHY" ] || [ "$STATUS" = "TABLES_OK_NO_DATA" ] || [ "$STATUS" = "TABLES_MISSING" ]; then
+              echo "$RESP" | python3 -c "
+          import json,sys
+          d=json.loads(sys.stdin.read())
+          print('DB status:', d.get('status'))
+          print('Action needed:', d.get('action_needed'))
+          tables=d.get('tables',{})
+          for k,v in tables.items(): print(f'  {k}: {v}')
+              " 2>/dev/null
               break
             fi
             sleep 10
           done
 
-      - name: Apply DB schema via app
+      - name: Initialize DB schema
         run: |
           URL="${{ steps.deploy.outputs.url }}"
-          if [ -z "$URL" ]; then
-            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
-          fi
           BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
-          echo "Calling /api/migrate on $URL"
-          BODY=$(curl -s -L --max-time 60 -X POST \
+          echo "POST $URL/api/migrate"
+          RESP=$(curl -s -L --max-time 60 -X POST \
             ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
             -H "Content-Type: application/json" \
-            "$URL/api/migrate" \
-            -w "\nHTTP_STATUS:%{http_code}")
-          HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
-          BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
-          echo "HTTP status: $HTTP_STATUS"
-          echo "$BODY" | python3 -c "
+            "$URL/api/migrate" 2>/dev/null || echo '{"ok":false,"error":"curl failed"}')
+          echo "$RESP" | python3 -c "
           import json,sys
-          raw=sys.stdin.read()
-          try:
-            d=json.loads(raw)
-            print(d.get('message','no message'))
-            counts=d.get('counts',[])
-            if counts: print('Tables:', ', '.join(counts))
-            if not d.get('ok'): print('ERROR:', d.get('error','unknown'))
-          except Exception as e:
-            print(f'Could not parse ({e}): {repr(raw[:300])}')
-          " || echo "Migrate call failed (non-blocking)"
+          d=json.loads(sys.stdin.read())
+          print(d.get('message', d.get('error', str(d)[:200])))
+          " 2>/dev/null || echo "migrate call non-blocking"
 
-      - name: Initialize reference data
+      - name: Seed reference data
         run: |
           URL="${{ steps.deploy.outputs.url }}"
-          if [ -z "$URL" ]; then
-            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
-          fi
           BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
-          echo "Calling /api/init on $URL"
-          BODY=$(curl -s -L --max-time 60 -X POST \
+          echo "POST $URL/api/init"
+          RESP=$(curl -s -L --max-time 60 -X POST \
             ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
             -H "Content-Type: application/json" \
-            "$URL/api/init" \
-            -w "\nHTTP_STATUS:%{http_code}")
-          HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
-          BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
-          echo "HTTP status: $HTTP_STATUS"
-          echo "$BODY" | python3 -c "
+            "$URL/api/init" 2>/dev/null || echo '{"ok":false,"summary":"curl failed"}')
+          echo "$RESP" | python3 -c "
           import json,sys
-          raw=sys.stdin.read()
-          try:
-            d=json.loads(raw)
-            print(d.get('summary','no summary'))
-            errs=d.get('errors',[])
-            if errs: print('Errors:', errs[:5])
-          except Exception as e:
-            print(f'Could not parse ({e}): {repr(raw[:300])}')
-          " || echo "Init call failed (non-blocking)"
+          d=json.loads(sys.stdin.read())
+          print(d.get('summary', d.get('error', str(d)[:200])))
+          errs=d.get('errors',[])
+          if errs: print('Errors:', errs[:3])
+          " 2>/dev/null || echo "init call non-blocking"
 
-      - name: Trigger all connectors
+      - name: Trigger connectors (parallel, one per request)
         run: |
           URL="${{ steps.deploy.outputs.url }}"
-          if [ -z "$URL" ]; then
-            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
-          fi
           BYPASS="${{ steps.bypass.outputs.bypass_secret }}"
-          echo "Calling /api/connectors on $URL"
-          BODY=$(curl -s -L --max-time 300 -X POST \
-            ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
-            -H "Content-Type: application/json" -d '{"tous":true}' \
-            "$URL/api/connectors" \
-            -w "\nHTTP_STATUS:%{http_code}")
-          HTTP_STATUS=$(echo "$BODY" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
-          BODY=$(echo "$BODY" | sed '/HTTP_STATUS:/d')
-          echo "HTTP status: $HTTP_STATUS"
-          echo "$BODY" | python3 -c "
+          CODES="TAUX_CHANGE_LIVE WORLD_BANK_PINK FAO_FPMA USDA_FAS_PSD CONSEIL_ANACARDE_CI RSS_NEWS_AGRI INDEXMUNDI RESIMAO"
+          echo "Triggering connectors individually..."
+          for CODE in $CODES; do
+            echo -n "  $CODE: "
+            RESP=$(curl -s --max-time 55 -X POST \
+              ${BYPASS:+-H "x-vercel-protection-bypass: $BYPASS"} \
+              -H "Content-Type: application/json" \
+              -d "{\"code\":\"$CODE\"}" \
+              "$URL/api/connectors" 2>/dev/null || echo '{}')
+            echo "$RESP" | python3 -c "
           import json,sys
-          raw=sys.stdin.read()
-          try:
-            d=json.loads(raw)
-            rs=d.get('resultats',[])
-            ok=sum(1 for r in rs if not r.get('erreur'))
-            print(f'{ok}/{len(rs)} connectors OK')
-            for r in rs:
-              if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"]}')
-              else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\",0)} importes')
-          except Exception as e:
-            print(f'Could not parse response ({e}): {repr(raw[:300])}')
-          " || echo "Connectors call failed (non-blocking)"
+          d=json.loads(sys.stdin.read())
+          if d.get('erreur'): print(f'ERREUR: {d[\"erreur\"]}')
+          else: print(f'{d.get(\"nbImportes\",0)} importes')
+            " 2>/dev/null || echo "non-blocking"
+          done

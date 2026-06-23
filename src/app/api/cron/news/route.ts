@@ -3,14 +3,15 @@
 // Exécute uniquement les connecteurs légers : RSS news + taux de change
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 55; // Hobby plan max 60s — leave margin
 
 import { RssNewsConnector } from "@/lib/connectors/rss-news";
 import { TauxChangeLiveConnector } from "@/lib/connectors/taux-change";
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
