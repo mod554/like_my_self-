@@ -107,6 +107,7 @@ const DDL_STATEMENTS = [
     "notes" TEXT,
     CONSTRAINT "PrixReleve_pkey" PRIMARY KEY ("id")
   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "PrixReleve_produitId_marcheId_sourceId_dateReleve_typePrix_key" ON "PrixReleve"("produitId","marcheId","sourceId","dateReleve","typePrix")`,
   `CREATE INDEX IF NOT EXISTS "PrixReleve_produitId_marcheId_dateReleve_idx" ON "PrixReleve"("produitId","marcheId","dateReleve")`,
   `CREATE INDEX IF NOT EXISTS "PrixReleve_dateReleve_idx" ON "PrixReleve"("dateReleve")`,
   `CREATE INDEX IF NOT EXISTS "PrixReleve_sourceId_idx" ON "PrixReleve"("sourceId")`,

@@ -95,6 +95,7 @@ model PrixReleve {
   marche  Marche  @relation(fields: [marcheId], references: [id])
   source  Source  @relation(fields: [sourceId], references: [id])
 
+  @@unique([produitId, marcheId, sourceId, dateReleve, typePrix])
   @@index([produitId, marcheId, dateReleve])
   @@index([dateReleve])
   @@index([sourceId])
