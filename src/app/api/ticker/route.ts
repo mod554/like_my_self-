@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 // + variation par rapport au prix précédent
 // Utilisé par le ticker en temps réel dans le header
 export async function GET() {
+  try {
   const produits = await prisma.produit.findMany({
     where: { estDerive: false },
     select: {
@@ -89,4 +90,7 @@ export async function GET() {
       EUR_XOF: 655.957,
     },
   });
+  } catch (e) {
+    return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e), ticker: [], taux: {} }, { status: 503 });
+  }
 }

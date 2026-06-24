@@ -7,6 +7,7 @@ export async function GET(req: NextRequest) {
   const filiere = searchParams.get("filiere"); // optionnel : MAIS | CAJOU | COLA
   const limit = Math.min(parseInt(searchParams.get("limit") ?? "50"), 100);
 
+  try {
   const news = await prisma.actualite.findMany({
     where: filiere ? { filiere: { code: filiere.toUpperCase() } } : undefined,
     orderBy: { datePublication: "desc" },
@@ -31,4 +32,7 @@ export async function GET(req: NextRequest) {
       filiere: a.filiere ? { code: a.filiere.code, nom: a.filiere.nom } : null,
     })),
   });
+  } catch (e) {
+    return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e), news: [] }, { status: 503 });
+  }
 }

@@ -85,10 +85,22 @@ async function upsertByCode<T extends { code: string }>(
   }
 }
 
+export const maxDuration = 60;
+
 export async function POST(_req: NextRequest) {
   const created: string[] = [];
   const existing: string[] = [];
   const errors: string[] = [];
+
+  // Verify DB connection first
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, created: [], existing: [], errors: [`DB connection failed: ${msg}`], summary: "0 créés, 0 existants, 1 erreurs" }, { status: 503 });
+  }
+
+  try {
 
   // 1. Filières
   await upsertByCode("Filière", FILIERES_INIT,
@@ -153,14 +165,19 @@ export async function POST(_req: NextRequest) {
     }
   }
 
-  return Response.json({
-    ok: errors.length === 0,
-    created, existing, errors,
-    summary: `${created.length} créés, ${existing.length} existants, ${errors.length} erreurs`,
-  });
+    return Response.json({
+      ok: errors.length === 0,
+      created, existing, errors,
+      summary: `${created.length} créés, ${existing.length} existants, ${errors.length} erreurs`,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, created: [], existing: [], errors: [msg], summary: `0 créés, 0 existants, 1 erreurs — ${msg.slice(0, 100)}` }, { status: 500 });
+  }
 }
 
 export async function GET() {
+  try {
   const [filieres, sources, produits, marches] = await Promise.all([
     prisma.filiere.count(),
     prisma.source.count(),
@@ -174,4 +191,7 @@ export async function GET() {
       ? "BDD initialisée — prête pour la collecte"
       : "BDD non initialisée — appeler POST /api/init",
   });
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 503 });
+  }
 }

@@ -58,16 +58,19 @@ export async function GET(req: NextRequest) {
 
   const where = produitCode ? { produit: { code: produitCode } } : {};
 
-  const releves = await prisma.prixReleve.findMany({
-    where,
-    orderBy: { dateReleve: "desc" },
-    take: Math.min(limit, 200),
-    include: {
-      produit: { select: { code: true, nom: true } },
-      marche: { select: { code: true, nom: true } },
-      source: { select: { code: true } },
-    },
-  });
-
-  return Response.json(releves);
+  try {
+    const releves = await prisma.prixReleve.findMany({
+      where,
+      orderBy: { dateReleve: "desc" },
+      take: Math.min(limit, 200),
+      include: {
+        produit: { select: { code: true, nom: true } },
+        marche: { select: { code: true, nom: true } },
+        source: { select: { code: true } },
+      },
+    });
+    return Response.json(releves);
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 503 });
+  }
 }
