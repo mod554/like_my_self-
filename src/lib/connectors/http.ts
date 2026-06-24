@@ -109,10 +109,6 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchOptions = {
   const res = await fetchWithRetry(url, { ...opts, isJson: true });
   if (!res) throw new Error(`Fetch failed after retries: ${url}`);
   if (!res.ok) throw new Error(`HTTP ${res.status} — ${url}`);
-  const ct = res.headers.get("content-type") ?? "";
-  if (!ct.includes("json") && !ct.includes("text")) {
-    throw new Error(`Unexpected content-type: ${ct} — ${url}`);
-  }
   return res.json() as Promise<T>;
 }
 
