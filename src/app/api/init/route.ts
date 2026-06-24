@@ -100,6 +100,15 @@ export async function POST(_req: NextRequest) {
     return Response.json({ ok: false, created: [], existing: [], errors: [`DB connection failed: ${msg}`], summary: "0 créés, 0 existants, 1 erreurs" }, { status: 503 });
   }
 
+  // Run migration first to ensure tables exist
+  try {
+    const { runMigrate } = await import("@/lib/setup");
+    await runMigrate();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors.push(`Migration error: ${msg.slice(0, 100)}`);
+  }
+
   try {
 
   // 1. Filières

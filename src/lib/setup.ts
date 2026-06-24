@@ -1,8 +1,12 @@
 // Shared setup logic — idempotent migrate + seed
 // $executeRawUnsafe via @prisma/adapter-pg uses extended query protocol (one statement only),
 // so we must run each DDL statement individually.
+//
+// For Supabase: set DIRECT_URL to the direct connection (port 5432) for DDL operations.
+// DATABASE_URL can be the transaction pooler (port 6543) for regular queries.
 
 import { prisma } from "./db";
+import { Client as PgClient } from "pg";
 
 const DDL_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS "Filiere" (
@@ -283,18 +287,28 @@ const MARCHES = [
 ];
 
 export async function runMigrate(): Promise<void> {
+  // Prefer DIRECT_URL (Supabase direct port 5432) for DDL — avoids pooler limitations
+  const directUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
+  if (!directUrl) throw new Error("DATABASE_URL non défini");
+
+  // Use a raw pg.Client for DDL so it bypasses the Prisma adapter's extended query protocol
+  const client = new PgClient({ connectionString: directUrl });
   let errors = 0;
-  for (const sql of DDL_STATEMENTS) {
-    try {
-      await prisma.$executeRawUnsafe(sql);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      // "already exists" errors are expected on re-runs — safe to ignore
-      if (!msg.includes("already exists") && !msg.includes("duplicate_object")) {
-        console.error("[setup] DDL error:", msg.slice(0, 200));
-        errors++;
+  try {
+    await client.connect();
+    for (const sql of DDL_STATEMENTS) {
+      try {
+        await client.query(sql);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!msg.includes("already exists") && !msg.includes("duplicate_object")) {
+          console.error("[setup] DDL error:", msg.slice(0, 200));
+          errors++;
+        }
       }
     }
+  } finally {
+    await client.end().catch(() => null);
   }
   console.log(`[setup] migrate: tables created/verified (${errors} unexpected errors)`);
 }
