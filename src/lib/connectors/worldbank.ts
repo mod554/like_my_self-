@@ -64,14 +64,19 @@ export class WorldBankConnector implements Connector {
 
       // World Bank API — /country/all/indicator/{id} for global commodity series
       // mrv=60 = last 60 monthly values
-      const url = `https://api.worldbank.org/v2/country/all/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`;
+      // Pink Sheet series live in the GEM Commodities database (source=21)
+      const urls = [
+        `https://api.worldbank.org/v2/en/country/all/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60&source=21`,
+        `https://api.worldbank.org/v2/country/all/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60&source=21`,
+        `https://api.worldbank.org/v2/country/all/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`,
+        `https://api.worldbank.org/v2/en/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`,
+      ];
       let donnees: WBDataPoint[] = [];
-      try {
-        donnees = await fetchWBData(url);
-      } catch {
-        // Fallback: try the /en/indicator/ path (old format)
-        const url2 = `https://api.worldbank.org/v2/en/indicator/${INDICATEUR_MAIS}?format=json&mrv=60&per_page=60`;
-        donnees = await fetchWBData(url2);
+      for (const u of urls) {
+        try {
+          donnees = await fetchWBData(u);
+          if (donnees.length > 0) break;
+        } catch { /* essayer l'URL suivante */ }
       }
 
       if (donnees.length === 0) {

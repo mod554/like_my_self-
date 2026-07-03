@@ -77,7 +77,7 @@ export class GdeltNewsConnector implements Connector {
 
         const url =
           `${API_BASE}?query=${encodeURIComponent(query)}` +
-          `&mode=ArtList&format=json&maxrecords=75&timespan=7d&sort=DateDesc`;
+          `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
 
         let data: GdeltResponse;
         try {

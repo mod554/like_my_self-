@@ -15,104 +15,59 @@ interface FluxRSS {
   filieres: string[]; // codes filières — [] = toutes
   fiabilite: string;
   timeout?: number;
+  preFiltre?: boolean;
 }
 
-// 15 flux RSS couvrant agriculture, marchés de matières premières, Afrique de l'Ouest
+// Flux RSS — Google News en tête (stable, jamais bloqué, requêtes ciblées par filière)
+// + quelques flux institutionnels encore actifs. preFiltre=true : la requête du flux
+// est déjà thématique, on n'applique pas le filtre par mots-clés.
 const FLUX_RSS: FluxRSS[] = [
-  // ── Institutions internationales ──────────────────────────────────────────
+  // ── Google News — requêtes ciblées (fr + en) ─────────────────────────────
   {
-    url: "https://www.fao.org/news/rss-feed/en",
-    source: "FAO — Food and Agriculture Organization",
-    filieres: ["MAIS", "CAJOU", "COLA"],
-    fiabilite: "OFFICIEL",
+    url: "https://news.google.com/rss/search?q=maize%20OR%20corn%20price%20africa&hl=en-US&gl=US&ceid=US:en",
+    source: "Google News — Maize/Corn Africa",
+    filieres: ["MAIS"], fiabilite: "INDICATIF", preFiltre: true,
   },
   {
-    url: "https://www.usda.gov/rss/home.rss",
-    source: "USDA — United States Department of Agriculture",
-    filieres: ["MAIS"],
-    fiabilite: "OFFICIEL",
+    url: "https://news.google.com/rss/search?q=ma%C3%AFs%20prix%20afrique&hl=fr&gl=FR&ceid=FR:fr",
+    source: "Google News — Maïs Afrique (fr)",
+    filieres: ["MAIS"], fiabilite: "INDICATIF", preFiltre: true,
   },
   {
-    url: "https://www.worldbank.org/en/news/rss.xml",
-    source: "World Bank — News",
-    filieres: ["MAIS", "CAJOU", "COLA"],
-    fiabilite: "OFFICIEL",
+    url: "https://news.google.com/rss/search?q=cashew%20OR%20anacarde%20price&hl=en-US&gl=US&ceid=US:en",
+    source: "Google News — Cashew/Anacarde",
+    filieres: ["CAJOU"], fiabilite: "INDICATIF", preFiltre: true,
   },
   {
-    url: "https://www.ifad.org/en/web/guest/news-rss",
-    source: "IFAD — International Fund for Agricultural Development",
-    filieres: ["MAIS", "CAJOU"],
-    fiabilite: "OFFICIEL",
+    url: "https://news.google.com/rss/search?q=noix%20de%20cajou%20c%C3%B4te%20d%27ivoire&hl=fr&gl=FR&ceid=FR:fr",
+    source: "Google News — Cajou CI (fr)",
+    filieres: ["CAJOU"], fiabilite: "INDICATIF", preFiltre: true,
   },
-  // ── Marchés & commodités ──────────────────────────────────────────────────
   {
-    url: "https://feeds.content.dowjones.io/public/rss/mw_realestate",
-    source: "MarketWatch — Commodities",
-    filieres: ["MAIS", "CAJOU"],
-    fiabilite: "INDICATIF",
+    url: "https://news.google.com/rss/search?q=%22kola%20nut%22%20OR%20%22noix%20de%20cola%22&hl=en-US&gl=US&ceid=US:en",
+    source: "Google News — Kola nut",
+    filieres: ["COLA"], fiabilite: "INDICATIF", preFiltre: true,
+  },
+  {
+    url: "https://news.google.com/rss/search?q=agriculture%20afrique%20de%20l%27ouest%20march%C3%A9&hl=fr&gl=FR&ceid=FR:fr",
+    source: "Google News — Agriculture AOF (fr)",
+    filieres: ["MAIS", "CAJOU", "COLA"], fiabilite: "INDICATIF",
+  },
+  // ── Institutions (flux encore actifs) ────────────────────────────────────
+  {
+    url: "https://www.fao.org/newsroom/rss/en/",
+    source: "FAO Newsroom",
+    filieres: ["MAIS", "CAJOU", "COLA"], fiabilite: "OFFICIEL",
+  },
+  {
+    url: "https://news.mongabay.com/feed/",
+    source: "Mongabay — Environmental News",
+    filieres: ["CAJOU", "COLA"], fiabilite: "INDICATIF",
   },
   {
     url: "https://agfax.com/feed/",
     source: "AgFax — Agriculture News",
-    filieres: ["MAIS"],
-    fiabilite: "INDICATIF",
-  },
-  {
-    url: "https://www.agriculture.com/rss.xml",
-    source: "Agriculture.com — Farm News",
-    filieres: ["MAIS"],
-    fiabilite: "INDICATIF",
-  },
-  {
-    url: "https://www.grain.org/en/article/feed",
-    source: "GRAIN — Agriculture & Biodiversity",
-    filieres: ["MAIS", "CAJOU", "COLA"],
-    fiabilite: "INDICATIF",
-  },
-  // ── Afrique ───────────────────────────────────────────────────────────────
-  {
-    url: "https://www.theafricareport.com/feed",
-    source: "The Africa Report",
-    filieres: ["MAIS", "CAJOU", "COLA"],
-    fiabilite: "INDICATIF",
-  },
-  {
-    url: "https://www.businessamlive.com/feed/",
-    source: "Business AM Live — Nigeria",
-    filieres: ["COLA", "CAJOU"],
-    fiabilite: "INDICATIF",
-  },
-  {
-    url: "https://www.graphic.com.gh/rss/news.rss",
-    source: "Daily Graphic — Ghana",
-    filieres: ["CAJOU", "COLA", "MAIS"],
-    fiabilite: "INDICATIF",
-  },
-  {
-    url: "https://www.jeuneafrique.com/feed/",
-    source: "Jeune Afrique",
-    filieres: ["MAIS", "CAJOU", "COLA"],
-    fiabilite: "INDICATIF",
-  },
-  // ── Environnement & durabilité ────────────────────────────────────────────
-  {
-    url: "https://news.mongabay.com/feed/",
-    source: "Mongabay — Environmental News",
-    filieres: ["CAJOU", "COLA"],
-    fiabilite: "INDICATIF",
-  },
-  {
-    url: "https://www.ifpri.org/rss.xml",
-    source: "IFPRI — Food Policy Research",
-    filieres: ["MAIS", "CAJOU"],
-    fiabilite: "OFFICIEL",
-  },
-  // ── Sécurité alimentaire & prix ───────────────────────────────────────────
-  {
-    url: "https://reliefweb.int/updates/rss.xml?search[primary_country]=CIV",
-    source: "ReliefWeb — Côte d'Ivoire",
-    filieres: ["CAJOU", "COLA"],
-    fiabilite: "OFFICIEL",
+    filieres: ["MAIS"], fiabilite: "INDICATIF",
   },
 ];
 
@@ -195,7 +150,9 @@ export class RssNewsConnector implements Connector {
 
           if (!titre || !lien) continue;
 
-          const filieresConcernees = articleConcerneFilieres(titre, contenu, flux.filieres);
+          const filieresConcernees = flux.preFiltre
+            ? flux.filieres
+            : articleConcerneFilieres(titre, contenu, flux.filieres);
           if (filieresConcernees.length === 0) continue;
 
           for (const filiereCode of filieresConcernees) {

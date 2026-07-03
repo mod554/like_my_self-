@@ -13,8 +13,8 @@ const SOURCE_CODE = "CONSEIL_ANACARDE_CI";
 // item 217 = Cashew nuts, with shell (anacarde RCN)
 // element 5532 = Producer Price (USD/tonne)
 // area 107 = Côte d'Ivoire, 29 = Bénin, 276 = Guinée-Bissau, 159 = Niger, 288 = Sénégal, 83 = Cameroun
-const FAOSTAT_BASE = "https://fenixservices.fao.org/faostat/api/v1/en/data/PP";
-const FAOSTAT_BASE_V2 = "https://faostat3.fao.org/faostat-gateway/go/api/en/data/PP";
+const FAOSTAT_BASE = "https://faostatservices.fao.org/api/v1/en/data/PP";
+const FAOSTAT_BASE_V2 = "https://fenixservices.fao.org/faostat/api/v1/en/data/PP";
 const AREA_CODES_CAJOU = [107, 29, 276, 288, 83];
 
 const AREA_NAMES: Record<number, string> = {

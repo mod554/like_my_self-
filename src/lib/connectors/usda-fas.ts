@@ -45,6 +45,27 @@ async function fetchImfCommodityPrices(indicator: string): Promise<Record<string
   return series;
 }
 
+// Fallback : Stooq — corn futures CBOT (ZC), CSV public sans cle ni blocage IP.
+// Prix en cents USD par boisseau -> USD/tonne : (cents/100) * 39.3683
+async function fetchStooqCorn(): Promise<{ date: string; usdParTonne: number }[]> {
+  const res = await fetch("https://stooq.com/q/d/l/?s=zc.f&i=d", {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
+  const csv = await res.text();
+  const lignes = csv.trim().split("\n").slice(1); // Date,Open,High,Low,Close,Volume
+  const sorties: { date: string; usdParTonne: number }[] = [];
+  for (const l of lignes.slice(-120)) {
+    const [date, , , , close] = l.split(",");
+    const cents = parseFloat(close);
+    if (!date || !isFinite(cents) || cents <= 0) continue;
+    sorties.push({ date, usdParTonne: Math.round((cents / 100) * 39.3683 * 100) / 100 });
+  }
+  if (sorties.length === 0) throw new Error("CSV Stooq vide");
+  return sorties;
+}
+
 export class UsdaFasConnector implements Connector {
   code = SOURCE_CODE;
   nom = "IMF — Primary Commodity Prices (Maïs mondial)";
@@ -71,16 +92,26 @@ export class UsdaFasConnector implements Connector {
 
       if (!marche) throw new Error("Aucun marché MAIS trouvé en BD");
 
-      // Prix maïs IMF (USD/tonne, annuel)
-      const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
+      // Prix mais : IMF d'abord, sinon Stooq (l'IMF bloque certaines IP cloud)
+      let entries: [string, number][] = [];
+      let sourceNote = "IMF Primary Commodity Prices — PMAIZE";
+      try {
+        const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
+        const currentYear = new Date().getFullYear();
+        entries = Object.entries(prixAnnuels).filter(
+          ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
+        );
+      } catch (imfErr) {
+        resultat.erreurs.push(`IMF indisponible: ${imfErr instanceof Error ? imfErr.message.slice(0, 60) : imfErr}`);
+        const stooq = await fetchStooqCorn();
+        sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
+        entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
+      }
 
-      const currentYear = new Date().getFullYear();
-      const entries = Object.entries(prixAnnuels).filter(
-        ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
-      );
-
-      for (const [year, valeur] of entries) {
-        const dateReleve = new Date(`${year}-07-01T00:00:00.000Z`);
+      for (const [dateStr, valeur] of entries) {
+        const dateReleve = dateStr.length === 4
+          ? new Date(`${dateStr}-07-01T00:00:00.000Z`)
+          : new Date(`${dateStr}T00:00:00.000Z`);
 
         try {
           await prisma.prixReleve.create({
@@ -94,14 +125,14 @@ export class UsdaFasConnector implements Connector {
               unite: "tonne",
               dateReleve,
               fiabilite: "OFFICIEL",
-              notes: `IMF Primary Commodity Prices — PMAIZE — ${year}`,
+              notes: `${sourceNote} — ${dateStr}`,
             },
           });
           resultat.nbImportes++;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           if (!msg.includes("Unique constraint")) {
-            resultat.erreurs.push(`Prix ${year}: ${msg}`);
+            resultat.erreurs.push(`Prix ${dateStr}: ${msg}`);
             resultat.nbErreurs++;
           }
         }
@@ -111,7 +142,7 @@ export class UsdaFasConnector implements Connector {
       if (entries.length > 0) {
         const filiere = await prisma.filiere.findUnique({ where: { code: "MAIS" } }).catch(() => null);
         if (filiere) {
-          const dernierEntry = entries.sort(([a], [b]) => b.localeCompare(a))[0];
+          const dernierEntry = [...entries].sort(([a], [b]) => b.localeCompare(a))[0];
           const [annee, prix] = dernierEntry;
           try {
             await prisma.actualite.create({

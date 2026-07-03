@@ -15,6 +15,7 @@ const SOURCE_CODE = "FAO_FPMA";
 // element 5532 = Producer Price (USD/tonne)
 // Primary: fenixservices (may be deprecated) → fallback: faostat3.fao.org
 const FAOSTAT_URLS = [
+  "https://faostatservices.fao.org/api/v1/en/data/PP",
   "https://fenixservices.fao.org/faostat/api/v1/en/data/PP",
   "https://faostat3.fao.org/faostat-gateway/go/api/en/data/PP",
 ];
