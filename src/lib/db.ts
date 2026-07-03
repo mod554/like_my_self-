@@ -10,7 +10,8 @@ function getClient(): PrismaClient {
   if (!global._prisma) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) throw new Error("DATABASE_URL non défini");
-    const adapter = new PrismaPg({ connectionString });
+    // max 3 connexions par instance serverless — evite de saturer le pooler
+    const adapter = new PrismaPg({ connectionString, max: 3 });
     global._prisma = new PrismaClient({
       adapter,
       log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],

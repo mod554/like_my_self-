@@ -136,8 +136,12 @@ jobs:
           print(f"DATABASE_URL detectee: hote={host.group(1) if host else '?'} port={port.group(1) if port else '?'}")
 
           if os.environ.get("PROBED_DATABASE_URL") or os.environ.get("INPUT_DATABASE_URL"):
-              # URL fraiche validee par la sonde — ne jamais melanger avec le vieux fichier env
+              # URL fraiche validee par la sonde. Runtime -> transaction pooler (6543,
+              # pool eleve). Migrations/DDL -> session mode (5432). Jamais l'inverse :
+              # le session mode sature immediatement en serverless (EMAXCONNSESSION).
               direct = url.replace(":6543/", ":5432/") if ":6543/" in url else url
+              if "pooler.supabase.com" in url:
+                  url = url.replace(":5432/", ":6543/")
           else:
               direct_raw = env_vars.get("POSTGRES_URL_NON_POOLING") or env_vars.get("DIRECT_URL") or ""
               dm = re.search(r"postgres(?:ql)?://[^'\"\s]+", direct_raw)
