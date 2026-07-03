@@ -17,65 +17,18 @@ jobs:
         run: npm install -g vercel@latest
 
       # `vercel pull` crashes ("Cannot read properties of undefined") when it
-      # has to list teams to link the project. Pre-linking via the REST API
-      # writes .vercel/project.json so the CLI skips that code path entirely.
-      - name: Link Vercel project via REST API
-        id: link
+      # enumerates teams to link the project. Passing an explicit --scope to
+      # `vercel link` skips that code path entirely and writes .vercel/project.json.
+      - name: Link Vercel project
         run: |
-          python3 - <<'PYEOF'
-          import json, os, urllib.request
-
-          token = os.environ["VERCEL_TOKEN"]
-          TEAM_SLUG = "marius-projects-92b9e651"
-
-          def api(path):
-              req = urllib.request.Request(
-                  "https://api.vercel.com" + path,
-                  headers={"Authorization": f"Bearer {token}"},
-              )
-              try:
-                  with urllib.request.urlopen(req) as r:
-                      return json.load(r)
-              except Exception as e:
-                  print(f"  {path} -> {e}")
-                  return None
-
-          # Scoped tokens 403 without an explicit team scope. Try the known
-          # team slug first, then teams listed by the API, then personal scope.
-          scopes = [f"slug={TEAM_SLUG}"]
-          teams = api(f"/v2/teams?slug={TEAM_SLUG}") or api("/v2/teams") or {}
-          for t in teams.get("teams", []):
-              scopes.append(f"teamId={t['id']}")
-          scopes.append(None)
-
-          project = None
-          for scope in scopes:
-              q = f"?{scope}" if scope else ""
-              d = api(f"/v9/projects/like-my-self{q}")
-              if d and "id" in d:
-                  project = d
-                  break
-              sep = "&" if q else "?"
-              lst = api(f"/v9/projects{q}{sep}limit=100")
-              for pr in (lst or {}).get("projects", []):
-                  if "like" in pr["name"].replace("_", "-").replace("--", "-"):
-                      project = pr
-                      break
-              if project:
-                  break
-
-          if not project:
-              raise SystemExit("Projet Vercel introuvable avec ce token")
-
-          org_id = project.get("accountId")
-          os.makedirs(".vercel", exist_ok=True)
-          with open(".vercel/project.json", "w") as f:
-              json.dump({"projectId": project["id"], "orgId": org_id}, f)
-          with open(os.environ["GITHUB_ENV"], "a") as f:
-              f.write(f"VERCEL_PROJECT_ID={project['id']}\n")
-              f.write(f"VERCEL_ORG_ID={org_id}\n")
-          print(f"Linked {project['name']} ({project['id']}) org={org_id}")
-          PYEOF
+          vercel whoami --token="$VERCEL_TOKEN" || true
+          vercel link --yes --scope marius-projects-92b9e651 --project like-my-self --token="$VERCEL_TOKEN" \
+            || vercel link --yes --project like-my-self --token="$VERCEL_TOKEN"
+          cat .vercel/project.json
+          PROJECT_ID=$(python3 -c "import json; print(json.load(open('.vercel/project.json'))['projectId'])")
+          ORG_ID=$(python3 -c "import json; print(json.load(open('.vercel/project.json'))['orgId'])")
+          echo "VERCEL_PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
+          echo "VERCEL_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
