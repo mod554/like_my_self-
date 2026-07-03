@@ -19,16 +19,18 @@ jobs:
       # `vercel pull` crashes ("Cannot read properties of undefined") when it
       # enumerates teams to link the project. Passing an explicit --scope to
       # `vercel link` skips that code path entirely and writes .vercel/project.json.
+      - name: Verify Vercel token
+        run: |
+          if ! vercel whoami --token="$VERCEL_TOKEN" 2>&1; then
+            echo "::error::VERCEL_TOKEN invalide ou expiré. Créez un nouveau token sur https://vercel.com/account/settings/tokens (scope: marius-projects-92b9e651, expiration: No Expiration) puis mettez à jour le secret VERCEL_TOKEN dans GitHub → Settings → Secrets → Actions."
+            exit 1
+          fi
+
       - name: Link Vercel project
         run: |
-          vercel whoami --token="$VERCEL_TOKEN" || true
           vercel link --yes --scope marius-projects-92b9e651 --project like-my-self --token="$VERCEL_TOKEN" \
             || vercel link --yes --project like-my-self --token="$VERCEL_TOKEN"
           cat .vercel/project.json
-          PROJECT_ID=$(python3 -c "import json; print(json.load(open('.vercel/project.json'))['projectId'])")
-          ORG_ID=$(python3 -c "import json; print(json.load(open('.vercel/project.json'))['orgId'])")
-          echo "VERCEL_PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
-          echo "VERCEL_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
