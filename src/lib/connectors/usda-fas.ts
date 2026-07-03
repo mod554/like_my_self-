@@ -50,7 +50,7 @@ async function fetchImfCommodityPrices(indicator: string): Promise<Record<string
 async function fetchFredMaize(): Promise<{ date: string; usdParTonne: number }[]> {
   const res = await fetch("https://fred.stlouisfed.org/graph/fredgraph.csv?id=PMAIZMTUSDM", {
     headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(45_000),
   });
   if (!res.ok) throw new Error(`FRED HTTP ${res.status}`);
   const csv = await res.text();

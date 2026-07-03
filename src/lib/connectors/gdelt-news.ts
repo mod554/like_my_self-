@@ -71,23 +71,30 @@ export class GdeltNewsConnector implements Connector {
       const filieres = await prisma.filiere.findMany({ where: { code: { in: ["MAIS", "CAJOU", "COLA"] } } });
       const filiereMap = Object.fromEntries(filieres.map((f) => [f.code, f.id]));
 
-      for (const { filiereCode, query } of REQUETES) {
-        const filiereId = filiereMap[filiereCode];
+      // Les 3 requetes en parallele — en sequentiel, 3 x 25s depasse le budget 60s
+      const reponses = await Promise.all(
+        REQUETES.map(async ({ filiereCode, query }) => {
+          const url =
+            `${API_BASE}?query=${encodeURIComponent(query)}` +
+            `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
+          try {
+            return { filiereCode, data: await fetchJson<GdeltResponse>(url, { timeoutMs: 18_000 }) };
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return { filiereCode, erreur: msg.slice(0, 80) };
+          }
+        })
+      );
+
+      for (const rep of reponses) {
+        const filiereId = filiereMap[rep.filiereCode];
         if (!filiereId) continue;
-
-        const url =
-          `${API_BASE}?query=${encodeURIComponent(query)}` +
-          `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
-
-        let data: GdeltResponse;
-        try {
-          data = await fetchJson<GdeltResponse>(url, { timeoutMs: 25_000 });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          resultat.erreurs.push(`GDELT ${filiereCode}: ${msg.slice(0, 80)}`);
+        if ("erreur" in rep && rep.erreur) {
+          resultat.erreurs.push(`GDELT ${rep.filiereCode}: ${rep.erreur}`);
           resultat.nbErreurs++;
           continue;
         }
+        const data = (rep as { data: GdeltResponse }).data;
 
         // Insertion groupee — un create par article depasse les 60s serverless
         const dejaVus = new Set(
@@ -110,7 +117,7 @@ export class GdeltNewsConnector implements Connector {
             const res = await prisma.actualite.createMany({ data: aInserer, skipDuplicates: true });
             resultat.nbImportes += res.count;
           } catch (err: unknown) {
-            resultat.erreurs.push(`Insert ${filiereCode}: ${err instanceof Error ? err.message.slice(0, 60) : err}`);
+            resultat.erreurs.push(`Insert ${rep.filiereCode}: ${err instanceof Error ? err.message.slice(0, 60) : err}`);
             resultat.nbErreurs++;
           }
         }
