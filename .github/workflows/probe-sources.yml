@@ -1,0 +1,63 @@
+name: Probe external data sources
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe FAOSTAT and commodity sources
+        run: |
+          python3 - <<'PYEOF'
+          import json, urllib.request
+
+          def get(url, timeout=30):
+              req = urllib.request.Request(url, headers={
+                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+                  "Accept": "application/json",
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as r:
+                      body = r.read()
+                      return r.status, body[:400].decode("utf8", "replace"), body
+              except Exception as e:
+                  return None, str(e)[:150], b""
+
+          hosts = [
+              "https://faostatservices.fao.org/api/v1/en/data/PP",
+              "https://fenixservices.fao.org/faostat/api/v1/en/data/PP",
+          ]
+          # item 217=cashew in shell, 224=kola nuts, 56=maize
+          # element 5532=Producer Price USD/tonne, 5530=Producer Price LCU/tonne
+          combos = [
+              ("cashew-CI", "area=107&item=217&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
+              ("kola-NGA-CIV-GHA", "area=159,107,81&item=224&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
+              ("cashew-CI-LCU", "area=107&item=217&element=5530&year=2020,2021,2022,2023"),
+          ]
+          suffixes = ["&output_type=objects", "&output_type=json&type=datasets", ""]
+
+          for host in hosts:
+              for name, q in combos:
+                  for suf in suffixes:
+                      url = f"{host}?{q}{suf}"
+                      status, preview, body = get(url)
+                      n = "?"
+                      try:
+                          d = json.loads(body)
+                          n = len(d.get("data", []))
+                      except Exception:
+                          pass
+                      print(f"[{name}] {status} n={n} {host.split('/')[2]} suf={suf or '(none)'}")
+                      if isinstance(n, int) and n > 0:
+                          print("   EXEMPLE:", json.dumps(json.loads(body)["data"][0])[:300])
+
+          # Alternatives cajou/cola
+          extra = [
+              ("WB-cashew?", "https://api.worldbank.org/v2/en/country/all/indicator/PCASHEW?format=json&mrv=12&source=21"),
+              ("UN-Comtrade-preview", "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=384&period=2023&cmdCode=0801&flowCode=X"),
+          ]
+          for name, url in extra:
+              status, preview, _ = get(url)
+              print(f"[{name}] {status} :: {preview[:200]}")
+          PYEOF
