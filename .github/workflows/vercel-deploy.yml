@@ -22,15 +22,58 @@ jobs:
       - name: Link Vercel project via REST API
         id: link
         run: |
-          INFO=$(curl -sf "https://api.vercel.com/v9/projects/like-my-self" \
-            -H "Authorization: Bearer $VERCEL_TOKEN")
-          PROJECT_ID=$(echo "$INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-          ORG_ID=$(echo "$INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['accountId'])")
-          mkdir -p .vercel
-          printf '{"projectId":"%s","orgId":"%s"}\n' "$PROJECT_ID" "$ORG_ID" > .vercel/project.json
-          echo "VERCEL_PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
-          echo "VERCEL_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
-          echo "Linked project $PROJECT_ID (org $ORG_ID)"
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+
+          token = os.environ["VERCEL_TOKEN"]
+
+          def api(path):
+              req = urllib.request.Request(
+                  "https://api.vercel.com" + path,
+                  headers={"Authorization": f"Bearer {token}"},
+              )
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.load(r)
+              except Exception as e:
+                  print(f"  {path} -> {e}")
+                  return None
+
+          # Collect candidate team scopes: personal (no teamId) + every team
+          scopes = [None]
+          teams = api("/v2/teams") or {}
+          for t in teams.get("teams", []):
+              scopes.append(t["id"])
+
+          project = None
+          team_used = None
+          for scope in scopes:
+              suffix = f"?teamId={scope}" if scope else ""
+              d = api(f"/v9/projects/like-my-self{suffix}")
+              if d and "id" in d:
+                  project, team_used = d, scope
+                  break
+              # fallback: list projects and match by name
+              lst = api(f"/v9/projects{suffix or '?'}&limit=100" if suffix else "/v9/projects?limit=100")
+              for pr in (lst or {}).get("projects", []):
+                  if pr["name"] in ("like-my-self", "like_my_self-", "like-my-self-"):
+                      project, team_used = pr, scope
+                      break
+              if project:
+                  break
+
+          if not project:
+              raise SystemExit("Projet Vercel introuvable avec ce token")
+
+          org_id = team_used or project.get("accountId")
+          os.makedirs(".vercel", exist_ok=True)
+          with open(".vercel/project.json", "w") as f:
+              json.dump({"projectId": project["id"], "orgId": org_id}, f)
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"VERCEL_PROJECT_ID={project['id']}\n")
+              f.write(f"VERCEL_ORG_ID={org_id}\n")
+          print(f"Linked {project['name']} ({project['id']}) org={org_id}")
+          PYEOF
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
