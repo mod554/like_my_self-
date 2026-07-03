@@ -111,6 +111,13 @@ const DDL_STATEMENTS = [
     "notes" TEXT,
     CONSTRAINT "PrixReleve_pkey" PRIMARY KEY ("id")
   )`,
+  // Purge des doublons historiques (inserés avant la contrainte) — sinon la
+  // création de l'index unique échoue silencieusement et les doublons persistent
+  `DELETE FROM "PrixReleve" a USING "PrixReleve" b
+    WHERE a.id > b.id
+      AND a."produitId" = b."produitId" AND a."marcheId" = b."marcheId"
+      AND a."sourceId" = b."sourceId" AND a."dateReleve" = b."dateReleve"
+      AND a."typePrix" = b."typePrix"`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "PrixReleve_produitId_marcheId_sourceId_dateReleve_typePrix_key" ON "PrixReleve"("produitId","marcheId","sourceId","dateReleve","typePrix")`,
   `CREATE INDEX IF NOT EXISTS "PrixReleve_produitId_marcheId_dateReleve_idx" ON "PrixReleve"("produitId","marcheId","dateReleve")`,
   `CREATE INDEX IF NOT EXISTS "PrixReleve_dateReleve_idx" ON "PrixReleve"("dateReleve")`,
