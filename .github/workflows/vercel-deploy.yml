@@ -8,76 +8,78 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
+      # `vercel pull` crashes ("Cannot read properties of undefined") when it
+      # has to list teams to link the project. Pre-linking via the REST API
+      # writes .vercel/project.json so the CLI skips that code path entirely.
+      - name: Link Vercel project via REST API
+        id: link
+        run: |
+          INFO=$(curl -sf "https://api.vercel.com/v9/projects/like-my-self" \
+            -H "Authorization: Bearer $VERCEL_TOKEN")
+          PROJECT_ID=$(echo "$INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          ORG_ID=$(echo "$INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['accountId'])")
+          mkdir -p .vercel
+          printf '{"projectId":"%s","orgId":"%s"}\n' "$PROJECT_ID" "$ORG_ID" > .vercel/project.json
+          echo "VERCEL_PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
+          echo "VERCEL_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
+          echo "Linked project $PROJECT_ID (org $ORG_ID)"
+
       - name: Pull Vercel environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build project
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Push DB schema
-        run: |
-          # Extract DATABASE_URL from Vercel env file (handles quoted values)
-          DB_URL=$(python3 -c "
-          import re, sys
-          try:
-            with open('.vercel/.env.production.local') as f:
-              for line in f:
-                line = line.strip()
-                m = re.match(r'^DATABASE_URL=[\"\\x27]?(.+?)[\"\\x27]?\$', line)
-                if m:
-                  print(m.group(1))
-                  sys.exit(0)
-          except: pass
-          ")
-          if [ -n "\$DB_URL" ]; then
-            echo "DATABASE_URL found, pushing schema..."
-            DATABASE_URL="\$DB_URL" ./node_modules/.bin/prisma db push --accept-data-loss \
-              && echo "Schema pushed successfully" \
-              || echo "Schema push failed (non-blocking)"
-          else
-            echo "DATABASE_URL not found in env file — skipping schema push"
-          fi
+        run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy to Vercel
         id: deploy
         run: |
-          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
-          echo "url=$url" >> $GITHUB_OUTPUT
+          url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url"
 
+      # /api/init is self-contained: it runs the DDL migration (via DIRECT_URL
+      # or DATABASE_URL) then seeds reference data. No prisma db push needed.
       - name: Initialize database
         run: |
-          URL="${{ steps.deploy.outputs.url }}"
-          if [ -z "$URL" ]; then
-            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
-          fi
+          URL="https://like-my-self.vercel.app"
           echo "Calling /api/init on $URL"
-          curl -sf -X POST "$URL/api/init" -H "Content-Type: application/json" \
-            && echo "Init OK" || echo "Init call failed (may need ADMIN_SECRET)"
+          sleep 10
+          RESP=$(curl -s -X POST "$URL/api/init" -H "Content-Type: application/json")
+          echo "$RESP" | python3 -c "
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+              print('Init:', d.get('summary', d))
+              for e in d.get('errors', [])[:5]:
+                  print('  ERREUR:', e)
+          except Exception:
+              print('Réponse init illisible:', sys.stdin.read()[:200])
+          " || true
 
       - name: Trigger all connectors
         run: |
-          URL="${{ steps.deploy.outputs.url }}"
-          if [ -z "$URL" ]; then
-            URL="https://like-my-self-6825aeud9-marius-projects-92b9e651.vercel.app"
-          fi
+          URL="https://like-my-self.vercel.app"
           echo "Calling /api/connectors on $URL"
-          curl -s -X POST "$URL/api/connectors" \
+          curl -s --max-time 120 -X POST "$URL/api/connectors" \
             -H "Content-Type: application/json" -d '{"tous":true}' \
             | python3 -c "
-          import json,sys
+          import json, sys
           try:
-            d=json.load(sys.stdin)
-            rs=d.get('resultats',[])
-            ok=sum(1 for r in rs if not r.get('erreur'))
-            print(f'{ok}/{len(rs)} connectors OK')
-            for r in rs:
-              if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"]}')
-              else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\",0)} importés')
-          except: print('Could not parse response')
-          " || echo "Connectors call failed"
+              d = json.load(sys.stdin)
+              rs = d.get('resultats', [])
+              ok = sum(1 for r in rs if not r.get('erreur'))
+              print(f'{ok}/{len(rs)} connecteurs OK')
+              for r in rs:
+                  if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"][:80]}')
+                  else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\", 0)} importés')
+          except Exception:
+              print('Réponse connecteurs illisible')
+          " || echo "Connectors call failed (non-blocking)"

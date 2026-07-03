@@ -8,13 +8,20 @@ import { prisma } from "@/lib/db";
 import { CONNECTEURS, getConnecteur } from "@/lib/connectors";
 
 export async function GET() {
-  const sources = await prisma.source.findMany({
-    orderBy: { code: "asc" },
-    include: {
-      _count: { select: { prixReleves: true, logs: true } },
-      logs: { orderBy: { debut: "desc" }, take: 1 },
-    },
-  });
+  let sources: Awaited<ReturnType<typeof prisma.source.findMany<{
+    include: { _count: { select: { prixReleves: true; logs: true } }; logs: { orderBy: { debut: "desc" }; take: 1 } };
+  }>>> = [];
+  try {
+    sources = await prisma.source.findMany({
+      orderBy: { code: "asc" },
+      include: {
+        _count: { select: { prixReleves: true, logs: true } },
+        logs: { orderBy: { debut: "desc" }, take: 1 },
+      },
+    });
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : String(e), connecteurs: [] }, { status: 503 });
+  }
 
   const connecteurs = CONNECTEURS.map((c) => {
     const source = sources.find((s) => s.code === c.code);

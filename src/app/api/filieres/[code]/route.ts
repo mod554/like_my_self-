@@ -8,25 +8,30 @@ export async function GET(
 ) {
   const { code } = await params;
 
-  const filiere = await prisma.filiere.findUnique({
-    where: { code: code.toUpperCase() },
-    include: {
-      produits: {
-        orderBy: [{ estDerive: "asc" }, { code: "asc" }],
-        include: {
-          _count: { select: { prixReleves: true, structuresCout: true } },
+  try {
+
+    const filiere = await prisma.filiere.findUnique({
+      where: { code: code.toUpperCase() },
+      include: {
+        produits: {
+          orderBy: [{ estDerive: "asc" }, { code: "asc" }],
+          include: {
+            _count: { select: { prixReleves: true, structuresCout: true } },
+          },
+        },
+        actualites: {
+          orderBy: { datePublication: "desc" },
+          take: 5,
         },
       },
-      actualites: {
-        orderBy: { datePublication: "desc" },
-        take: 5,
-      },
-    },
-  });
+    });
 
-  if (!filiere) {
-    return Response.json({ error: "Filière introuvable" }, { status: 404 });
+    if (!filiere) {
+      return Response.json({ error: "Filière introuvable" }, { status: 404 });
+    }
+
+    return Response.json(filiere);
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 503 });
   }
-
-  return Response.json(filiere);
 }
