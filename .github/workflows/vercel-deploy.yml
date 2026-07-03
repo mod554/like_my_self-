@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      database_url:
+        description: "URL Postgres a upserter dans Vercel (optionnel)"
+        required: false
+        type: string
 
 jobs:
   deploy:
@@ -41,6 +46,8 @@ jobs:
       # copied from Supabase), upserts DATABASE_URL + DIRECT_URL via the API,
       # and fails with a clear message if nothing usable exists.
       - name: Check and repair database env vars
+        env:
+          INPUT_DATABASE_URL: ${{ inputs.database_url }}
         run: |
           python3 - <<'PYEOF'
           import json, os, re, sys, urllib.request
@@ -60,20 +67,23 @@ jobs:
               pass
           print("Variables presentes:", ", ".join(sorted(env_vars)) or "(aucune)")
 
-          # Priorite: DATABASE_URL, puis variables de l'integration Supabase/Neon
-          raw = ""
-          for cand in ("DATABASE_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL",
-                       "POSTGRES_URL_NON_POOLING", "SUPABASE_DB_URL", "DIRECT_URL"):
-              if env_vars.get(cand):
-                  raw = env_vars[cand]
-                  print(f"Source retenue: {cand}")
-                  break
+          # Priorite: input manuel, puis DATABASE_URL, puis integration Supabase/Neon
+          raw = os.environ.get("INPUT_DATABASE_URL", "").strip()
+          if raw:
+              print("Source retenue: input workflow_dispatch")
+          else:
+              for cand in ("DATABASE_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL",
+                           "POSTGRES_URL_NON_POOLING", "SUPABASE_DB_URL", "DIRECT_URL"):
+                  if env_vars.get(cand):
+                      raw = env_vars[cand]
+                      print(f"Source retenue: {cand}")
+                      break
 
           m = re.search(r"postgres(?:ql)?://[^'\"\s]+", raw)
           url = m.group(0) if m else ""
           if not url:
-              print("::error::DATABASE_URL absent ou invalide dans l'environnement Vercel production. Ajoutez-la: Vercel > like-my-self > Settings > Environment Variables > DATABASE_URL = URL Postgres Supabase (postgresql://...)")
-              sys.exit(1)
+              print("::warning::DATABASE_URL absente dans Vercel — deploiement sans DB. Relancer le workflow avec l'input database_url, ou l'ajouter dans Vercel Settings.")
+              sys.exit(0)
 
           host = re.search(r"@([^:/]+)", url)
           port = re.search(r":(\d+)/", url)
