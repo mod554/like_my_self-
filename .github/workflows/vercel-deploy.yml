@@ -45,6 +45,52 @@ jobs:
       # pulled env file, sanitizes a malformed value (e.g. `psql 'postgres://…'`
       # copied from Supabase), upserts DATABASE_URL + DIRECT_URL via the API,
       # and fails with a clear message if nothing usable exists.
+      # When a database_url input is given, probe connection variants from the
+      # runner (host clusters, ports, user formats) and keep the working one.
+      - name: Probe database connectivity
+        if: ${{ inputs.database_url != '' }}
+        env:
+          INPUT_DATABASE_URL: ${{ inputs.database_url }}
+        run: |
+          npm install --no-save pg@8 > /dev/null 2>&1
+          node - <<'NODEEOF'
+          const { Client } = require("pg");
+          const raw = process.env.INPUT_DATABASE_URL;
+          const m = raw.match(/^postgres(?:ql)?:\/\/([^:]+):(.+)@([^:\/]+):(\d+)\/(.+)$/);
+          if (!m) { console.log("URL input illisible"); process.exit(1); }
+          const [, user, pass, host, port, db] = m;
+          const ref = (user.split(".")[1]) || host.split(".")[0];
+          const hosts = [host, "aws-1-eu-west-1.pooler.supabase.com", "aws-0-eu-west-1.pooler.supabase.com"];
+          const users = [user, "postgres." + ref, "postgres"];
+          const ports = [Number(port), 6543, 5432];
+          const seen = new Set();
+          const candidates = [];
+          for (const h of hosts) for (const u of users) for (const p of ports) {
+            const key = h + "|" + u + "|" + p;
+            if (!seen.has(key)) { seen.add(key); candidates.push({ h, u, p }); }
+          }
+          (async () => {
+            for (const { h, u, p } of candidates) {
+              const c = new Client({ host: h, port: p, user: u, password: decodeURIComponent(pass),
+                database: db.split("?")[0], ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 8000 });
+              try {
+                await c.connect();
+                await c.query("SELECT 1");
+                await c.end();
+                const url = `postgresql://${u}:${encodeURIComponent(decodeURIComponent(pass))}@${h}:${p}/postgres`;
+                console.log(`SUCCES: hote=${h} port=${p} user=${u}`);
+                require("fs").appendFileSync(process.env.GITHUB_ENV, `PROBED_DATABASE_URL=${url}\n`);
+                process.exit(0);
+              } catch (e) {
+                console.log(`echec ${h}:${p} ${u} — ${String(e.message).slice(0, 70)}`);
+                try { await c.end(); } catch {}
+              }
+            }
+            console.log("::error::Aucune combinaison ne fonctionne — le mot de passe est incorrect ou le projet Supabase est en pause. Verifier sur https://supabase.com/dashboard/project/" + ref);
+            process.exit(1);
+          })();
+          NODEEOF
+
       - name: Check and repair database env vars
         env:
           INPUT_DATABASE_URL: ${{ inputs.database_url }}
@@ -68,9 +114,9 @@ jobs:
           print("Variables presentes:", ", ".join(sorted(env_vars)) or "(aucune)")
 
           # Priorite: input manuel, puis DATABASE_URL, puis integration Supabase/Neon
-          raw = os.environ.get("INPUT_DATABASE_URL", "").strip()
+          raw = os.environ.get("PROBED_DATABASE_URL", "").strip() or os.environ.get("INPUT_DATABASE_URL", "").strip()
           if raw:
-              print("Source retenue: input workflow_dispatch")
+              print("Source retenue: URL sondee/input workflow_dispatch")
           else:
               for cand in ("DATABASE_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL",
                            "POSTGRES_URL_NON_POOLING", "SUPABASE_DB_URL", "DIRECT_URL"):
