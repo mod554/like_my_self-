@@ -57,6 +57,7 @@ export default async function ProduitPage({
           select: { id: true, code: true, nom: true, uniteRef: true, descriptionQualite: true },
         },
         prixReleves: {
+          where: { fiabilite: { not: "EXEMPLE" } },
           orderBy: { dateReleve: "desc" },
           take: 20,
           include: {

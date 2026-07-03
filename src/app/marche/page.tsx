@@ -16,6 +16,7 @@ async function getMarketData() {
         select: {
           id: true, code: true, nom: true, uniteRef: true,
           prixReleves: {
+            where: { fiabilite: { not: "EXEMPLE" } },
             orderBy: { dateReleve: "desc" },
             take: 60,
             select: {

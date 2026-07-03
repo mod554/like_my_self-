@@ -14,6 +14,7 @@ export async function GET() {
       uniteRef: true,
       filiere: { select: { code: true } },
       prixReleves: {
+        where: { fiabilite: { not: "EXEMPLE" } },
         orderBy: { dateReleve: "desc" },
         take: 2,
         select: {

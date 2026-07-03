@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
+import { calcIndicateurs, type PointPrix } from "@/lib/analytics";
 import Link from "next/link";
 
 // XOF is legally pegged to EUR at 655.957 — used as fallback if DB has no rate
@@ -91,8 +92,9 @@ async function getAnalyseData() {
         orderBy: { code: "asc" },
         include: {
           prixReleves: {
+            where: { fiabilite: { not: "EXEMPLE" } },
             orderBy: { dateReleve: "desc" },
-            take: 24,
+            take: 120,
             select: {
               valeur: true,
               devise: true,
@@ -214,12 +216,21 @@ export default async function AnalysePage() {
   const FILIERE_ICON: Record<string, string>  = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰" };
 
   const analyses = filieres.flatMap((f) =>
-    f.produits.map((p) => ({
-      ...p,
-      filiere: f,
-      accent: FILIERE_COLOR[f.code] ?? "var(--ag-lime)",
-      analyse: calcAnalyse(p.prixReleves, p.structuresCout, xofPerUsd, eurPerUsd),
-    }))
+    f.produits.map((p) => {
+      const serie: PointPrix[] = p.prixReleves
+        .map((r) => ({
+          date: new Date(r.dateReleve),
+          valeurUsd: normPrixUsdTonne(Number(r.valeur), r.devise, r.unite, xofPerUsd, eurPerUsd) ?? NaN,
+        }))
+        .filter((pt) => isFinite(pt.valeurUsd));
+      return {
+        ...p,
+        filiere: f,
+        accent: FILIERE_COLOR[f.code] ?? "var(--ag-lime)",
+        analyse: calcAnalyse(p.prixReleves, p.structuresCout, xofPerUsd, eurPerUsd),
+        indicateurs: calcIndicateurs(serie),
+      };
+    })
   );
 
   const nbOfficiel = filieres.flatMap((f) => f.produits).flatMap((p) =>
@@ -453,6 +464,90 @@ export default async function AnalysePage() {
               </div>
             );
           })}
+        </div>
+
+        {/* ── Aide à la décision d'investissement — indicateurs quantitatifs ── */}
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden", marginBottom: "32px" }}>
+          <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+            <p className="ag-section-label">Aide à la décision d&apos;investissement — indicateurs quantitatifs</p>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, fontFamily: "monospace" }}>
+              Calculés sur l&apos;historique réel (USD/tonne) : tendance 90j, volatilité, position 52 semaines, drawdown, score composite
+            </p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "0" }}>
+            {analyses.filter((a) => a.indicateurs).map((a) => {
+              const ind = a.indicateurs!;
+              const sigStyle = ind.signal === "HAUSSIER"
+                ? { color: "#4A9B6F", bg: "rgba(74,155,111,0.12)" }
+                : ind.signal === "BAISSIER"
+                ? { color: "#E05252", bg: "rgba(224,82,82,0.10)" }
+                : { color: "#B89B3A", bg: "rgba(184,155,58,0.10)" };
+              const scoreColor = ind.scoreOpportunite >= 65 ? "#4A9B6F" : ind.scoreOpportunite >= 45 ? "#B89B3A" : "#E05252";
+              return (
+                <div key={a.id} style={{ padding: "20px", borderRight: "1px solid var(--border-subtle)", borderBottom: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: 18 }}>{FILIERE_ICON[a.filiere.code]}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{a.nom}</div>
+                        <div style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)" }}>{ind.nbPoints} relevés analysés</div>
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 9, fontFamily: "monospace", fontWeight: 700, letterSpacing: "0.06em",
+                      padding: "3px 9px", borderRadius: "20px",
+                      color: sigStyle.color, background: sigStyle.bg, border: `1px solid ${sigStyle.color}33`,
+                    }}>
+                      {ind.signal}
+                    </span>
+                  </div>
+
+                  {/* Score gauge */}
+                  <div style={{ marginBottom: "14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                      <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", letterSpacing: "0.08em" }}>SCORE OPPORTUNITÉ ACHAT</span>
+                      <span style={{ fontSize: 13, fontFamily: "monospace", fontWeight: 700, color: scoreColor }}>{ind.scoreOpportunite}/100</span>
+                    </div>
+                    <div style={{ height: 6, background: "var(--bg-elevated)", borderRadius: "3px", overflow: "hidden" }}>
+                      <div style={{ width: `${ind.scoreOpportunite}%`, height: "100%", background: scoreColor, borderRadius: "3px" }} />
+                    </div>
+                  </div>
+
+                  {/* Metrics grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                    {[
+                      { l: "Dernier prix", v: `${ind.dernierPrix.toFixed(0)} $/T` },
+                      { l: "Tendance 90j", v: ind.tendancePctMois !== null ? `${ind.tendancePctMois >= 0 ? "+" : ""}${ind.tendancePctMois.toFixed(1)}%/mois` : "—" },
+                      { l: "Volatilité", v: ind.volatilitePct !== null ? `${ind.volatilitePct.toFixed(1)}%` : "—" },
+                      { l: "MM30", v: ind.mm30 !== null ? `${ind.mm30.toFixed(0)} $/T` : ind.mm7 !== null ? `MM7 ${ind.mm7.toFixed(0)} $/T` : "—" },
+                      { l: "Fourchette 52 sem.", v: `${ind.min52.toFixed(0)}–${ind.max52.toFixed(0)} $` },
+                      { l: "Position / fourchette", v: `${ind.positionPct.toFixed(0)}%` },
+                      { l: "Drawdown max", v: ind.drawdownMaxPct !== null ? `−${ind.drawdownMaxPct.toFixed(1)}%` : "—" },
+                    ].map(({ l, v }) => (
+                      <div key={l} style={{ background: "var(--bg-elevated)", borderRadius: "6px", padding: "7px 10px" }}>
+                        <div style={{ fontSize: 8, fontFamily: "monospace", color: "var(--text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{l}</div>
+                        <div style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color: "var(--text-primary)", marginTop: "2px" }}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.55, margin: 0 }}>
+                    {ind.recommandation}
+                  </p>
+                </div>
+              );
+            })}
+            {analyses.every((a) => !a.indicateurs) && (
+              <div style={{ padding: "24px", fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>
+                Pas encore assez d&apos;historique de prix — lancez la collecte sur /collecte.
+              </div>
+            )}
+          </div>
+          <div style={{ padding: "10px 20px", borderTop: "1px solid var(--border-subtle)" }}>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace", margin: 0 }}>
+              ⚠ Indicateurs statistiques fournis à titre d&apos;aide à la décision — ne constituent pas un conseil en investissement. Croiser avec les coûts logistiques et le risque de change XOF/USD.
+            </p>
+          </div>
         </div>
 
         {/* ── Comparateur filières ── */}

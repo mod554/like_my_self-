@@ -56,7 +56,10 @@ export async function GET(req: NextRequest) {
   const produitCode = searchParams.get("produit");
   const limit = parseInt(searchParams.get("limit") ?? "50");
 
-  const where = produitCode ? { produit: { code: produitCode } } : {};
+  const where = {
+    fiabilite: { not: "EXEMPLE" },
+    ...(produitCode ? { produit: { code: produitCode } } : {}),
+  };
 
   try {
     const releves = await prisma.prixReleve.findMany({

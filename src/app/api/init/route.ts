@@ -112,6 +112,13 @@ export async function POST(_req: NextRequest) {
 
   try {
 
+  // 0. Purge des données d'exemple — la production n'affiche que du réel
+  try {
+    const purge = await prisma.prixReleve.deleteMany({ where: { fiabilite: "EXEMPLE" } });
+    if (purge.count > 0) created.push(`Purge: ${purge.count} prix EXEMPLE supprimés`);
+    await prisma.structureCout.deleteMany({ where: { fiabilite: "EXEMPLE" } }).catch(() => null);
+  } catch { /* table absente au premier run */ }
+
   // 1. Filières
   await upsertByCode("Filière", FILIERES_INIT,
     (code) => prisma.filiere.findUnique({ where: { code } }),

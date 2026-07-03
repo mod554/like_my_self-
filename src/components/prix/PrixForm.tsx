@@ -83,7 +83,7 @@ export default function PrixForm({ produits, marches, sources }: Props) {
   const DEVISES = ["XOF", "USD", "EUR", "GHS", "NGN"];
   const UNITES = ["tonne", "kg", "sac_50kg", "litre", "unité"];
   const TYPES = ["SPOT", "BORD_CHAMP", "FOB", "CIF", "GROS", "DETAIL", "FUTURE"];
-  const FIABILITES = ["OFFICIEL", "INDICATIF", "ESTIME", "EXEMPLE"];
+  const FIABILITES = ["OFFICIEL", "INDICATIF", "ESTIME"]; // EXEMPLE retiré — production réelle uniquement
 
   return (
     <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>

@@ -17,6 +17,7 @@ export async function GET(
         parent: { select: { code: true, nom: true } },
         derives: { orderBy: { code: "asc" }, select: { id: true, code: true, nom: true, uniteRef: true, descriptionQualite: true } },
         prixReleves: {
+          where: { fiabilite: { not: "EXEMPLE" } },
           orderBy: { dateReleve: "desc" },
           take: 20,
           include: {
