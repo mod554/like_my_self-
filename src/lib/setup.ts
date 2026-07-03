@@ -251,6 +251,7 @@ const SOURCES = [
   { code: "INDEXMUNDI",          nom: "IndexMundi — Commodity Prices",                  type: "HTML", fiabiliteDefaut: "INDICATIF", frequence: "HEBDO",     description: "Prix historiques commodités — maïs, cajou" },
   { code: "RSS_NEWS_AGRI",       nom: "Agrégateur RSS — Actualités agricoles",          type: "RSS",  fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "15 flux RSS — FAO, USDA, World Bank, Africa Report…" },
   { code: "GDELT_NEWS",          nom: "GDELT — Actualités mondiales agricoles",         type: "API",  fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "GDELT DOC 2.0 — actualités mondiales 65+ langues, maïs/cajou/cola, temps quasi réel" },
+  { code: "COMTRADE_UN",         nom: "UN Comtrade — Export cajou & cola",              type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Valeurs unitaires d'export ONU (FOB implicite) — cajou HS 080131, cola HS 080270, CIV/NGA" },
   { code: "TAUX_CHANGE_LIVE",    nom: "Taux de change live — USD/XOF, EUR/USD",        type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Taux de change USD/XOF, EUR/USD — ECB via open.er-api.com" },
 ];
 

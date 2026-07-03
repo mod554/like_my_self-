@@ -248,7 +248,7 @@ jobs:
       - name: Trigger all connectors
         run: |
           URL="https://like-my-self.vercel.app"
-          for code in TAUX_CHANGE_LIVE WORLD_BANK_PINK FAO_FPMA USDA_FAS_PSD CONSEIL_ANACARDE_CI RESIMAO RSS_NEWS_AGRI GDELT_NEWS INDEXMUNDI; do
+          for code in TAUX_CHANGE_LIVE WORLD_BANK_PINK FAO_FPMA USDA_FAS_PSD CONSEIL_ANACARDE_CI RESIMAO RSS_NEWS_AGRI GDELT_NEWS COMTRADE_UN INDEXMUNDI; do
             RESP=$(curl -s --max-time 90 -X POST "$URL/api/connectors" \
               -H "Content-Type: application/json" -d "{\"code\": \"$code\"}")
             echo "$RESP" | python3 -c "

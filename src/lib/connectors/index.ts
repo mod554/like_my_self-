@@ -8,6 +8,7 @@ import { ConseilAnacardeCiConnector } from "./conseil-anacarde";
 import { ResimaoConnector } from "./resimao";
 import { RssNewsConnector } from "./rss-news";
 import { GdeltNewsConnector } from "./gdelt-news";
+import { ComtradeConnector } from "./comtrade";
 import { IndexMundiConnector } from "./indexmundi";
 import { TauxChangeLiveConnector } from "./taux-change";
 import type { Connector } from "./base";
@@ -21,6 +22,7 @@ export const CONNECTEURS: Connector[] = [
   new ResimaoConnector(),
   new RssNewsConnector(),
   new GdeltNewsConnector(),
+  new ComtradeConnector(),
   new IndexMundiConnector(),
 ];
 
