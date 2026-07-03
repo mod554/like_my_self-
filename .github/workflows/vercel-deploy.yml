@@ -19,15 +19,15 @@ jobs:
     if: ${{ inputs.probe_sources == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Probe data sources for cashew and kola
+      - name: Probe UN Comtrade variants
         run: |
           python3 - <<'PYEOF'
-          import json, re, urllib.request
+          import json, time, urllib.request
 
-          def get(url, timeout=40):
+          def get(url, timeout=45):
               req = urllib.request.Request(url, headers={
-                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-                  "Accept": "*/*",
+                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120",
+                  "Accept": "application/json",
               })
               try:
                   with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -35,40 +35,28 @@ jobs:
               except Exception as e:
                   return None, str(e)[:200].encode()
 
-          print("=== 1. Contenu reel de la base prod par produit ===")
-          for prod in ("MAIS_GRAIN", "CAJOU_RCN", "COLA_ROUGE"):
-              st, body = get(f"https://like-my-self.vercel.app/api/prix?produit={prod}&limit=3")
-              try:
-                  rows = json.loads(body)
-                  print(f"  {prod}: {len(rows)} lignes (echantillon dates:",
-                        [r.get('dateReleve','')[:10] for r in rows[:3]], ")")
-              except Exception:
-                  print(f"  {prod}: http={st} illisible: {body[:120]}")
-
-          print("=== 2. IndexMundi cashew page ===")
-          st, body = get("https://www.indexmundi.com/commodities/?commodity=cashew-nuts&months=60")
-          html = body.decode("utf8", "replace")
-          m = re.search(r"data\.addRows\((\[\[.*?\]\])\)", html, re.S)
-          print(f"  http={st} len={len(html)} addRows={'OUI' if m else 'NON'} title={re.search(r'<title>(.*?)</title>', html).group(1)[:80] if re.search(r'<title>(.*?)</title>', html) else '?'}")
-
-          print("=== 3. UN Comtrade preview API (valeurs unitaires export) ===")
-          # HS 080131 = cashew in shell ; 080280 = kola-ish? test both 0802 80 / 080270
-          for name, url in [
-              ("cashew-CIV-2023", "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=384&period=2023,2022,2021&cmdCode=080131&flowCode=X"),
-              ("kola-CIV-2023",   "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=384&period=2023,2022,2021&cmdCode=080270&flowCode=X"),
-              ("kola-NGA-2023",   "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=566&period=2023,2022,2021&cmdCode=080270&flowCode=X"),
-          ]:
+          B = "https://comtradeapi.un.org/public/v1/preview/C/A/HS"
+          tests = [
+              ("cashew-CIV-X",  f"{B}?reporterCode=384&period=2023&cmdCode=080131&flowCode=X"),
+              ("cashew-CIV-X-p0", f"{B}?reporterCode=384&period=2023&cmdCode=080131&flowCode=X&partnerCode=0"),
+              ("kola-CIV-X-p0", f"{B}?reporterCode=384&period=2023&cmdCode=080270&flowCode=X&partnerCode=0"),
+              ("kola-NGA-X-p0", f"{B}?reporterCode=566&period=2023&cmdCode=080270&flowCode=X&partnerCode=0"),
+          ]
+          for i, (name, url) in enumerate(tests):
+              if i: time.sleep(20)
               st, body = get(url)
               try:
                   d = json.loads(body)
                   data = d.get("data", [])
-                  print(f"  [{name}] http={st} n={len(data)}")
-                  for row in data[:2]:
+                  print(f"[{name}] http={st} n={len(data)}")
+                  for row in data[:3]:
                       v = row.get("primaryValue"); q = row.get("netWgt")
-                      uv = round(v/q*1000, 1) if v and q else None
-                      print(f"     periode={row.get('period')} valeur={v} poidsKg={q} => {uv} USD/tonne")
+                      uv = round(v / q * 1000, 1) if v and q else None
+                      print(f"   period={row.get('period')} partner={row.get('partnerCode')} val={v} kg={q} => {uv} USD/t")
+                  if data:
+                      print("   CLES:", sorted(data[0].keys())[:20])
               except Exception:
-                  print(f"  [{name}] http={st} illisible: {body[:150]}")
+                  print(f"[{name}] http={st} illisible: {body[:200]}")
           PYEOF
 
   deploy:
