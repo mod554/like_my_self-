@@ -26,6 +26,7 @@ jobs:
           import json, os, urllib.request
 
           token = os.environ["VERCEL_TOKEN"]
+          TEAM_SLUG = "marius-projects-92b9e651"
 
           def api(path):
               req = urllib.request.Request(
@@ -39,25 +40,26 @@ jobs:
                   print(f"  {path} -> {e}")
                   return None
 
-          # Collect candidate team scopes: personal (no teamId) + every team
-          scopes = [None]
-          teams = api("/v2/teams") or {}
+          # Scoped tokens 403 without an explicit team scope. Try the known
+          # team slug first, then teams listed by the API, then personal scope.
+          scopes = [f"slug={TEAM_SLUG}"]
+          teams = api(f"/v2/teams?slug={TEAM_SLUG}") or api("/v2/teams") or {}
           for t in teams.get("teams", []):
-              scopes.append(t["id"])
+              scopes.append(f"teamId={t['id']}")
+          scopes.append(None)
 
           project = None
-          team_used = None
           for scope in scopes:
-              suffix = f"?teamId={scope}" if scope else ""
-              d = api(f"/v9/projects/like-my-self{suffix}")
+              q = f"?{scope}" if scope else ""
+              d = api(f"/v9/projects/like-my-self{q}")
               if d and "id" in d:
-                  project, team_used = d, scope
+                  project = d
                   break
-              # fallback: list projects and match by name
-              lst = api(f"/v9/projects{suffix or '?'}&limit=100" if suffix else "/v9/projects?limit=100")
+              sep = "&" if q else "?"
+              lst = api(f"/v9/projects{q}{sep}limit=100")
               for pr in (lst or {}).get("projects", []):
-                  if pr["name"] in ("like-my-self", "like_my_self-", "like-my-self-"):
-                      project, team_used = pr, scope
+                  if "like" in pr["name"].replace("_", "-").replace("--", "-"):
+                      project = pr
                       break
               if project:
                   break
@@ -65,7 +67,7 @@ jobs:
           if not project:
               raise SystemExit("Projet Vercel introuvable avec ce token")
 
-          org_id = team_used or project.get("accountId")
+          org_id = project.get("accountId")
           os.makedirs(".vercel", exist_ok=True)
           with open(".vercel/project.json", "w") as f:
               json.dump({"projectId": project["id"], "orgId": org_id}, f)
