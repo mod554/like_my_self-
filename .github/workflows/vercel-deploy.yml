@@ -135,12 +135,16 @@ jobs:
           port = re.search(r":(\d+)/", url)
           print(f"DATABASE_URL detectee: hote={host.group(1) if host else '?'} port={port.group(1) if port else '?'}")
 
-          direct_raw = env_vars.get("POSTGRES_URL_NON_POOLING") or env_vars.get("DIRECT_URL") or ""
-          dm = re.search(r"postgres(?:ql)?://[^'\"\s]+", direct_raw)
-          if dm:
-              direct = dm.group(0)
-          else:
+          if os.environ.get("PROBED_DATABASE_URL") or os.environ.get("INPUT_DATABASE_URL"):
+              # URL fraiche validee par la sonde — ne jamais melanger avec le vieux fichier env
               direct = url.replace(":6543/", ":5432/") if ":6543/" in url else url
+          else:
+              direct_raw = env_vars.get("POSTGRES_URL_NON_POOLING") or env_vars.get("DIRECT_URL") or ""
+              dm = re.search(r"postgres(?:ql)?://[^'\"\s]+", direct_raw)
+              if dm:
+                  direct = dm.group(0)
+              else:
+                  direct = url.replace(":6543/", ":5432/") if ":6543/" in url else url
           direct = re.sub(r"[?&]pgbouncer=true", "", direct)
 
           def upsert(key, value):
@@ -191,19 +195,21 @@ jobs:
       - name: Trigger all connectors
         run: |
           URL="https://like-my-self.vercel.app"
-          echo "Calling /api/connectors on $URL"
-          curl -s --max-time 120 -X POST "$URL/api/connectors" \
-            -H "Content-Type: application/json" -d '{"tous":true}' \
-            | python3 -c "
+          for code in TAUX_CHANGE_LIVE WORLD_BANK_PINK FAO_FPMA USDA_FAS_PSD CONSEIL_ANACARDE_CI RESIMAO RSS_NEWS_AGRI GDELT_NEWS INDEXMUNDI; do
+            RESP=$(curl -s --max-time 90 -X POST "$URL/api/connectors" \
+              -H "Content-Type: application/json" -d "{\"code\": \"$code\"}")
+            echo "$RESP" | python3 -c "
           import json, sys
+          code = '$code'
           try:
               d = json.load(sys.stdin)
-              rs = d.get('resultats', [])
-              ok = sum(1 for r in rs if not r.get('erreur'))
-              print(f'{ok}/{len(rs)} connecteurs OK')
-              for r in rs:
-                  if r.get('erreur'): print(f'  ERREUR {r[\"code\"]}: {r[\"erreur\"][:80]}')
-                  else: print(f'  OK {r[\"code\"]}: {r.get(\"nbImportes\", 0)} importés')
+              if d.get('erreur') or d.get('error'):
+                  print(f'  ERREUR {code}:', str(d.get('erreur') or d.get('error'))[:90])
+              else:
+                  print(f'  OK {code}: {d.get(\"nbImportes\", 0)} importes, {d.get(\"nbErreurs\", 0)} erreurs')
+                  for e in (d.get('erreurs') or [])[:2]:
+                      print(f'      - {str(e)[:90]}')
           except Exception:
-              print('Réponse connecteurs illisible')
-          " || echo "Connectors call failed (non-blocking)"
+              print(f'  {code}: reponse illisible (timeout probable)')
+          " || true
+          done
