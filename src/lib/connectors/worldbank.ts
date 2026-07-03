@@ -28,6 +28,45 @@ function parseDate(wbDate: string): Date | null {
   return null;
 }
 
+// Fallback : le Pink Sheet officiel (XLSX mensuel) — l'API v2 ne sert plus
+// les series commodities. Feuille "Monthly Prices", colonne "Maize".
+const PINK_SHEET_XLSX =
+  "https://thedocs.worldbank.org/en/doc/5d903e848db1d1b83e0ec8f744e55570-0350012021/related/CMO-Historical-Data-Monthly.xlsx";
+
+async function fetchPinkSheetMaize(): Promise<WBDataPoint[]> {
+  const ExcelJS = (await import("exceljs")).default;
+  const res = await fetch(PINK_SHEET_XLSX, {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) throw new Error(`Pink Sheet XLSX HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf as unknown as ArrayBuffer);
+  const feuille = wb.getWorksheet("Monthly Prices") ?? wb.worksheets[0];
+  if (!feuille) throw new Error("Feuille Monthly Prices introuvable");
+
+  // Trouver la colonne dont un en-tete (10 premieres lignes) contient "Maize"
+  let colMaize = -1;
+  for (let r = 1; r <= 10 && colMaize < 0; r++) {
+    const row = feuille.getRow(r);
+    row.eachCell((cell, col) => {
+      const v = String(cell.value ?? "");
+      if (colMaize < 0 && /^maize$/i.test(v.trim())) colMaize = col;
+    });
+  }
+  if (colMaize < 0) throw new Error("Colonne Maize introuvable dans le Pink Sheet");
+
+  const points: WBDataPoint[] = [];
+  feuille.eachRow((row) => {
+    const dateCell = String(row.getCell(1).value ?? "");
+    if (!/^\d{4}M\d{2}$/.test(dateCell)) return;
+    const val = Number(row.getCell(colMaize).value);
+    if (isFinite(val) && val > 0) points.push({ date: dateCell, value: val });
+  });
+  return points.slice(-60);
+}
+
 async function fetchWBData(url: string): Promise<WBDataPoint[]> {
   const res = await fetch(url, {
     headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
@@ -80,7 +119,11 @@ export class WorldBankConnector implements Connector {
       }
 
       if (donnees.length === 0) {
-        throw new Error(`World Bank API returned 0 data points for ${INDICATEUR_MAIS}`);
+        // API v2 ne sert plus les commodities — lire le Pink Sheet XLSX officiel
+        donnees = await fetchPinkSheetMaize();
+      }
+      if (donnees.length === 0) {
+        throw new Error(`Aucune donnee World Bank (API + Pink Sheet XLSX) pour ${INDICATEUR_MAIS}`);
       }
 
       for (const point of donnees) {

@@ -142,47 +142,47 @@ export class RssNewsConnector implements Connector {
         }
 
         const { flux, feed } = feedResult.value;
-        for (const item of feed.items ?? []) {
+        // Collecte puis insertion groupee (createMany) — un create par article
+        // depasse le budget 60s serverless avec des dizaines de flux
+        const candidats: { filiereId: string; titre: string; lien: string; source: string; resume?: string; datePublication: Date }[] = [];
+        for (const item of (feed.items ?? []).slice(0, 40)) {
           const titre = item.title?.trim() ?? "";
           const contenu = item.contentSnippet ?? item.summary ?? item.content ?? "";
           const lien = item.link?.trim() ?? "";
           const datePublication = item.pubDate ? new Date(item.pubDate) : new Date();
-
           if (!titre || !lien) continue;
 
           const filieresConcernees = flux.preFiltre
             ? flux.filieres
             : articleConcerneFilieres(titre, contenu, flux.filieres);
-          if (filieresConcernees.length === 0) continue;
-
           for (const filiereCode of filieresConcernees) {
             const filiereId = filiereMap[filiereCode];
             if (!filiereId) continue;
-
-            const existe = await prisma.actualite.findFirst({
-              where: { lien, filiereId },
-              select: { id: true },
+            candidats.push({
+              filiereId,
+              titre: titre.slice(0, 255),
+              lien,
+              source: flux.source,
+              resume: contenu.slice(0, 600) || undefined,
+              datePublication,
             });
-            if (existe) continue;
-
+          }
+        }
+        if (candidats.length > 0) {
+          const dejaVus = new Set(
+            (await prisma.actualite.findMany({
+              where: { lien: { in: [...new Set(candidats.map((c) => c.lien))] } },
+              select: { lien: true, filiereId: true },
+            })).map((a) => `${a.lien}|${a.filiereId}`)
+          );
+          const aInserer = candidats.filter((c) => !dejaVus.has(`${c.lien}|${c.filiereId}`));
+          if (aInserer.length > 0) {
             try {
-              await prisma.actualite.create({
-                data: {
-                  filiereId,
-                  titre: titre.slice(0, 255),
-                  lien,
-                  source: flux.source,
-                  resume: contenu.slice(0, 600) || undefined,
-                  datePublication,
-                },
-              });
-              resultat.nbImportes++;
+              const res = await prisma.actualite.createMany({ data: aInserer, skipDuplicates: true });
+              resultat.nbImportes += res.count;
             } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
-              if (!msg.includes("Unique constraint")) {
-                resultat.erreurs.push(`"${titre.slice(0, 40)}": ${msg}`);
-                resultat.nbErreurs++;
-              }
+              resultat.erreurs.push(`Insert ${flux.source}: ${err instanceof Error ? err.message.slice(0, 60) : err}`);
+              resultat.nbErreurs++;
             }
           }
         }

@@ -89,35 +89,29 @@ export class GdeltNewsConnector implements Connector {
           continue;
         }
 
-        for (const art of data.articles ?? []) {
-          const titre = art.title?.trim();
-          const lien = art.url?.trim();
-          if (!titre || !lien) continue;
-
+        // Insertion groupee — un create par article depasse les 60s serverless
+        const dejaVus = new Set(
+          (await prisma.actualite.findMany({
+            where: { filiereId, lien: { in: (data.articles ?? []).map((a) => a.url?.trim()).filter(Boolean) as string[] } },
+            select: { lien: true },
+          })).map((a) => a.lien)
+        );
+        const aInserer = (data.articles ?? [])
+          .filter((a) => a.title?.trim() && a.url?.trim() && !dejaVus.has(a.url.trim()))
+          .map((a) => ({
+            filiereId,
+            titre: a.title.trim().slice(0, 255),
+            lien: a.url.trim(),
+            source: `GDELT · ${a.domain ?? "web"}${a.sourcecountry ? ` (${a.sourcecountry})` : ""}`,
+            datePublication: parseSeendate(a.seendate),
+          }));
+        if (aInserer.length > 0) {
           try {
-            const existe = await prisma.actualite.findFirst({
-              where: { lien, filiereId },
-              select: { id: true },
-            });
-            if (existe) continue;
-
-            await prisma.actualite.create({
-              data: {
-                filiereId,
-                titre: titre.slice(0, 255),
-                lien,
-                source: `GDELT · ${art.domain ?? "web"}${art.sourcecountry ? ` (${art.sourcecountry})` : ""}`,
-                resume: undefined,
-                datePublication: parseSeendate(art.seendate),
-              },
-            });
-            resultat.nbImportes++;
+            const res = await prisma.actualite.createMany({ data: aInserer, skipDuplicates: true });
+            resultat.nbImportes += res.count;
           } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (!msg.includes("Unique constraint")) {
-              resultat.erreurs.push(`"${titre.slice(0, 40)}": ${msg.slice(0, 60)}`);
-              resultat.nbErreurs++;
-            }
+            resultat.erreurs.push(`Insert ${filiereCode}: ${err instanceof Error ? err.message.slice(0, 60) : err}`);
+            resultat.nbErreurs++;
           }
         }
       }

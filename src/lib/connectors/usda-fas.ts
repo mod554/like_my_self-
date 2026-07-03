@@ -45,7 +45,28 @@ async function fetchImfCommodityPrices(indicator: string): Promise<Record<string
   return series;
 }
 
-// Fallback : Stooq — corn futures CBOT (ZC), CSV public sans cle ni blocage IP.
+// Fallback 1 : FRED (Federal Reserve) — serie PMAIZMTUSDM = "Global price of Maize"
+// (donnees IMF redistribuees), CSV public sans cle : USD/tonne, mensuel.
+async function fetchFredMaize(): Promise<{ date: string; usdParTonne: number }[]> {
+  const res = await fetch("https://fred.stlouisfed.org/graph/fredgraph.csv?id=PMAIZMTUSDM", {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`FRED HTTP ${res.status}`);
+  const csv = await res.text();
+  const lignes = csv.trim().split("\n").slice(1); // DATE,PMAIZMTUSDM
+  const sorties: { date: string; usdParTonne: number }[] = [];
+  for (const l of lignes.slice(-72)) {
+    const [date, val] = l.split(",");
+    const v = parseFloat(val);
+    if (!date || !isFinite(v) || v <= 0) continue;
+    sorties.push({ date, usdParTonne: v });
+  }
+  if (sorties.length === 0) throw new Error("CSV FRED vide");
+  return sorties;
+}
+
+// Fallback 2 : Stooq — corn futures CBOT (ZC), CSV public sans cle ni blocage IP.
 // Prix en cents USD par boisseau -> USD/tonne : (cents/100) * 39.3683
 async function fetchStooqCorn(): Promise<{ date: string; usdParTonne: number }[]> {
   const res = await fetch("https://stooq.com/q/d/l/?s=zc.f&i=d", {
@@ -103,9 +124,16 @@ export class UsdaFasConnector implements Connector {
         );
       } catch (imfErr) {
         resultat.erreurs.push(`IMF indisponible: ${imfErr instanceof Error ? imfErr.message.slice(0, 60) : imfErr}`);
-        const stooq = await fetchStooqCorn();
-        sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
-        entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
+        try {
+          const fred = await fetchFredMaize();
+          sourceNote = "FRED — Global price of Maize (PMAIZMTUSDM, donnees IMF)";
+          entries = fred.map((f) => [f.date, f.usdParTonne] as [string, number]);
+        } catch (fredErr) {
+          resultat.erreurs.push(`FRED indisponible: ${fredErr instanceof Error ? fredErr.message.slice(0, 60) : fredErr}`);
+          const stooq = await fetchStooqCorn();
+          sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
+          entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
+        }
       }
 
       for (const [dateStr, valeur] of entries) {
