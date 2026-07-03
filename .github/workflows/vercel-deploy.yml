@@ -35,6 +35,58 @@ jobs:
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
+      # DATABASE_URL was found malformed in past deploys (P1013: scheme not
+      # recognized) and is currently missing at runtime. This step inspects the
+      # pulled env file, sanitizes a malformed value (e.g. `psql 'postgres://…'`
+      # copied from Supabase), upserts DATABASE_URL + DIRECT_URL via the API,
+      # and fails with a clear message if nothing usable exists.
+      - name: Check and repair database env vars
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, re, sys, urllib.request
+
+          token = os.environ["VERCEL_TOKEN"]
+          proj = json.load(open(".vercel/project.json"))
+          pid, org = proj["projectId"], proj["orgId"]
+
+          raw = ""
+          try:
+              for line in open(".vercel/.env.production.local"):
+                  if line.startswith("DATABASE_URL="):
+                      raw = line.split("=", 1)[1].strip()
+                      break
+          except FileNotFoundError:
+              pass
+
+          m = re.search(r"postgres(?:ql)?://[^'\"\s]+", raw)
+          url = m.group(0) if m else ""
+          if not url:
+              print("::error::DATABASE_URL absent ou invalide dans l'environnement Vercel production. Ajoutez-la: Vercel > like-my-self > Settings > Environment Variables > DATABASE_URL = URL Postgres Supabase (postgresql://...)")
+              sys.exit(1)
+
+          host = re.search(r"@([^:/]+)", url)
+          port = re.search(r":(\d+)/", url)
+          print(f"DATABASE_URL detectee: hote={host.group(1) if host else '?'} port={port.group(1) if port else '?'}")
+
+          direct = url.replace(":6543/", ":5432/") if ":6543/" in url else url
+          direct = re.sub(r"[?&]pgbouncer=true", "", direct)
+
+          def upsert(key, value):
+              body = json.dumps({"key": key, "value": value, "type": "encrypted",
+                                 "target": ["production", "preview", "development"]}).encode()
+              req = urllib.request.Request(
+                  f"https://api.vercel.com/v10/projects/{pid}/env?upsert=true&teamId={org}",
+                  data=body, method="POST",
+                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+              with urllib.request.urlopen(req) as r:
+                  print(f"  upsert {key}: HTTP {r.status}")
+
+          if raw != url:
+              print("Valeur malformee detectee -> reparation")
+          upsert("DATABASE_URL", url)
+          upsert("DIRECT_URL", direct)
+          PYEOF
+
       - name: Build project
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
