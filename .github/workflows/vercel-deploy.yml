@@ -19,44 +19,56 @@ jobs:
     if: ${{ inputs.probe_sources == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Probe FAOSTAT cashew/kola variants
+      - name: Probe data sources for cashew and kola
         run: |
           python3 - <<'PYEOF'
-          import json, urllib.request
+          import json, re, urllib.request
 
-          def get(url, timeout=30):
+          def get(url, timeout=40):
               req = urllib.request.Request(url, headers={
-                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-                  "Accept": "application/json",
+                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+                  "Accept": "*/*",
               })
               try:
                   with urllib.request.urlopen(req, timeout=timeout) as r:
                       return r.status, r.read()
               except Exception as e:
-                  return None, str(e)[:150].encode()
+                  return None, str(e)[:200].encode()
 
-          hosts = [
-              "https://faostatservices.fao.org/api/v1/en/data/PP",
-              "https://fenixservices.fao.org/faostat/api/v1/en/data/PP",
-          ]
-          combos = [
-              ("cashew-CI", "area=107&item=217&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
-              ("kola-NGA-CIV-GHA", "area=159,107,81&item=224&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
-              ("cashew-CI-LCU", "area=107&item=217&element=5530&year=2020,2021,2022,2023"),
-          ]
-          suffixes = ["&output_type=objects", "&output_type=json&type=datasets", ""]
-          for host in hosts:
-              for name, q in combos:
-                  for suf in suffixes:
-                      status, body = get(f"{host}?{q}{suf}")
-                      n = "?"
-                      try:
-                          n = len(json.loads(body).get("data", []))
-                      except Exception:
-                          pass
-                      print(f"[{name}] http={status} n={n} {host.split('/')[2]} suf={suf or '(none)'}")
-                      if isinstance(n, int) and n > 0:
-                          print("   EXEMPLE:", json.dumps(json.loads(body)["data"][0])[:300])
+          print("=== 1. Contenu reel de la base prod par produit ===")
+          for prod in ("MAIS_GRAIN", "CAJOU_RCN", "COLA_ROUGE"):
+              st, body = get(f"https://like-my-self.vercel.app/api/prix?produit={prod}&limit=3")
+              try:
+                  rows = json.loads(body)
+                  print(f"  {prod}: {len(rows)} lignes (echantillon dates:",
+                        [r.get('dateReleve','')[:10] for r in rows[:3]], ")")
+              except Exception:
+                  print(f"  {prod}: http={st} illisible: {body[:120]}")
+
+          print("=== 2. IndexMundi cashew page ===")
+          st, body = get("https://www.indexmundi.com/commodities/?commodity=cashew-nuts&months=60")
+          html = body.decode("utf8", "replace")
+          m = re.search(r"data\.addRows\((\[\[.*?\]\])\)", html, re.S)
+          print(f"  http={st} len={len(html)} addRows={'OUI' if m else 'NON'} title={re.search(r'<title>(.*?)</title>', html).group(1)[:80] if re.search(r'<title>(.*?)</title>', html) else '?'}")
+
+          print("=== 3. UN Comtrade preview API (valeurs unitaires export) ===")
+          # HS 080131 = cashew in shell ; 080280 = kola-ish? test both 0802 80 / 080270
+          for name, url in [
+              ("cashew-CIV-2023", "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=384&period=2023,2022,2021&cmdCode=080131&flowCode=X"),
+              ("kola-CIV-2023",   "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=384&period=2023,2022,2021&cmdCode=080270&flowCode=X"),
+              ("kola-NGA-2023",   "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=566&period=2023,2022,2021&cmdCode=080270&flowCode=X"),
+          ]:
+              st, body = get(url)
+              try:
+                  d = json.loads(body)
+                  data = d.get("data", [])
+                  print(f"  [{name}] http={st} n={len(data)}")
+                  for row in data[:2]:
+                      v = row.get("primaryValue"); q = row.get("netWgt")
+                      uv = round(v/q*1000, 1) if v and q else None
+                      print(f"     periode={row.get('period')} valeur={v} poidsKg={q} => {uv} USD/tonne")
+              except Exception:
+                  print(f"  [{name}] http={st} illisible: {body[:150]}")
           PYEOF
 
   deploy:
