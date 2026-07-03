@@ -8,5 +8,6 @@ export const CONNECTEUR_CODES = [
   "CONSEIL_ANACARDE_CI",
   "RESIMAO",
   "RSS_NEWS_AGRI",
+  "GDELT_NEWS",
   "INDEXMUNDI",
 ] as const;

@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 55;
 
 import { RssNewsConnector } from "@/lib/connectors/rss-news";
+import { GdeltNewsConnector } from "@/lib/connectors/gdelt-news";
 import { TauxChangeLiveConnector } from "@/lib/connectors/taux-change";
 
 export async function GET(req: Request) {
@@ -13,21 +14,20 @@ export async function GET(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [tauxResult, rssResult] = await Promise.allSettled([
+  const results = await Promise.allSettled([
     new TauxChangeLiveConnector().run(),
     new RssNewsConnector().run(),
+    new GdeltNewsConnector().run(),
   ]);
+  const codes = ["TAUX_CHANGE_LIVE", "RSS_NEWS_AGRI", "GDELT_NEWS"];
 
   return Response.json({
     ok: true,
     ts: new Date().toISOString(),
-    results: [
-      tauxResult.status === "fulfilled"
-        ? { code: "TAUX_CHANGE_LIVE", succes: tauxResult.value.nbErreurs === 0, nbImportes: tauxResult.value.nbImportes }
-        : { code: "TAUX_CHANGE_LIVE", succes: false, erreur: String(tauxResult.reason) },
-      rssResult.status === "fulfilled"
-        ? { code: "RSS_NEWS_AGRI", succes: rssResult.value.nbErreurs === 0, nbImportes: rssResult.value.nbImportes }
-        : { code: "RSS_NEWS_AGRI", succes: false, erreur: String(rssResult.reason) },
-    ],
+    results: results.map((r, i) =>
+      r.status === "fulfilled"
+        ? { code: codes[i], succes: r.value.nbErreurs === 0, nbImportes: r.value.nbImportes }
+        : { code: codes[i], succes: false, erreur: String(r.reason) }
+    ),
   });
 }

@@ -178,6 +178,7 @@ model Actualite {
   filiere Filiere? @relation(fields: [filiereId], references: [id])
 
   @@index([filiereId, datePublication])
+  @@index([lien])
 }
 
 // ─── Alertes ─────────────────────────────────────────────────────────────────

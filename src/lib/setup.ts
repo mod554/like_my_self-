@@ -160,6 +160,7 @@ const DDL_STATEMENTS = [
     CONSTRAINT "Actualite_pkey" PRIMARY KEY ("id")
   )`,
   `CREATE INDEX IF NOT EXISTS "Actualite_filiereId_datePublication_idx" ON "Actualite"("filiereId","datePublication")`,
+  `CREATE INDEX IF NOT EXISTS "Actualite_lien_idx" ON "Actualite"("lien")`,
 
   `CREATE TABLE IF NOT EXISTS "TauxChange" (
     "id" TEXT NOT NULL,
@@ -242,6 +243,7 @@ const SOURCES = [
   { code: "RESIMAO",             nom: "RESIMAO — Systèmes d'Information des Marchés",   type: "HTML", fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "Prix collectés sur les marchés de détail et de gros en Afrique de l'Ouest" },
   { code: "INDEXMUNDI",          nom: "IndexMundi — Commodity Prices",                  type: "HTML", fiabiliteDefaut: "INDICATIF", frequence: "HEBDO",     description: "Prix historiques commodités — maïs, cajou" },
   { code: "RSS_NEWS_AGRI",       nom: "Agrégateur RSS — Actualités agricoles",          type: "RSS",  fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "15 flux RSS — FAO, USDA, World Bank, Africa Report…" },
+  { code: "GDELT_NEWS",          nom: "GDELT — Actualités mondiales agricoles",         type: "API",  fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "GDELT DOC 2.0 — actualités mondiales 65+ langues, maïs/cajou/cola, temps quasi réel" },
   { code: "TAUX_CHANGE_LIVE",    nom: "Taux de change live — USD/XOF, EUR/USD",        type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Taux de change USD/XOF, EUR/USD — ECB via open.er-api.com" },
 ];
 
