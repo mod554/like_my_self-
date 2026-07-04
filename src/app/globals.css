@@ -430,6 +430,7 @@ main { animation: ag-page-in 0.4s ease-out both; }
     transition-duration: 0.01ms !important;
   }
   html { scroll-behavior: auto; }
+}
 
 /* ── Aurora hero — halos organiques dérivants (effet studio) ─────────────── */
 
