@@ -8,11 +8,15 @@
   --ag-olive:       #6B760D;   /* olive */
   --ag-lime:        #5A8A2A;   /* vert accent (plus foncé sur fond blanc) */
 
-  /* Surfaces light */
-  --bg-base:        #FFFFFF;
-  --bg-surface:     #F6F9F6;
-  --bg-elevated:    #EDF4ED;
-  --bg-panel:       #F0F6F0;
+  /* Accent chaud — latérite / terre cuite AOF */
+  --ag-terra:       #C4622D;
+  --ag-or:          #B8912E;
+
+  /* Surfaces light — sable chaud plutôt que blanc clinique */
+  --bg-base:        #FBFAF5;
+  --bg-surface:     #F5F4EA;
+  --bg-elevated:    #EDEEDE;
+  --bg-panel:       #F1F2E4;
 
   /* Borders */
   --border-subtle:  #D8E8D8;
@@ -73,9 +77,10 @@ body {
 /* ── Typography ────────────────────────────────────────────────────────────── */
 
 .font-display {
-  font-family: 'Ubuntu', sans-serif;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--font-fraunces, 'Fraunces'), 'Ubuntu', Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  font-optical-sizing: auto;
 }
 
 .font-data {
@@ -381,7 +386,7 @@ nav a:hover::after { transform: scaleX(1); }
   50%      { background-position: 100% 50%; }
 }
 .ag-gradient-text {
-  background: linear-gradient(120deg, #5A8A2A, #003D2E, #6B760D, #5A8A2A);
+  background: linear-gradient(120deg, #5A8A2A, #003D2E, #B8912E, #5A8A2A);
   background-size: 260% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -504,3 +509,38 @@ main { animation: ag-page-in 0.4s ease-out both; }
 @media (max-width: 900px) {
   .ag-hero-map { display: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DA "TERRE & SÈVE" — glassmorphism léger & profondeur
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Panneau verre dépoli — pour surfaces flottantes */
+.ag-glass {
+  background: rgba(255, 255, 254, 0.62);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 1px 2px rgba(16, 27, 20, 0.04),
+    0 8px 32px -8px rgba(10, 59, 46, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Ombres multicouches (profondeur Dribbble) appliquées aux surfaces clés */
+.ag-kpi,
+.ag-filiere-card {
+  box-shadow:
+    0 1px 2px rgba(16, 27, 20, 0.05),
+    0 4px 16px -6px rgba(10, 59, 46, 0.08);
+}
+.ag-filiere-card { border-radius: 14px; }
+.ag-kpi          { border-radius: 12px; }
+
+/* Accent terracotta : sélection des badges d'erreur et éléments chauds */
+.badge-estime { background: rgba(196, 98, 45, 0.08); color: var(--ag-terra); border: 1px solid rgba(196, 98, 45, 0.25); }
+
+/* Tableaux : en-têtes sur fond sable, hover ivoire profond */
+.ag-table th { background: var(--bg-panel); }
+
+/* Liens & interactions : halo terracotta discret au focus clavier */
+:focus-visible { outline-color: var(--ag-terra); }

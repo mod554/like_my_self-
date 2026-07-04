@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Ubuntu, Ubuntu_Mono } from "next/font/google";
+import { Ubuntu, Ubuntu_Mono, Fraunces } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/layout/Header";
 
@@ -8,6 +8,13 @@ const ubuntu = Ubuntu({
   variable: "--font-ubuntu",
   subsets: ["latin"],
   display: "swap",
+});
+
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  display: "swap",
+  axes: ["opsz"],
 });
 
 const ubuntuMono = Ubuntu_Mono({
@@ -30,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className={`${ubuntu.variable} ${ubuntuMono.variable} h-full`}>
+    <html lang="fr" className={`${ubuntu.variable} ${ubuntuMono.variable} ${fraunces.variable} h-full`}>
       <body style={{ fontFamily: "var(--font-ubuntu, 'Ubuntu', system-ui, sans-serif)" }}>
         <Header />
         <main className="flex-1 flex flex-col">{children}</main>
