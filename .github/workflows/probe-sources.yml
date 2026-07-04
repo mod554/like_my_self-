@@ -15,27 +15,81 @@ jobs:
     steps:
       # Cotation CBOT collectée sur le runner (IP propre) puis poussée vers
       # l'app — les IP partagées Vercel épuisent les quotas Stooq/FRED
-      - name: Cotations maïs CBOT (Stooq) depuis le runner
+      - name: Cotations maïs CBOT depuis le runner
         run: |
-          CSV=$(curl -s --max-time 20 -H "User-Agent: Mozilla/5.0" "https://stooq.com/q/d/l/?s=zc.f&i=d" || true)
-          echo "$CSV" | python3 -c "
-          import csv, io, json, sys
-          rows = list(csv.reader(io.StringIO(sys.stdin.read())))
+          python3 - <<'PYEOF'
+          import csv, io, json, urllib.request
+
+          def get(url, timeout=20):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8", "replace")
+
           points = []
-          for r in rows[1:][-30:]:
-              if len(r) < 5: continue
+          note = ""
+
+          # 1) Yahoo Finance — ZC=F quotidien (3 mois)
+          try:
+              d = json.loads(get("https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range=3mo&interval=1d"))
+              res = d["chart"]["result"][0]
+              ts = res["timestamp"]
+              closes = res["indicators"]["quote"][0]["close"]
+              from datetime import datetime, timezone
+              for t, c in zip(ts, closes):
+                  if c and c > 0:
+                      date = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d")
+                      points.append({"date": date, "usd": round(c / 100 * 39.3683, 2)})
+              note = "CBOT ZC=F quotidien via Yahoo Finance (GitHub Actions)"
+          except Exception as e:
+              print("Yahoo indisponible:", str(e)[:80])
+
+          # 2) Stooq (.com puis .pl)
+          if not points:
+              for host in ("stooq.com", "stooq.pl"):
+                  try:
+                      body = get(f"https://{host}/q/d/l/?s=zc.f&i=d")
+                      rows = list(csv.reader(io.StringIO(body)))
+                      for r in rows[1:][-30:]:
+                          if len(r) >= 5:
+                              try:
+                                  c = float(r[4])
+                                  if c > 0:
+                                      points.append({"date": r[0], "usd": round(c / 100 * 39.3683, 2)})
+                              except ValueError:
+                                  pass
+                      if points:
+                          note = f"CBOT ZC quotidien via {host} (GitHub Actions)"
+                          break
+                      print(f"{host}: reponse non exploitable:", body[:60].replace("\n", " "))
+                  except Exception as e:
+                      print(f"{host} indisponible:", str(e)[:80])
+
+          # 3) FRED — mensuel (donnees IMF)
+          if not points:
               try:
-                  cents = float(r[4])
-                  if cents <= 0: continue
-                  points.append({'date': r[0], 'usd': round(cents / 100 * 39.3683, 2)})
-              except ValueError:
-                  continue
-          print(json.dumps({'points': points, 'sourceNote': 'Stooq CBOT ZC quotidien (via GitHub Actions)'}))
-          " > /tmp/points.json
+                  body = get("https://fred.stlouisfed.org/graph/fredgraph.csv?id=PMAIZMTUSDM", timeout=30)
+                  for line in body.strip().split("\n")[1:][-24:]:
+                      d2, v = (line.split(",") + [""])[:2]
+                      try:
+                          val = float(v)
+                          if val > 0:
+                              points.append({"date": d2, "usd": val})
+                      except ValueError:
+                          pass
+                  if points:
+                      note = "Prix mais mondial mensuel via FRED/IMF (GitHub Actions)"
+              except Exception as e:
+                  print("FRED indisponible:", str(e)[:80])
+
+          print(f"Points CBOT collectes: {len(points)} — {note}")
+          json.dump({"points": points, "sourceNote": note or "n/a"}, open("/tmp/points.json", "w"))
+          PYEOF
           N=$(python3 -c "import json; print(len(json.load(open('/tmp/points.json'))['points']))")
-          echo "Points CBOT collectés: $N"
           if [ "$N" -gt 0 ]; then
-            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/mais"               -H "Content-Type: application/json"               ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"}               --data-binary @/tmp/points.json | head -c 300
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/mais" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/points.json | head -c 300
             echo
           fi
         env:
