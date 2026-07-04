@@ -13,6 +13,34 @@ jobs:
   collecte:
     runs-on: ubuntu-latest
     steps:
+      # Cotation CBOT collectée sur le runner (IP propre) puis poussée vers
+      # l'app — les IP partagées Vercel épuisent les quotas Stooq/FRED
+      - name: Cotations maïs CBOT (Stooq) depuis le runner
+        run: |
+          CSV=$(curl -s --max-time 20 -H "User-Agent: Mozilla/5.0" "https://stooq.com/q/d/l/?s=zc.f&i=d" || true)
+          echo "$CSV" | python3 -c "
+          import csv, io, json, sys
+          rows = list(csv.reader(io.StringIO(sys.stdin.read())))
+          points = []
+          for r in rows[1:][-30:]:
+              if len(r) < 5: continue
+              try:
+                  cents = float(r[4])
+                  if cents <= 0: continue
+                  points.append({'date': r[0], 'usd': round(cents / 100 * 39.3683, 2)})
+              except ValueError:
+                  continue
+          print(json.dumps({'points': points, 'sourceNote': 'Stooq CBOT ZC quotidien (via GitHub Actions)'}))
+          " > /tmp/points.json
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/points.json'))['points']))")
+          echo "Points CBOT collectés: $N"
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/mais"               -H "Content-Type: application/json"               ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"}               --data-binary @/tmp/points.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
       - name: Déclencher les connecteurs temps réel
         run: |
           URL="https://like-my-self.vercel.app"

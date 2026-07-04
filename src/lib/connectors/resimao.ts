@@ -372,6 +372,20 @@ export class ResimaoConnector implements Connector {
             marcheCode = val; break;
           }
         }
+        // Fallback : marchés secondaires (Bobo-Dioulasso, Sikasso…) rattachés
+        // au marché national — les CSV WFP couvrent bien plus que les capitales
+        if (!marcheCode && produitCode === "MAIS_GRAIN") {
+          const paysL = releve.pays.toLowerCase();
+          const PAYS_MARCHE: Record<string, string> = {
+            "burkina": "OUAGA_MAIS", "mali": "BAMAKO_MAIS", "sénégal": "DAKAR_MAIS",
+            "senegal": "DAKAR_MAIS", "bénin": "COTONOU_MAIS", "benin": "COTONOU_MAIS",
+            "niger": "NIAMEY_MAIS", "ivoire": "ABIDJAN_MAIS", "togo": "LOME_MAIS",
+            "ghana": "ACCRA_MAIS", "nigeria": "LAGOS_MAIS",
+          };
+          for (const [key, val] of Object.entries(PAYS_MARCHE)) {
+            if (paysL.includes(key)) { marcheCode = val; break; }
+          }
+        }
         if (!marcheCode) continue;
 
         const [produit, marche] = await Promise.all([
