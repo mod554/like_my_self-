@@ -113,6 +113,11 @@ export class ConseilAnacardeCiConnector implements Connector {
         const areaCode = rec["Area Code"];
         const dateReleve = new Date(`${year}-04-01T00:00:00.000Z`); // campagne cajou ~avril
 
+        // Fiabilité selon le flag FAOSTAT : A = officiel, E = estimation FAO,
+        // I = valeur imputée. Sans flag officiel → ESTIME, pas OFFICIEL.
+        const flag = (rec.Flag ?? "").toUpperCase();
+        const fiabilite = flag === "A" || flag === "" ? "OFFICIEL" : "ESTIME";
+
         try {
           await prisma.prixReleve.create({
             data: {
@@ -124,8 +129,8 @@ export class ConseilAnacardeCiConnector implements Connector {
               devise: "USD",
               unite: "tonne",
               dateReleve,
-              fiabilite: "OFFICIEL",
-              notes: `FAOSTAT PP — Cajou — ${AREA_NAMES[areaCode] ?? rec.Area} ${year}`,
+              fiabilite,
+              notes: `FAOSTAT PP (prix producteur annuel, moyenne nationale) — Cajou — ${AREA_NAMES[areaCode] ?? rec.Area} ${year}${flag ? ` [flag ${flag}]` : ""}`,
             },
           });
           resultat.nbImportes++;

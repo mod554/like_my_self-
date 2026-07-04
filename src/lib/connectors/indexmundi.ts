@@ -25,19 +25,14 @@ interface CommoditePage {
   fiabilite: string;
 }
 
+// NOTE: la page "cashew-nuts" a été retirée — IndexMundi publie des prix
+// MONDIAUX ; les mapper sur le marché ABIDJAN_RCN attribuait faussement un
+// prix mondial à un marché local (faille d'authenticité des données).
 const PAGES: CommoditePage[] = [
   {
     url: "https://www.indexmundi.com/commodities/?commodity=corn&months=120",
     produitCode: "MAIS_GRAIN",
     marcheCode: "MONDIAL_MAIS_WB",
-    devise: "USD",
-    unite: "tonne",
-    fiabilite: "INDICATIF",
-  },
-  {
-    url: "https://www.indexmundi.com/commodities/?commodity=cashew-nuts&months=120",
-    produitCode: "CAJOU_RCN",
-    marcheCode: "ABIDJAN_RCN",
     devise: "USD",
     unite: "tonne",
     fiabilite: "INDICATIF",

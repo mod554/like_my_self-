@@ -72,22 +72,21 @@ const FLUX_RSS: FluxRSS[] = [
 ];
 
 // Mots-clés pour filtrer les articles pertinents par filière
+// Mots-clés SPÉCIFIQUES à chaque filière — les termes génériques
+// ("agriculture", "crop", "nut", "West Africa"…) provoquaient des
+// fausses attributions : un article générique était taggé MAIS/CAJOU/COLA.
 const KEYWORDS: Record<string, string[]> = {
   MAIS: [
-    "maïs", "mais", "corn", "maize", "céréales", "cereals",
-    "CBOT", "grain", "wheat", "soy", "soja", "feed grain",
-    "crop", "harvest", "récolte", "agriculture", "farming",
-    "food security", "sécurité alimentaire", "WASDE", "USDA",
+    "maïs", "corn", "maize", "céréale", "cereal",
+    "CBOT", "feed grain", "WASDE",
   ],
   CAJOU: [
     "cajou", "cashew", "anacarde", "RCN", "noix de cajou",
-    "Côte d'Ivoire", "W320", "W240", "kernel", "amande",
-    "nut", "nuts", "noix", "West Africa nuts",
+    "W320", "W240",
   ],
   COLA: [
-    "cola", "kola", "kola nut", "noix de cola", "bitter kola",
-    "West Africa", "Afrique de l'Ouest", "Nigeria agriculture",
-    "Lagos market", "marché Lagos",
+    "kola", "kola nut", "cola nut", "noix de cola", "bitter kola",
+    "cola nitida",
   ],
 };
 

@@ -29,12 +29,20 @@ export async function GET() {
     },
   });
 
-  // Taux USD/XOF pour normalisation
-  const tauxXof = await prisma.tauxChange.findFirst({
-    where: { deviseSrc: "USD", deviseDest: "XOF" },
-    orderBy: { dateReleve: "desc" },
-  }).catch(() => null);
+  // Taux de change réels depuis la BD (collectés via ECB) — fallback sur
+  // valeurs de référence uniquement si aucune collecte n'a encore eu lieu
+  const [tauxXof, tauxEurUsd] = await Promise.all([
+    prisma.tauxChange.findFirst({
+      where: { deviseSrc: "USD", deviseDest: "XOF" },
+      orderBy: { dateReleve: "desc" },
+    }).catch(() => null),
+    prisma.tauxChange.findFirst({
+      where: { deviseSrc: "EUR", deviseDest: "USD" },
+      orderBy: { dateReleve: "desc" },
+    }).catch(() => null),
+  ]);
   const xofPerUsd = tauxXof ? Number(tauxXof.taux) : 655.957;
+  const eurToUsd = tauxEurUsd ? Number(tauxEurUsd.taux) : 1.09;
 
   const ticker = produits.map((p) => {
     const last = p.prixReleves[0];
@@ -52,7 +60,7 @@ export async function GET() {
     if (valeur && last) {
       const d = last.devise.toUpperCase();
       const u = last.unite.toLowerCase();
-      let usd = d === "XOF" ? valeur / xofPerUsd : d === "EUR" ? valeur * 1.09 : valeur;
+      let usd = d === "XOF" ? valeur / xofPerUsd : d === "EUR" ? valeur * eurToUsd : valeur;
       if (u === "kg") usd = usd * 1000;
       else if (u.includes("bushel")) usd = usd * 39.37;
       else if (u === "quintal") usd = usd * 10;
@@ -75,20 +83,14 @@ export async function GET() {
     };
   });
 
-  // Taux de change pour affichage dans le ticker
-  const eurUsd = await prisma.tauxChange.findFirst({
-    where: { deviseSrc: "EUR", deviseDest: "USD" },
-    orderBy: { dateReleve: "desc" },
-  }).catch(() => null);
-
   return Response.json({
     ok: true,
     ts: new Date().toISOString(),
     ticker,
     taux: {
       USD_XOF: xofPerUsd,
-      EUR_USD: eurUsd ? Number(eurUsd.taux) : 1.09,
-      EUR_XOF: 655.957,
+      EUR_USD: eurToUsd,
+      EUR_XOF: 655.957, // parité fixe légale UEMOA depuis 1999
     },
   });
   } catch (e) {
