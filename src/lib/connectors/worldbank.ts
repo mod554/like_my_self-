@@ -162,8 +162,9 @@ export class WorldBankConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
+      // 0 nouvel import sans erreur = dédup active, données déjà à jour → OK
+      const statut = resultat.nbErreurs > 0
+        ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
         : "OK";
 
       await prisma.source.update({

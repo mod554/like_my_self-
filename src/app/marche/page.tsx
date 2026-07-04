@@ -43,7 +43,22 @@ async function getMarketData() {
     },
   });
 
-  return { filieres, news };
+  // Taux réels pour conversions XOF/EUR affichées sous chaque prix
+  const [xofRate, eurRate] = await Promise.all([
+    prisma.tauxChange.findFirst({ where: { deviseSrc: "USD", deviseDest: "XOF" }, orderBy: { dateReleve: "desc" } }).catch(() => null),
+    prisma.tauxChange.findFirst({ where: { deviseSrc: "EUR", deviseDest: "USD" }, orderBy: { dateReleve: "desc" } }).catch(() => null),
+  ]);
+  const xofPerUsd = xofRate ? Number(xofRate.taux) : 655.957;
+  const eurToUsd = eurRate ? Number(eurRate.taux) : 1.09;
+
+  return { filieres, news, xofPerUsd, eurToUsd };
+}
+
+// Conversion d'un prix (devise d'origine) vers USD puis XOF/EUR pour affichage
+function convertir(valeur: number, devise: string, xofPerUsd: number, eurToUsd: number) {
+  const d = devise.toUpperCase();
+  const usd = d === "XOF" ? valeur / xofPerUsd : d === "EUR" ? valeur * eurToUsd : valeur;
+  return { usd, xof: usd * xofPerUsd, eur: usd / eurToUsd };
 }
 
 function formatPrix(v: unknown, devise: string) {
@@ -65,8 +80,10 @@ function calcVariation(releves: Array<{ valeur: unknown }>) {
 export default async function MarchePage() {
   let filieres: Awaited<ReturnType<typeof getMarketData>>["filieres"] = [];
   let news: Awaited<ReturnType<typeof getMarketData>>["news"] = [];
+  let xofPerUsd = 655.957;
+  let eurToUsd = 1.09;
   try {
-    ({ filieres, news } = await getMarketData());
+    ({ filieres, news, xofPerUsd, eurToUsd } = await getMarketData());
   } catch (e) {
     console.error("MarchePage getMarketData error:", e);
   }
@@ -127,6 +144,22 @@ export default async function MarchePage() {
                         <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", marginTop: "4px" }}>
                           {last.unite} · {new Date(last.dateReleve).toLocaleDateString("fr-FR")} · {last.typePrix}
                         </div>
+                        {(() => {
+                          const c = convertir(Number(last.valeur), last.devise, xofPerUsd, eurToUsd);
+                          return (
+                            <div style={{ display: "flex", gap: "6px", marginTop: "6px", fontSize: 9, fontFamily: "monospace", flexWrap: "wrap" }}>
+                              <span style={{ color: "var(--ag-forest)", background: "rgba(0,61,46,0.06)", padding: "2px 6px", borderRadius: "4px" }}>
+                                {c.xof.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} XOF
+                              </span>
+                              <span style={{ color: "var(--ag-olive)", background: "rgba(107,118,13,0.06)", padding: "2px 6px", borderRadius: "4px" }}>
+                                {c.eur.toLocaleString("fr-FR", { maximumFractionDigits: c.eur >= 100 ? 0 : 2 })} EUR
+                              </span>
+                              <span style={{ color: "var(--text-muted)" }}>
+                                / {last.unite}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </>
                     ) : (
                       <div style={{ fontSize: 14, color: "var(--text-muted)", fontFamily: "monospace" }}>— Aucune donnée</div>

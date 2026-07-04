@@ -149,10 +149,13 @@ export class FaoFpmaConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
-        : "OK";
-      const messageErreur = resultat.nbImportes === 0
+      // 0 nouvel import sans erreur = dédup active → OK ; ERREUR seulement
+      // si la source n'a rien renvoyé ET qu'aucune donnée n'existe déjà
+      const dejaEnBase = await prisma.prixReleve.count({ where: { sourceId: source.id } }).catch(() => 0);
+      const statut = resultat.nbErreurs > 0
+        ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
+        : (resultat.nbImportes > 0 || dejaEnBase > 0) ? "OK" : "ERREUR";
+      const messageErreur = statut === "ERREUR"
         ? "0 prix collectés — FAOSTAT API indisponible ou aucune donnée récente"
         : resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null;
 

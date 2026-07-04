@@ -146,6 +146,28 @@ export class UsdaFasConnector implements Connector {
         }
       }
       if (entries.length === 0) {
+        // Les IP partagées Vercel épuisent les quotas Stooq/FRED/IMF — mais les
+        // cotations arrivent via GitHub Actions (/api/import/mais). Si des
+        // données récentes (< 48h) existent, la source est opérationnelle.
+        const recent = await prisma.prixReleve.findFirst({
+          where: { sourceId: source.id, dateCollecte: { gte: new Date(Date.now() - 48 * 3600_000) } },
+          orderBy: { dateCollecte: "desc" },
+        }).catch(() => null);
+        if (recent) {
+          const fin = new Date();
+          await prisma.source.update({
+            where: { code: SOURCE_CODE },
+            data: { statutDernier: "OK", messageErreur: "Cotations CBOT alimentées via GitHub Actions (IP Vercel limitées par Stooq/FRED)" },
+          });
+          await prisma.connectorLog.create({
+            data: {
+              sourceId: source.id, debut, fin, statut: "OK",
+              nbImportes: 0, nbErreurs: 0,
+              message: "Sources directes limitées — données récentes déjà présentes (import GitHub Actions)",
+            },
+          }).catch(() => {});
+          return { ...resultat, fin };
+        }
         resultat.erreurs.push(...notesFallback);
         throw new Error("Aucune source maïs disponible (Stooq, FRED, IMF)");
       }
@@ -205,8 +227,9 @@ export class UsdaFasConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
+      // 0 nouvel import sans erreur = dédup active, données déjà à jour → OK
+      const statut = resultat.nbErreurs > 0
+        ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
         : "OK";
 
       await prisma.source.update({

@@ -421,11 +421,13 @@ export class ResimaoConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
-        : "OK";
-      const messageErreur = resultat.nbImportes === 0
-        ? "0 relevés collectés — WFP API et RESIMAO HTML indisponibles"
+      // 0 nouvel import : ERREUR seulement si on n'a rien pu télécharger ;
+      // si des relevés ont été lus mais tous dédupliqués, c'est OK
+      const statut = resultat.nbErreurs > 0
+        ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
+        : releves.length === 0 ? "ERREUR" : "OK";
+      const messageErreur = statut === "ERREUR" && releves.length === 0
+        ? "0 relevés téléchargés — HDX, WFP API et RESIMAO indisponibles"
         : resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null;
 
       await prisma.source.update({

@@ -31,6 +31,7 @@ const CIBLES: Cible[] = [
   { produitCode: "CAJOU_RCN",  marcheCode: "ABIDJAN_RCN",  reporterCode: 384, cmdCode: "080131", label: "Cajou RCN CIV" },
   { produitCode: "COLA_ROUGE", marcheCode: "ABIDJAN_COLA", reporterCode: 384, cmdCode: "080270", label: "Cola CIV" },
   { produitCode: "COLA_ROUGE", marcheCode: "LAGOS_COLA",   reporterCode: 566, cmdCode: "080270", label: "Cola NGA" },
+  { produitCode: "COLA_NOIX",  marcheCode: "ABIDJAN_COLA", reporterCode: 384, cmdCode: "080270", label: "Cola (noix fraîche) CIV — valeur unitaire export HS080270" },
 ];
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
