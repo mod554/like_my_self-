@@ -72,20 +72,30 @@ export class GdeltNewsConnector implements Connector {
       const filieres = await prisma.filiere.findMany({ where: { code: { in: ["MAIS", "CAJOU", "COLA"] } } });
       const filiereMap = Object.fromEntries(filieres.map((f) => [f.code, f.id]));
 
-      // Les 3 requetes en parallele — en sequentiel, 3 x 25s depasse le budget 60s
-      const reponses = await Promise.all(
-        REQUETES.map(async ({ filiereCode, query }) => {
-          const url =
-            `${API_BASE}?query=${encodeURIComponent(query)}` +
-            `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
+      // SEQUENTIEL avec espacement : GDELT limite les requetes rapprochees
+      // depuis une meme IP (HTTP 429 en parallele). 3 requetes espacees de 4s
+      // + un retry apres 10s si 429 — reste bien sous le budget 60s serverless.
+      const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const reponses: Array<{ filiereCode: string; data?: GdeltResponse; erreur?: string }> = [];
+      for (const [i, { filiereCode, query }] of REQUETES.entries()) {
+        if (i > 0) await attendre(4_000);
+        const url =
+          `${API_BASE}?query=${encodeURIComponent(query)}` +
+          `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
+        let derniereErreur = "";
+        let ok = false;
+        for (let tentative = 0; tentative < 2 && !ok; tentative++) {
           try {
-            return { filiereCode, data: await fetchJson<GdeltResponse>(url, { timeoutMs: 18_000 }) };
+            reponses.push({ filiereCode, data: await fetchJson<GdeltResponse>(url, { timeoutMs: 12_000 }) });
+            ok = true;
           } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            return { filiereCode, erreur: msg.slice(0, 80) };
+            derniereErreur = (e instanceof Error ? e.message : String(e)).slice(0, 80);
+            if (derniereErreur.includes("429") && tentative === 0) await attendre(10_000);
+            else break;
           }
-        })
-      );
+        }
+        if (!ok) reponses.push({ filiereCode, erreur: derniereErreur });
+      }
 
       for (const rep of reponses) {
         const filiereId = filiereMap[rep.filiereCode];

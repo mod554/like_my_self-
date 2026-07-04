@@ -141,8 +141,11 @@ export class IndexMundiConnector implements Connector {
             continue;
           }
 
+          // Timeout court + 1 seul retry : IndexMundi est une source de secours
+          // (INDICATIF) — 3 retries x 30s dépassaient le budget serverless 60s
           const html = await fetchHtml(page.url, {
-            retries: 3,
+            retries: 1,
+            timeoutMs: 15_000,
             headers: { "Referer": "https://www.indexmundi.com/" },
           });
           // Try embedded JSON first (faster), fall back to table HTML

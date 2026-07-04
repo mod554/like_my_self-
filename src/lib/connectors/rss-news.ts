@@ -132,10 +132,10 @@ export class RssNewsConnector implements Connector {
         FLUX_RSS.map((flux) => parser.parseURL(flux.url).then((feed) => ({ flux, feed })))
       );
 
-      for (const feedResult of feedResults) {
+      for (const [idx, feedResult] of feedResults.entries()) {
         if (feedResult.status === "rejected") {
           const msg = feedResult.reason instanceof Error ? feedResult.reason.message : String(feedResult.reason);
-          resultat.erreurs.push(`Flux inconnu: ${msg}`);
+          resultat.erreurs.push(`Flux "${FLUX_RSS[idx].source}": ${msg.slice(0, 60)}`);
           resultat.nbErreurs++;
           continue;
         }

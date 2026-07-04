@@ -113,27 +113,37 @@ export class UsdaFasConnector implements Connector {
 
       if (!marche) throw new Error("Aucun marché MAIS trouvé en BD");
 
-      // Prix mais : IMF d'abord, sinon Stooq (l'IMF bloque certaines IP cloud)
+      // Prix mais — ordre optimise pour datacenters : Stooq (CBOT, jamais bloque)
+      // d'abord, puis FRED, puis IMF (403 systematique depuis Vercel/GitHub).
+      // Les echecs de fallback sont des notes informatives, pas des erreurs,
+      // tant qu'une source a fonctionne.
       let entries: [string, number][] = [];
-      let sourceNote = "IMF Primary Commodity Prices — PMAIZE";
+      let sourceNote = "";
+      const notesFallback: string[] = [];
+
       try {
-        const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
-        const currentYear = new Date().getFullYear();
-        entries = Object.entries(prixAnnuels).filter(
-          ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
-        );
-      } catch (imfErr) {
-        resultat.erreurs.push(`IMF indisponible: ${imfErr instanceof Error ? imfErr.message.slice(0, 60) : imfErr}`);
+        const stooq = await fetchStooqCorn();
+        sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
+        entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
+      } catch (stooqErr) {
+        notesFallback.push(`Stooq: ${stooqErr instanceof Error ? stooqErr.message.slice(0, 60) : stooqErr}`);
         try {
           const fred = await fetchFredMaize();
           sourceNote = "FRED — Global price of Maize (PMAIZMTUSDM, donnees IMF)";
           entries = fred.map((f) => [f.date, f.usdParTonne] as [string, number]);
         } catch (fredErr) {
-          resultat.erreurs.push(`FRED indisponible: ${fredErr instanceof Error ? fredErr.message.slice(0, 60) : fredErr}`);
-          const stooq = await fetchStooqCorn();
-          sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
-          entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
+          notesFallback.push(`FRED: ${fredErr instanceof Error ? fredErr.message.slice(0, 60) : fredErr}`);
+          const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
+          sourceNote = "IMF Primary Commodity Prices — PMAIZE";
+          const currentYear = new Date().getFullYear();
+          entries = Object.entries(prixAnnuels).filter(
+            ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
+          );
         }
+      }
+      if (entries.length === 0) {
+        resultat.erreurs.push(...notesFallback);
+        throw new Error("Aucune source maïs disponible (Stooq, FRED, IMF)");
       }
 
       for (const [dateStr, valeur] of entries) {
@@ -176,11 +186,11 @@ export class UsdaFasConnector implements Connector {
             await prisma.actualite.create({
               data: {
                 filiereId: filiere.id,
-                titre: `IMF Commodity Prices — Maïs ${annee}: ${prix.toFixed(0)} USD/T`,
-                lien: "https://www.imf.org/en/Research/commodity-prices",
-                source: "IMF Primary Commodity Prices",
-                resume: `Prix mondial du maïs (PMAIZE) en ${annee} : ${prix.toFixed(2)} USD/tonne. Source : FMI.`,
-                datePublication: new Date(`${annee}-07-01T00:00:00.000Z`),
+                titre: `Maïs mondial ${annee.slice(0, 10)}: ${prix.toFixed(0)} USD/T`,
+                lien: "https://stooq.com/q/?s=zc.f",
+                source: sourceNote,
+                resume: `Prix mondial du maïs au ${annee.slice(0, 10)} : ${prix.toFixed(2)} USD/tonne. Source : ${sourceNote}.`,
+                datePublication: dernierEntry[0].length === 4 ? new Date(`${annee}-07-01T00:00:00.000Z`) : new Date(`${annee}T00:00:00.000Z`),
               },
             });
             resultat.nbImportes++;
