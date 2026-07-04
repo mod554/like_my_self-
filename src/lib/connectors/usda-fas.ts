@@ -133,12 +133,16 @@ export class UsdaFasConnector implements Connector {
           entries = fred.map((f) => [f.date, f.usdParTonne] as [string, number]);
         } catch (fredErr) {
           notesFallback.push(`FRED: ${fredErr instanceof Error ? fredErr.message.slice(0, 60) : fredErr}`);
-          const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
-          sourceNote = "IMF Primary Commodity Prices — PMAIZE";
-          const currentYear = new Date().getFullYear();
-          entries = Object.entries(prixAnnuels).filter(
-            ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
-          );
+          try {
+            const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
+            sourceNote = "IMF Primary Commodity Prices — PMAIZE";
+            const currentYear = new Date().getFullYear();
+            entries = Object.entries(prixAnnuels).filter(
+              ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
+            );
+          } catch (imfErr) {
+            notesFallback.push(`IMF: ${imfErr instanceof Error ? imfErr.message.slice(0, 60) : imfErr}`);
+          }
         }
       }
       if (entries.length === 0) {
