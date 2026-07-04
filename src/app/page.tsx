@@ -79,6 +79,10 @@ export default function Home() {
           overflow: "hidden",
         }}
       >
+        {/* Aurora + grain — profondeur studio */}
+        <div className="ag-aurora"><span /></div>
+        <div className="ag-grain" />
+
         {/* Background grid decoration */}
         <div
           style={{
