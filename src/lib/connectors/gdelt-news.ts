@@ -77,13 +77,18 @@ export class GdeltNewsConnector implements Connector {
       // + un retry apres 10s si 429 — reste bien sous le budget 60s serverless.
       const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const reponses: Array<{ filiereCode: string; data?: GdeltResponse; erreur?: string }> = [];
+      const budgetMs = 32_000; // garde-fou : la route entière doit tenir sous 60s
       for (const [i, { filiereCode, query }] of REQUETES.entries()) {
+        if (Date.now() - debut.getTime() > budgetMs) {
+          reponses.push({ filiereCode, erreur: "budget temps épuisé — au prochain run" });
+          continue;
+        }
         if (i > 0) await attendre(2_500);
         const url =
           `${API_BASE}?query=${encodeURIComponent(query)}` +
           `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
         try {
-          reponses.push({ filiereCode, data: await fetchJson<GdeltResponse>(url, { timeoutMs: 9_000, retries: 1 }) });
+          reponses.push({ filiereCode, data: await fetchJson<GdeltResponse>(url, { timeoutMs: 8_000, retries: 0 }) });
         } catch (e) {
           // 429 = rate-limit temporaire GDELT — le cron quotidien réessaiera
           reponses.push({ filiereCode, erreur: (e instanceof Error ? e.message : String(e)).slice(0, 80) });

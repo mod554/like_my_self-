@@ -55,8 +55,10 @@ const FLUX_RSS: FluxRSS[] = [
   },
   // ── Institutions (flux encore actifs) ────────────────────────────────────
   {
-    url: "https://www.fao.org/newsroom/rss/en/",
-    source: "FAO Newsroom",
+    // L'ancien flux FAO (fao.org/newsroom/rss) renvoie 404 — remplacé par
+    // UN News rubrique Food & Agriculture (contenu FAO/PAM inclus)
+    url: "https://news.un.org/feed/subscribe/en/news/topic/food-and-agriculture/feed/rss.xml",
+    source: "UN News — Food & Agriculture (FAO/PAM)",
     filieres: ["MAIS", "CAJOU", "COLA"], fiabilite: "OFFICIEL",
   },
   {
@@ -65,9 +67,11 @@ const FLUX_RSS: FluxRSS[] = [
     filieres: ["CAJOU", "COLA"], fiabilite: "INDICATIF",
   },
   {
-    url: "https://agfax.com/feed/",
-    source: "AgFax — Agriculture News",
-    filieres: ["MAIS"], fiabilite: "INDICATIF",
+    // AgFax coupe la connexion (ECONNRESET) depuis les datacenters — remplacé
+    // par AllAfrica Agriculture (agrégateur presse africaine, pertinent AOF)
+    url: "https://allafrica.com/tools/headlines/rdf/agriculture/headlines.rdf",
+    source: "AllAfrica — Agriculture",
+    filieres: ["MAIS", "CAJOU", "COLA"], fiabilite: "INDICATIF",
   },
 ];
 
