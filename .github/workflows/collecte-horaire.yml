@@ -1,0 +1,44 @@
+name: Collecte horaire des données
+
+# Vercel Hobby limite les crons à 1/jour — GitHub Actions prend le relais
+# pour des cotations quotidiennes/horaires : taux de change, prix CBOT (Stooq),
+# actualités RSS + GDELT toutes les heures ; prix locaux WFP/HDX 2x/jour.
+
+on:
+  schedule:
+    - cron: "15 * * * *"   # toutes les heures à :15
+  workflow_dispatch:
+
+jobs:
+  collecte:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher les connecteurs temps réel
+        run: |
+          URL="https://like-my-self.vercel.app"
+          HEURE=$(date -u +%H)
+
+          # Toutes les heures : taux de change + prix CBOT quotidiens + actualités
+          CODES="TAUX_CHANGE_LIVE USDA_FAS_PSD RSS_NEWS_AGRI GDELT_NEWS"
+
+          # 2x/jour (07h et 19h UTC) : prix locaux WFP/HDX + sources officielles
+          if [ "$HEURE" = "07" ] || [ "$HEURE" = "19" ]; then
+            CODES="$CODES RESIMAO WORLD_BANK_PINK FAO_FPMA CONSEIL_ANACARDE_CI COMTRADE_UN"
+          fi
+
+          for code in $CODES; do
+            RESP=$(curl -s --max-time 90 -X POST "$URL/api/connectors" \
+              -H "Content-Type: application/json" -d "{\"code\": \"$code\"}")
+            echo "$RESP" | python3 -c "
+          import json, sys
+          code = '$code'
+          try:
+              d = json.load(sys.stdin)
+              if d.get('erreur') or d.get('error'):
+                  print(f'  ERREUR {code}:', str(d.get('erreur') or d.get('error'))[:90])
+              else:
+                  print(f'  OK {code}: {d.get(\"nbImportes\", 0)} importes, {d.get(\"nbErreurs\", 0)} erreurs')
+          except Exception:
+              print(f'  {code}: reponse illisible')
+          " || true
+          done
