@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AfricaGroLogo from "@/components/brand/AfricaGroLogo";
+import AfricaMarketMap from "@/components/brand/AfricaMarketMap";
 
 const FILIERES = [
   {
@@ -95,6 +96,11 @@ export default function Home() {
             pointerEvents: "none",
           }}
         />
+
+        {/* Carte réseau des marchés — panneau droit du hero (masqué < 900px) */}
+        <div className="ag-hero-map">
+          <AfricaMarketMap />
+        </div>
 
         <div className="ag-container" style={{ position: "relative" }}>
           {/* Brand */}

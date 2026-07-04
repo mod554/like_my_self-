@@ -489,3 +489,18 @@ main { animation: ag-page-in 0.4s ease-out both; }
   opacity: 0.35;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 }
+
+/* ── Hero : carte réseau des marchés (panneau droit) ─────────────────────── */
+.ag-hero-map {
+  position: absolute;
+  right: 3%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(420px, 34vw);
+  opacity: 0;
+  animation: ag-fade-up 0.9s var(--ease-smooth) 0.35s both;
+  pointer-events: none;
+}
+@media (max-width: 900px) {
+  .ag-hero-map { display: none; }
+}
