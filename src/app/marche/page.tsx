@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import PrixChartWrapper from "@/components/charts/PrixChartWrapper";
+import CountUp from "@/components/ui/CountUp";
 import LiveNewsFeed from "@/components/live/LiveNewsFeed";
 
 const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
@@ -89,8 +90,10 @@ export default async function MarchePage() {
   }
 
   return (
-    <div style={{ flex: 1, padding: "32px 0 64px" }}>
-      <div className="ag-container">
+    <div className="ag-page-marche" style={{ flex: 1, padding: "32px 0 64px", position: "relative" }}>
+      <div className="ag-aurora"><span /></div>
+      <div className="ag-grain" />
+      <div className="ag-container" style={{ position: "relative" }}>
 
         {/* Header */}
         <div style={{ marginBottom: "28px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
@@ -139,7 +142,7 @@ export default async function MarchePage() {
                     {last ? (
                       <>
                         <div style={{ fontSize: 26, fontWeight: 700, color: accent, fontFamily: "monospace", lineHeight: 1 }}>
-                          {formatPrix(last.valeur, last.devise)}
+                          <CountUp value={Number(last.valeur)} devise={last.devise} />
                         </div>
                         <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", marginTop: "4px" }}>
                           {last.unite} · {new Date(last.dateReleve).toLocaleDateString("fr-FR")} · {last.typePrix}

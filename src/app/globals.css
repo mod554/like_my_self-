@@ -544,3 +544,51 @@ main { animation: ag-page-in 0.4s ease-out both; }
 
 /* Liens & interactions : halo terracotta discret au focus clavier */
 :focus-visible { outline-color: var(--ag-terra); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   /MARCHE — techniques premium scopées (validation avant réplication)
+   Palette existante uniquement : sève, forêt, terracotta, or — en rgba.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Cartes KPI en glassmorphism : fond sève 5%, blur, bordure dégradée, ombre colorée */
+.ag-page-marche .ag-kpi {
+  background: rgba(90, 138, 42, 0.05);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid transparent;
+  box-shadow:
+    0 1px 2px rgba(0, 61, 46, 0.06),
+    0 10px 34px -10px rgba(0, 61, 46, 0.16);
+  position: relative;
+}
+.ag-page-marche .ag-kpi::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(90,138,42,0.45), rgba(0,61,46,0.10) 45%, rgba(184,145,46,0.30));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+.ag-page-marche .ag-kpi:hover {
+  box-shadow:
+    0 2px 4px rgba(0, 61, 46, 0.08),
+    0 16px 48px -10px rgba(90, 138, 42, 0.28);
+}
+.ag-page-marche .ag-kpi:hover::before {
+  background: linear-gradient(135deg, rgba(90,138,42,0.75), rgba(0,61,46,0.25) 45%, rgba(184,145,46,0.55));
+}
+
+/* Panneaux de contenu (graphes, actualités) : verre sur fond sable */
+.ag-page-marche [style*="var(--bg-surface)"] {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Halos ambiants renforcés sur cette page */
+.ag-page-marche > .ag-aurora::before { background: radial-gradient(circle, rgba(90,138,42,0.16), transparent 65%); }
+.ag-page-marche > .ag-aurora::after  { background: radial-gradient(circle, rgba(196,98,45,0.10), transparent 65%); }
+.ag-page-marche > .ag-aurora > span  { background: radial-gradient(circle, rgba(184,145,46,0.10), transparent 65%); }

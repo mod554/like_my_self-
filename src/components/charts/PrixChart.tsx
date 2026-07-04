@@ -41,13 +41,15 @@ function makeTooltip(couleur: string) {
     return (
       <div
         style={{
-          background: "var(--bg-surface)",
-          border: "1px solid var(--border-default)",
-          borderRadius: "8px",
+          background: "rgba(255, 255, 254, 0.55)",
+          backdropFilter: "blur(16px) saturate(1.3)",
+          WebkitBackdropFilter: "blur(16px) saturate(1.3)",
+          border: `1px solid ${couleur}55`,
+          borderRadius: "10px",
           padding: "10px 14px",
           fontSize: 12,
           fontFamily: "monospace",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+          boxShadow: `0 8px 28px -6px ${couleur}40, inset 0 1px 0 rgba(255,255,255,0.7)`,
         }}
       >
         <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>{label}</div>
@@ -99,11 +101,16 @@ export default function PrixChart({ data, couleur = "#92BA59", titre, unite, dev
         <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id={`grad-${couleur.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={couleur} stopOpacity={0.25} />
-              <stop offset="100%" stopColor={couleur} stopOpacity={0.02} />
+              <stop offset="0%" stopColor={couleur} stopOpacity={0.32} />
+              <stop offset="55%" stopColor={couleur} stopOpacity={0.10} />
+              <stop offset="100%" stopColor={couleur} stopOpacity={0} />
             </linearGradient>
+            {/* Halo lumineux sous la courbe — teinte de la donnée, pas de nouvelle couleur */}
+            <filter id={`glow-${couleur.replace("#", "")}`} x="-20%" y="-40%" width="140%" height="180%">
+              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor={couleur} floodOpacity="0.45" />
+            </filter>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
+          <CartesianGrid strokeDasharray="2 8" stroke="rgba(0,61,46,0.07)" vertical={false} />
           <XAxis
             dataKey="date"
             tick={{ fontSize: 9, fill: "var(--text-muted)", fontFamily: "monospace" }}
@@ -129,10 +136,11 @@ export default function PrixChart({ data, couleur = "#92BA59", titre, unite, dev
             type="monotone"
             dataKey="valeur"
             stroke={couleur}
-            strokeWidth={2}
+            strokeWidth={2.4}
             fill={`url(#grad-${couleur.replace("#", "")})`}
             dot={false}
-            activeDot={{ r: 4, fill: couleur, stroke: "var(--bg-base)", strokeWidth: 2 }}
+            activeDot={{ r: 5, fill: couleur, stroke: "#FFFFFF", strokeWidth: 2 }}
+            filter={`url(#glow-${couleur.replace("#", "")})`}
           />
         </AreaChart>
       </ResponsiveContainer>
