@@ -32,7 +32,8 @@ interface GdeltResponse {
 const REQUETES: { filiereCode: string; query: string }[] = [
   {
     filiereCode: "MAIS",
-    query: '(maize OR corn OR "maïs") (price OR market OR harvest OR export OR "Afrique" OR Africa)',
+    // GDELT rejette les mots uniques entre guillemets dans un bloc OR
+    query: '(maize OR corn) (price OR market OR harvest OR export OR africa OR afrique)',
   },
   {
     filiereCode: "CAJOU",
