@@ -1,63 +1,72 @@
-name: Probe external data sources
+name: Collecte horaire des données
+
+# Vercel Hobby limite les crons à 1/jour — GitHub Actions prend le relais
+# pour des cotations quotidiennes/horaires : taux de change, prix CBOT (Stooq),
+# actualités RSS + GDELT toutes les heures ; prix locaux WFP/HDX 2x/jour.
 
 on:
+  schedule:
+    - cron: "15 * * * *"   # toutes les heures à :15
   workflow_dispatch:
 
 jobs:
-  probe:
+  collecte:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe FAOSTAT and commodity sources
+      # Cotation CBOT collectée sur le runner (IP propre) puis poussée vers
+      # l'app — les IP partagées Vercel épuisent les quotas Stooq/FRED
+      - name: Cotations maïs CBOT (Stooq) depuis le runner
         run: |
-          python3 - <<'PYEOF'
-          import json, urllib.request
-
-          def get(url, timeout=30):
-              req = urllib.request.Request(url, headers={
-                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-                  "Accept": "application/json",
-              })
+          CSV=$(curl -s --max-time 20 -H "User-Agent: Mozilla/5.0" "https://stooq.com/q/d/l/?s=zc.f&i=d" || true)
+          echo "$CSV" | python3 -c "
+          import csv, io, json, sys
+          rows = list(csv.reader(io.StringIO(sys.stdin.read())))
+          points = []
+          for r in rows[1:][-30:]:
+              if len(r) < 5: continue
               try:
-                  with urllib.request.urlopen(req, timeout=timeout) as r:
-                      body = r.read()
-                      return r.status, body[:400].decode("utf8", "replace"), body
-              except Exception as e:
-                  return None, str(e)[:150], b""
+                  cents = float(r[4])
+                  if cents <= 0: continue
+                  points.append({'date': r[0], 'usd': round(cents / 100 * 39.3683, 2)})
+              except ValueError:
+                  continue
+          print(json.dumps({'points': points, 'sourceNote': 'Stooq CBOT ZC quotidien (via GitHub Actions)'}))
+          " > /tmp/points.json
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/points.json'))['points']))")
+          echo "Points CBOT collectés: $N"
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/mais"               -H "Content-Type: application/json"               ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"}               --data-binary @/tmp/points.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
-          hosts = [
-              "https://faostatservices.fao.org/api/v1/en/data/PP",
-              "https://fenixservices.fao.org/faostat/api/v1/en/data/PP",
-          ]
-          # item 217=cashew in shell, 224=kola nuts, 56=maize
-          # element 5532=Producer Price USD/tonne, 5530=Producer Price LCU/tonne
-          combos = [
-              ("cashew-CI", "area=107&item=217&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
-              ("kola-NGA-CIV-GHA", "area=159,107,81&item=224&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
-              ("cashew-CI-LCU", "area=107&item=217&element=5530&year=2020,2021,2022,2023"),
-          ]
-          suffixes = ["&output_type=objects", "&output_type=json&type=datasets", ""]
+      - name: Déclencher les connecteurs temps réel
+        run: |
+          URL="https://like-my-self.vercel.app"
+          HEURE=$(date -u +%H)
 
-          for host in hosts:
-              for name, q in combos:
-                  for suf in suffixes:
-                      url = f"{host}?{q}{suf}"
-                      status, preview, body = get(url)
-                      n = "?"
-                      try:
-                          d = json.loads(body)
-                          n = len(d.get("data", []))
-                      except Exception:
-                          pass
-                      print(f"[{name}] {status} n={n} {host.split('/')[2]} suf={suf or '(none)'}")
-                      if isinstance(n, int) and n > 0:
-                          print("   EXEMPLE:", json.dumps(json.loads(body)["data"][0])[:300])
+          # Toutes les heures : taux de change + prix CBOT quotidiens + actualités
+          CODES="TAUX_CHANGE_LIVE USDA_FAS_PSD RSS_NEWS_AGRI GDELT_NEWS"
 
-          # Alternatives cajou/cola
-          extra = [
-              ("WB-cashew?", "https://api.worldbank.org/v2/en/country/all/indicator/PCASHEW?format=json&mrv=12&source=21"),
-              ("UN-Comtrade-preview", "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=384&period=2023&cmdCode=0801&flowCode=X"),
-          ]
-          for name, url in extra:
-              status, preview, _ = get(url)
-              print(f"[{name}] {status} :: {preview[:200]}")
-          PYEOF
+          # 2x/jour (07h et 19h UTC) : prix locaux WFP/HDX + sources officielles
+          if [ "$HEURE" = "07" ] || [ "$HEURE" = "19" ]; then
+            CODES="$CODES RESIMAO WORLD_BANK_PINK FAO_FPMA CONSEIL_ANACARDE_CI COMTRADE_UN"
+          fi
+
+          for code in $CODES; do
+            RESP=$(curl -s --max-time 90 -X POST "$URL/api/connectors" \
+              -H "Content-Type: application/json" -d "{\"code\": \"$code\"}")
+            echo "$RESP" | python3 -c "
+          import json, sys
+          code = '$code'
+          try:
+              d = json.load(sys.stdin)
+              if d.get('erreur') or d.get('error'):
+                  print(f'  ERREUR {code}:', str(d.get('erreur') or d.get('error'))[:90])
+              else:
+                  print(f'  OK {code}: {d.get(\"nbImportes\", 0)} importes, {d.get(\"nbErreurs\", 0)} erreurs')
+          except Exception:
+              print(f'  {code}: reponse illisible')
+          " || true
+          done
