@@ -57,8 +57,8 @@ const FLUX_RSS: FluxRSS[] = [
   {
     // L'ancien flux FAO (fao.org/newsroom/rss) renvoie 404 — remplacé par
     // UN News rubrique Food & Agriculture (contenu FAO/PAM inclus)
-    url: "https://news.un.org/feed/subscribe/en/news/topic/food-and-agriculture/feed/rss.xml",
-    source: "UN News — Food & Agriculture (FAO/PAM)",
+    url: "https://news.google.com/rss/search?q=FAO%20OR%20%22food%20prices%22%20agriculture%20africa&hl=en-US&gl=US&ceid=US:en",
+    source: "Google News — FAO & Food Prices Africa (en)",
     filieres: ["MAIS", "CAJOU", "COLA"], fiabilite: "OFFICIEL",
   },
   {

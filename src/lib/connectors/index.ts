@@ -9,7 +9,9 @@ import { ResimaoConnector } from "./resimao";
 import { RssNewsConnector } from "./rss-news";
 import { GdeltNewsConnector } from "./gdelt-news";
 import { ComtradeConnector } from "./comtrade";
-import { IndexMundiConnector } from "./indexmundi";
+// IndexMundiConnector retiré du registre : redondant (doublon du prix maïs
+// World Bank, fiabilité INDICATIF) et indexmundi.com bloque les IP Vercel,
+// ce qui gelait la route /api/connectors. Le fichier reste disponible.
 import { TauxChangeLiveConnector } from "./taux-change";
 import type { Connector } from "./base";
 
@@ -23,7 +25,6 @@ export const CONNECTEURS: Connector[] = [
   new RssNewsConnector(),
   new GdeltNewsConnector(),
   new ComtradeConnector(),
-  new IndexMundiConnector(),
 ];
 
 export { type Connector, type ConnectorResult } from "./base";

@@ -88,7 +88,7 @@ export class GdeltNewsConnector implements Connector {
           `${API_BASE}?query=${encodeURIComponent(query)}` +
           `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
         try {
-          reponses.push({ filiereCode, data: await fetchJson<GdeltResponse>(url, { timeoutMs: 8_000, retries: 0 }) });
+          reponses.push({ filiereCode, data: await fetchJson<GdeltResponse>(url, { timeoutMs: 12_000, retries: 0 }) });
         } catch (e) {
           // 429 = rate-limit temporaire GDELT — le cron quotidien réessaiera
           reponses.push({ filiereCode, erreur: (e instanceof Error ? e.message : String(e)).slice(0, 80) });
