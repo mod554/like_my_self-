@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
         default: false
+      debug_page:
+        description: "Capturer la stack d'erreur runtime d'une page (ex: /referentiel)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   # Le sandbox Claude Code ne peut pas joindre le CDN Higgsfield (Network
@@ -43,8 +48,28 @@ jobs:
           git commit -m "assets: Higgsfield reference + hero 21:9 + texture organique (via runner)"
           git push origin design/marche-assets
 
+  debug-page:
+    if: inputs.debug_page != ''
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Capturer les logs runtime pendant le crash
+        run: |
+          npm install -g vercel@latest >/dev/null 2>&1
+          (timeout 45 vercel logs https://like-my-self.vercel.app --token="$VERCEL_TOKEN" --scope marius-projects-92b9e651 > /tmp/vlogs.txt 2>&1 || true) &
+          LOGPID=$!
+          sleep 6
+          echo "== Déclenchement de ${{ inputs.debug_page }} =="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" "https://like-my-self.vercel.app${{ inputs.debug_page }}"
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" "https://like-my-self.vercel.app${{ inputs.debug_page }}"
+          sleep 20
+          kill $LOGPID 2>/dev/null || true
+          echo "== LOGS RUNTIME =="
+          cat /tmp/vlogs.txt | tail -120
+
   collecte:
-    if: inputs.fetch_assets != true
+    if: inputs.fetch_assets != true && inputs.debug_page == ''
     runs-on: ubuntu-latest
     steps:
       # Cotation CBOT collectée sur le runner (IP propre) puis poussée vers
