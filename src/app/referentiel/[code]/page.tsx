@@ -196,14 +196,13 @@ export default async function FilierePage({
                     style={{ textDecoration: "none", display: "block" }}
                   >
                     <div
+                      className="ag-hover-row"
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "space-between",
                         padding: "12px 14px", borderRadius: "8px",
                         transition: "all 150ms ease",
                         cursor: "pointer",
                       }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elevated)"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <span
@@ -266,13 +265,12 @@ export default async function FilierePage({
                       style={{ textDecoration: "none" }}
                     >
                       <div
+                        className="ag-hover-row"
                         style={{
                           display: "flex", alignItems: "center", justifyContent: "space-between",
                           padding: "10px 14px", borderRadius: "8px",
                           transition: "background 150ms ease",
                         }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-elevated)"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                           <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--ag-olive)", background: "rgba(107,118,13,0.1)", padding: "1px 5px", borderRadius: "3px" }}>

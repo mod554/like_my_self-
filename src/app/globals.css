@@ -637,3 +637,6 @@ main { animation: ag-page-in 0.4s ease-out both; }
   opacity: 0.05;
   mix-blend-mode: multiply;
 }
+
+/* Survol de ligne de liste — remplace les handlers JS interdits en Server Component */
+.ag-hover-row:hover { background: var(--bg-elevated) !important; }
