@@ -10,7 +10,9 @@ import type { Connector, ConnectorResult } from "./base";
 import { creerResultatVide } from "./base";
 
 const SOURCE_CODE = "COMTRADE_UN";
-const API = "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
+// C/M/HS = mensuel (données fraîches), C/A/HS = annuel (repli, plus complet
+// pour les pays qui ne déclarent qu'annuellement comme la CIV/NGA)
+const API_BASE = "https://comtradeapi.un.org/public/v1/preview/C";
 
 interface ComtradeRow {
   period: number | string;
@@ -36,8 +38,9 @@ const CIBLES: Cible[] = [
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchUnitValue(reporter: number, cmd: string, annee: number): Promise<number | null> {
-  const url = `${API}?reporterCode=${reporter}&period=${annee}&cmdCode=${cmd}&flowCode=X&partnerCode=0`;
+// freq: "M" (mensuel, period=YYYYMM) ou "A" (annuel, period=YYYY)
+async function fetchUnitValue(freq: "M" | "A", reporter: number, cmd: string, period: string): Promise<number | null> {
+  const url = `${API_BASE}/${freq}/HS?reporterCode=${reporter}&period=${period}&cmdCode=${cmd}&flowCode=X&partnerCode=0`;
   const res = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120",
@@ -51,6 +54,25 @@ async function fetchUnitValue(reporter: number, cmd: string, annee: number): Pro
   const row = (json.data ?? []).find((r) => Number(r.partnerCode) === 0) ?? (json.data ?? [])[0];
   if (!row?.primaryValue || !row?.netWgt || row.netWgt <= 0) return null;
   return Math.round((row.primaryValue / row.netWgt) * 1000 * 100) / 100;
+}
+
+// Fenêtres à interroger : mois récents (données fraîches, ~2 mois de décalage
+// de publication) d'abord, puis années récentes en repli/complément.
+function fenetres(): { freq: "M" | "A"; period: string; dateReleve: Date }[] {
+  const out: { freq: "M" | "A"; period: string; dateReleve: Date }[] = [];
+  const now = new Date();
+  // 8 derniers mois à partir de M-2 (le mois courant et M-1 sont rarement publiés)
+  for (let k = 2; k < 10; k++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - k, 1));
+    const yyyymm = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    out.push({ freq: "M", period: yyyymm, dateReleve: d });
+  }
+  // 3 années récentes en repli (pays déclarant uniquement en annuel)
+  const y = now.getUTCFullYear();
+  for (const annee of [y - 1, y - 2, y - 3]) {
+    out.push({ freq: "A", period: String(annee), dateReleve: new Date(`${annee}-07-01T00:00:00.000Z`) });
+  }
+  return out;
 }
 
 export class ComtradeConnector implements Connector {
@@ -70,13 +92,12 @@ export class ComtradeConnector implements Connector {
       const source = await prisma.source.findUnique({ where: { code: SOURCE_CODE } });
       if (!source) throw new Error(`Source ${SOURCE_CODE} introuvable en BD — relancer /api/init`);
 
-      const anneeCourante = new Date().getFullYear();
-      // 2 années récentes + 1 année d'archive tournante — l'historique 8 ans se
-      // complète au fil des runs quotidiens sans dépasser le rate limit Comtrade
-      const archive = anneeCourante - 3 - (new Date().getDate() % 5);
-      const annees = [anneeCourante - 1, anneeCourante - 2, archive];
+      const periodes = fenetres();
+      const MAX_APPELS = 14; // plafond d'appels API par run — tient le budget 60s
+      let appels = 0;
 
       for (const cible of CIBLES) {
+        if (appels >= MAX_APPELS) break;
         const produit = await prisma.produit.findUnique({ where: { code: cible.produitCode } });
         const marche = await prisma.marche.findUnique({ where: { code: cible.marcheCode } });
         if (!produit || !marche) {
@@ -85,9 +106,9 @@ export class ComtradeConnector implements Connector {
           continue;
         }
 
-        for (const annee of annees) {
-          // Déjà en base pour cette année ? — évite un appel API inutile
-          const dateReleve = new Date(`${annee}-07-01T00:00:00.000Z`);
+        for (const { freq, period, dateReleve } of periodes) {
+          if (appels >= MAX_APPELS) break;
+          // Déjà en base pour cette période ? — évite un appel API inutile
           const existe = await prisma.prixReleve.findFirst({
             where: { produitId: produit.id, marcheId: marche.id, sourceId: source.id, dateReleve },
             select: { id: true },
@@ -95,19 +116,23 @@ export class ComtradeConnector implements Connector {
           if (existe) continue;
 
           let usdParTonne: number | null = null;
+          appels++;
           try {
-            usdParTonne = await fetchUnitValue(cible.reporterCode, cible.cmdCode, annee);
+            usdParTonne = await fetchUnitValue(freq, cible.reporterCode, cible.cmdCode, period);
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            resultat.erreurs.push(`${cible.label} ${annee}: ${msg.slice(0, 60)}`);
+            resultat.erreurs.push(`${cible.label} ${period}: ${msg.slice(0, 60)}`);
             resultat.nbErreurs++;
             if (msg.includes("429")) await pause(5_000);
             continue;
           } finally {
-            await pause(2_500); // pacing rate limit Comtrade public
+            await pause(2_000); // pacing rate limit Comtrade public
           }
           if (usdParTonne === null || usdParTonne <= 0) continue;
 
+          const libellePeriode = freq === "M"
+            ? `${period.slice(0, 4)}-${period.slice(4, 6)}`
+            : period;
           try {
             await prisma.prixReleve.create({
               data: {
@@ -120,14 +145,14 @@ export class ComtradeConnector implements Connector {
                 unite: "tonne",
                 dateReleve,
                 fiabilite: "OFFICIEL",
-                notes: `UN Comtrade — valeur unitaire export HS ${cible.cmdCode} ${annee} (monde)`,
+                notes: `UN Comtrade — valeur unitaire export HS ${cible.cmdCode} ${libellePeriode} (${freq === "M" ? "mensuel" : "annuel"}, monde)`,
               },
             });
             resultat.nbImportes++;
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             if (!msg.includes("Unique constraint")) {
-              resultat.erreurs.push(`${cible.label} ${annee}: ${msg.slice(0, 60)}`);
+              resultat.erreurs.push(`${cible.label} ${period}: ${msg.slice(0, 60)}`);
               resultat.nbErreurs++;
             }
           }
