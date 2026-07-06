@@ -8,9 +8,43 @@ on:
   schedule:
     - cron: "15 * * * *"   # toutes les heures à :15
   workflow_dispatch:
+    inputs:
+      fetch_assets:
+        description: "Télécharger les assets Higgsfield vers design/marche-assets"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
+  # Le sandbox Claude Code ne peut pas joindre le CDN Higgsfield (Network
+  # Policy figée du conteneur) — le runner GitHub a un egress ouvert : il
+  # télécharge les 3 assets et les committe sur la branche design.
+  fetch-assets:
+    if: inputs.fetch_assets == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: design/marche-assets
+      - name: Télécharger et committer les assets Higgsfield
+        run: |
+          mkdir -p public/assets/higgsfield assets/higgsfield
+          BASE="https://d8j0ntlcm91z4.cloudfront.net/user_395PfotE2gbh2HjWDdSmQjr0B44"
+          curl -fsS -o assets/higgsfield/reference-terre-seve.png "$BASE/hf_20260704_213545_c5ec5f4d-a116-4779-a3dc-a70d8be4de88.png"
+          curl -fsS -o public/assets/higgsfield/hero-marche-21x9.png "$BASE/hf_20260704_213809_a729aa2c-fd6d-461d-ab6f-51dd5e0dcd71.png"
+          curl -fsS -o public/assets/higgsfield/texture-organique-overlay.png "$BASE/hf_20260704_213748_81f7e2e7-8c0e-436c-bd5d-d3091b58e84c.png"
+          file assets/higgsfield/*.png public/assets/higgsfield/*.png
+          du -h assets/higgsfield/*.png public/assets/higgsfield/*.png
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add assets/ public/assets/
+          git commit -m "assets: Higgsfield reference + hero 21:9 + texture organique (via runner)"
+          git push origin design/marche-assets
+
   collecte:
+    if: inputs.fetch_assets != true
     runs-on: ubuntu-latest
     steps:
       # Cotation CBOT collectée sur le runner (IP propre) puis poussée vers
