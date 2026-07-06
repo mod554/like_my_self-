@@ -592,3 +592,48 @@ main { animation: ag-page-in 0.4s ease-out both; }
 .ag-page-marche > .ag-aurora::before { background: radial-gradient(circle, rgba(90,138,42,0.16), transparent 65%); }
 .ag-page-marche > .ag-aurora::after  { background: radial-gradient(circle, rgba(196,98,45,0.10), transparent 65%); }
 .ag-page-marche > .ag-aurora > span  { background: radial-gradient(circle, rgba(184,145,46,0.10), transparent 65%); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ASSETS HIGGSFIELD — hero photographique & texture organique réelle
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Hero /marche : photo éditoriale 21:9 + double overlay garantissant la
+   lisibilité des données (sable opaque à gauche, teinte forêt à droite) */
+.ag-hero-photo {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  padding: 34px 32px 30px;
+  margin-bottom: 28px;
+  background-color: var(--ag-forest);
+  background-image:
+    linear-gradient(90deg,
+      rgba(251, 250, 245, 0.97) 0%,
+      rgba(251, 250, 245, 0.88) 38%,
+      rgba(251, 250, 245, 0.35) 68%,
+      rgba(0, 61, 46, 0.30) 100%),
+    url("/assets/higgsfield/hero-marche-21x9.webp");
+  background-size: cover;
+  background-position: center 38%;
+  box-shadow:
+    0 1px 2px rgba(0, 61, 46, 0.08),
+    0 16px 48px -12px rgba(0, 61, 46, 0.25);
+  animation: ag-scale-in 0.7s var(--ease-smooth) both;
+}
+.ag-hero-photo::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(0deg, rgba(251, 250, 245, 0.35) 0%, transparent 30%);
+  pointer-events: none;
+}
+
+/* Texture organique Higgsfield — remplace le grain SVG générique */
+.ag-texture {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image: url("/assets/higgsfield/texture-organique.webp");
+  background-size: 512px 512px;
+  background-repeat: repeat;
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+}

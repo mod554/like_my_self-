@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import Link from "next/link";
 import PrixChartWrapper from "@/components/charts/PrixChartWrapper";
 import CountUp from "@/components/ui/CountUp";
+import AfricaMarketMap from "@/components/brand/AfricaMarketMap";
 import LiveNewsFeed from "@/components/live/LiveNewsFeed";
 
 const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
@@ -92,23 +93,25 @@ export default async function MarchePage() {
   return (
     <div className="ag-page-marche" style={{ flex: 1, padding: "32px 0 64px", position: "relative" }}>
       <div className="ag-aurora"><span /></div>
-      <div className="ag-grain" />
+      <div className="ag-texture" />
       <div className="ag-container" style={{ position: "relative" }}>
 
-        {/* Header */}
-        <div style={{ marginBottom: "28px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
-          <div>
-            <p className="ag-section-label" style={{ marginBottom: "6px" }}>Terminal de marché · Africa Agro Partners</p>
-            <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
-              Tableau de bord des prix
-            </h1>
-            <p style={{ marginTop: "6px", fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>
-              Prix en temps réel · Taux de change mis à jour chaque heure · Actualités toutes les 5 minutes
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <span className="ag-status-dot" />
-            <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)" }}>DONNÉES EN TEMPS RÉEL</span>
+        {/* Hero photographique Higgsfield — overlay dégradé pour lisibilité */}
+        <div className="ag-hero-photo">
+          <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+            <div>
+              <p className="ag-section-label" style={{ marginBottom: "6px" }}>Terminal de marché · Africa Agro Partners</p>
+              <h1 className="font-display" style={{ fontSize: 28, color: "var(--text-primary)", margin: 0 }}>
+                Tableau de bord des prix
+              </h1>
+              <p style={{ marginTop: "6px", fontSize: 12, color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                Prix en temps réel · Taux de change mis à jour chaque heure · Actualités toutes les 5 minutes
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <span className="ag-status-dot" />
+              <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)", fontWeight: 700 }}>DONNÉES EN TEMPS RÉEL</span>
+            </div>
           </div>
         </div>
 
@@ -268,7 +271,16 @@ export default async function MarchePage() {
           </div>
 
           {/* Fil d'actualité live — auto-refresh 5 minutes */}
-          <div style={{ position: "sticky", top: "80px" }}>
+          <div style={{ position: "sticky", top: "80px", display: "flex", flexDirection: "column", gap: "16px" }}>
+            {/* Réseau des marchés AOF — nœuds pulsants + particules vers CBOT */}
+            <div className="ag-glass" style={{ borderRadius: "12px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 18px 4px" }}>
+                <p className="ag-section-label">Réseau des marchés · flux temps réel</p>
+              </div>
+              <div style={{ padding: "0 10px 8px" }}>
+                <AfricaMarketMap />
+              </div>
+            </div>
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
               <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-subtle)" }}>
                 <p className="ag-section-label">Fil d&apos;actualité en direct</p>

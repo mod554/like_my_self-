@@ -76,6 +76,19 @@ export default function AfricaMarketMap() {
         );
       })}
 
+      {/* Particules de données circulant vers le hub (animateMotion sur les arcs) */}
+      {NOEUDS.map((n) => (
+        <circle key={`part-${n.id}`} r="1.6" fill="#B8912E" opacity="0.9">
+          <animateMotion
+            dur="3.4s"
+            begin={`${(n.d ?? 0) + 0.6}s`}
+            repeatCount="indefinite"
+            path={arc(n.x, n.y, HUB.x, HUB.y)}
+          />
+          <animate attributeName="opacity" values="0;0.9;0.9;0" keyTimes="0;0.15;0.8;1" dur="3.4s" begin={`${(n.d ?? 0) + 0.6}s`} repeatCount="indefinite" />
+        </circle>
+      ))}
+
       {/* Nœuds de marché pulsants */}
       {NOEUDS.map((n) => (
         <g key={n.id}>
