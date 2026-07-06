@@ -97,7 +97,7 @@ jobs:
               for t, c in zip(ts, closes):
                   if c and c > 0:
                       date = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d")
-                      points.append({"date": date, "usd": round(c / 100 * 39.3683, 2)})
+                      points.append({"date": date, "usd": round(c / 100 * 39.3683, 2), "cents": round(c, 2)})
               note = "CBOT ZC=F quotidien via Yahoo Finance (GitHub Actions)"
           except Exception as e:
               print("Yahoo indisponible:", str(e)[:80])
@@ -141,7 +141,7 @@ jobs:
                   print("FRED indisponible:", str(e)[:80])
 
           print(f"Points CBOT collectes: {len(points)} — {note}")
-          json.dump({"points": points, "sourceNote": note or "n/a"}, open("/tmp/points.json", "w"))
+          json.dump({"points": points, "sourceNote": note or "n/a", "sourceCode": "YAHOO_FINANCE" if "Yahoo" in note else "USDA_FAS_PSD"}, open("/tmp/points.json", "w"))
           PYEOF
           N=$(python3 -c "import json; print(len(json.load(open('/tmp/points.json'))['points']))")
           if [ "$N" -gt 0 ]; then

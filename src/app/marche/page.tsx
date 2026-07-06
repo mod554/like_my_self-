@@ -108,9 +108,25 @@ export default async function MarchePage() {
                 Prix en temps réel · Taux de change mis à jour chaque heure · Actualités toutes les 5 minutes
               </p>
             </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <span className="ag-status-dot" />
-              <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)", fontWeight: 700 }}>DONNÉES EN TEMPS RÉEL</span>
+            <div style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap" }}>
+              <a
+                href="/api/export"
+                download
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  padding: "8px 16px", borderRadius: "8px", textDecoration: "none",
+                  background: "rgba(0,61,46,0.85)", color: "#FFFFFF",
+                  border: "1px solid rgba(90,138,42,0.4)",
+                  fontSize: 12, fontWeight: 600,
+                  boxShadow: "0 4px 14px -4px rgba(0,61,46,0.4)",
+                }}
+              >
+                ⬇ Exporter Excel
+              </a>
+              <span style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <span className="ag-status-dot" />
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)", fontWeight: 700 }}>DONNÉES EN TEMPS RÉEL</span>
+              </span>
             </div>
           </div>
         </div>

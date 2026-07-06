@@ -9,8 +9,9 @@ import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 
 interface PointPrix {
-  date: string;  // "2026-07-04"
-  usd: number;   // USD par tonne
+  date: string;   // "2026-07-04"
+  usd: number;    // USD par tonne
+  cents?: number; // cotation d'origine en cents USD / boisseau (parité TradingView)
 }
 
 export async function POST(req: NextRequest) {
@@ -23,7 +24,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json() as { points?: PointPrix[]; sourceNote?: string };
+    const body = await req.json() as { points?: PointPrix[]; sourceNote?: string; sourceCode?: string };
+    // Sources autorisées pour cet import (liste blanche)
+    const sourceCode = ["YAHOO_FINANCE", "USDA_FAS_PSD"].includes(body.sourceCode ?? "")
+      ? (body.sourceCode as string)
+      : "USDA_FAS_PSD";
     const points = (body.points ?? []).filter(
       (p) => p?.date && isFinite(p.usd) && p.usd > 0 && p.usd < 10_000
     ).slice(0, 200);
@@ -34,7 +39,7 @@ export async function POST(req: NextRequest) {
     const [produit, marche, source] = await Promise.all([
       prisma.produit.findUnique({ where: { code: "MAIS_GRAIN" } }),
       prisma.marche.findUnique({ where: { code: "MONDIAL_MAIS_USDA" } }),
-      prisma.source.findUnique({ where: { code: "USDA_FAS_PSD" } }),
+      prisma.source.findUnique({ where: { code: sourceCode } }),
     ]);
     if (!produit || !marche || !source) {
       return Response.json({ error: "Référentiel incomplet — lancer /api/init" }, { status: 503 });
@@ -52,13 +57,13 @@ export async function POST(req: NextRequest) {
         unite: "tonne",
         dateReleve: new Date(`${p.date}T00:00:00.000Z`),
         fiabilite: "OFFICIEL",
-        notes: note,
+        notes: p.cents ? `${note} — ${p.cents.toFixed(2)} ¢/bu (cotation brute, parité TradingView ZC1!)` : note,
       })),
       skipDuplicates: true,
     });
 
     await prisma.source.update({
-      where: { code: "USDA_FAS_PSD" },
+      where: { code: sourceCode },
       data: { statutDernier: "OK", derniereExecution: new Date(), messageErreur: null },
     }).catch(() => {});
 
