@@ -19,8 +19,24 @@ on:
         required: false
         type: string
         default: ""
+      run_connector:
+        description: "Déclencher un connecteur précis à la demande (ex: COMTRADE_UN)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
+  run-connector:
+    if: inputs.run_connector != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher un connecteur unique
+        run: |
+          echo "Déclenchement du connecteur ${{ inputs.run_connector }}"
+          curl -s --max-time 120 -X POST "https://like-my-self.vercel.app/api/connectors" \
+            -H "Content-Type: application/json" -d "{\"code\": \"${{ inputs.run_connector }}\"}" \
+            | python3 -m json.tool || echo "réponse illisible"
+
   # Le sandbox Claude Code ne peut pas joindre le CDN Higgsfield (Network
   # Policy figée du conteneur) — le runner GitHub a un egress ouvert : il
   # télécharge les 3 assets et les committe sur la branche design.
@@ -69,7 +85,7 @@ jobs:
           cat /tmp/vlogs.txt | tail -120
 
   collecte:
-    if: inputs.fetch_assets != true && inputs.debug_page == ''
+    if: inputs.fetch_assets != true && inputs.debug_page == '' && inputs.run_connector == ''
     runs-on: ubuntu-latest
     steps:
       # Cotation CBOT collectée sur le runner (IP propre) puis poussée vers
