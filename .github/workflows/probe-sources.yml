@@ -170,6 +170,61 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
+      # Actualités Google News collectées sur le runner (IP propre) — les IP
+      # partagées Vercel sont bloquées par Google News RSS (réponse vide).
+      - name: Actualités Google News depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, urllib.request, xml.etree.ElementTree as ET
+
+          def get(url, timeout=20):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8", "replace")
+
+          def gnews(q, lang):
+              base = "https://news.google.com/rss/search?q=" + urllib.parse.quote(q)
+              return base + ("&hl=fr&gl=FR&ceid=FR:fr" if lang == "fr" else "&hl=en-US&gl=US&ceid=US:en")
+
+          import urllib.parse
+          REQUETES = [
+              ("MAIS",  gnews("maize OR corn price Africa", "en")),
+              ("MAIS",  gnews("maïs prix Afrique de l'Ouest", "fr")),
+              ("CAJOU", gnews("cashew OR anacarde price", "en")),
+              ("CAJOU", gnews("anacarde cajou Côte d'Ivoire prix", "fr")),
+              ("COLA",  gnews('"kola nut" OR "cola nut" price', "en")),
+              ("COLA",  gnews("noix de cola Afrique de l'Ouest", "fr")),
+          ]
+          arts = []
+          for filiere, url in REQUETES:
+              try:
+                  xml = get(url)
+                  root = ET.fromstring(xml)
+                  for item in root.iter("item"):
+                      titre = (item.findtext("title") or "").strip()
+                      lien = (item.findtext("link") or "").strip()
+                      pub = (item.findtext("pubDate") or "").strip()
+                      src_el = item.find("source")
+                      src = (src_el.text if src_el is not None else "Google News") or "Google News"
+                      if titre and lien:
+                          arts.append({"titre": titre, "lien": lien, "source": f"Google News · {src}",
+                                       "filiere": filiere, "datePublication": pub})
+              except Exception as e:
+                  print(f"{filiere}: {str(e)[:70]}")
+          print(f"Articles collectés: {len(arts)}")
+          json.dump({"articles": arts}, open("/tmp/news.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/news.json'))['articles']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/news" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/news.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
       - name: Déclencher les connecteurs temps réel
         run: |
           URL="https://like-my-self.vercel.app"
