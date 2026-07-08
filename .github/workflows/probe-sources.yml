@@ -24,11 +24,6 @@ on:
         required: false
         type: string
         default: ""
-      probe_url:
-        description: "Inspecter une ou plusieurs URLs externes (séparées par des espaces)"
-        required: false
-        type: string
-        default: ""
 
 jobs:
   run-connector:
@@ -45,38 +40,6 @@ jobs:
   # Le sandbox Claude Code ne peut pas joindre le CDN Higgsfield (Network
   # Policy figée du conteneur) — le runner GitHub a un egress ouvert : il
   # télécharge les 3 assets et les committe sur la branche design.
-  probe-url:
-    if: inputs.probe_url != ''
-    runs-on: ubuntu-latest
-    steps:
-      - name: Inspecter des URLs externes depuis le runner
-        run: |
-          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-          for URL in ${{ inputs.probe_url }}; do
-            echo "############################################################"
-            echo "## $URL"
-            code=$(curl -s -o /tmp/page.html -w "%{http_code}" --max-time 40 -A "$UA" "$URL")
-            echo "HTTP $code — $(wc -c < /tmp/page.html) octets"
-            [ "$code" = "200" ] || { echo "(non 200, on saute)"; continue; }
-            python3 - <<'PYEOF'
-          import re
-          html = open("/tmp/page.html", encoding="utf-8", errors="replace").read()
-          flat = re.sub(r"\s+", " ", html)
-          print("== endpoints JSON/api/php ==")
-          eps = sorted(set(re.findall(r"[a-zA-Z0-9_/.:-]+\.(?:php|json)[^\"'? <>]*|/api/[a-zA-Z0-9_/-]+", flat)))
-          for e in eps[:25]: print("  ", e)
-          print("== extraits autour de cashew/cajou/kola/cola + prix ==")
-          for kw in ("cashew", "cajou", "anacarde", "kola", "cola", "RCN"):
-              for m in list(re.finditer(kw, flat, re.I))[:2]:
-                  seg = flat[max(0,m.start()-60):m.start()+180]
-                  if re.search(r"\d", seg):
-                      print(f"  [{kw}]", seg)
-          print("== motifs de prix (devise + nombre) ==")
-          for m in list(re.finditer(r"(US\$|USD|FCFA|XOF|₹|INR|€|£)\s?[\d.,]{2,}|[\d.,]{2,}\s?(?:USD|FCFA|XOF|INR|/kg|/tonne|per kg|per tonne)", flat))[:15]:
-              print("  ", m.group(0))
-          PYEOF
-          done
-
   fetch-assets:
     if: inputs.fetch_assets == true
     runs-on: ubuntu-latest
@@ -314,6 +277,65 @@ jobs:
               -H "Content-Type: application/json" \
               ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
               --data-binary @/tmp/simagri.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Prix de référence cajou & cola (Selina Wamucii) — aucune bourse ne cote
+      # ces produits physiques ; Selina publie un prix indicatif export USD/kg
+      # par pays, MAJ mensuelle. Le site bloque le proxy/Vercel → runner.
+      - name: Prix de référence cajou & cola (Selina Wamucii) depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, re, urllib.request
+
+          BASE = "https://www.selinawamucii.com/insights/prices"
+          CIBLES = [
+              # (filière, pays, slug-pays, slug-produit)
+              ("CAJOU", "India",    "india",    "cashew-nuts"),
+              ("CAJOU", "Benin",    "benin",    "cashew-nuts"),
+              ("CAJOU", "Tanzania", "tanzania", "cashew-nuts"),
+              ("CAJOU", "Ghana",    "ghana",    "cashew-nuts"),
+              ("CAJOU", "Nigeria",  "nigeria",  "cashew-nuts"),
+              ("COLA",  "Nigeria",  "nigeria",  "kola-nuts"),
+              ("COLA",  "Ghana",    "ghana",    "kola-nuts"),
+              ("COLA",  "Cameroon", "cameroon", "kola-nuts"),
+          ]
+          MOIS = {m: i+1 for i, m in enumerate(
+              ["January","February","March","April","May","June","July",
+               "August","September","October","November","December"])}
+
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              return urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+
+          rows = []
+          for filiere, pays, sp, sprod in CIBLES:
+              try:
+                  html = re.sub(r"\s+", " ", get(f"{BASE}/{sp}/{sprod}/"))
+                  # og:description : "<Produit> price in <Pays> is $8.23/kg ($3.73/lb) as of July 2026"
+                  desc = re.search(r'og:description" content="([^"]+)"', html)
+                  txt = desc.group(1) if desc else html
+                  pk = re.search(r'is \$([\d.]+)\s*/?\s*kg', txt) or re.search(r'\$([\d.]+)/kg', txt)
+                  if not pk:
+                      print(f"{filiere}/{pays}: prix introuvable"); continue
+                  usd = float(pk.group(1))
+                  mo = re.search(r'as of (\w+)\s+(\d{4})', txt)
+                  asof = f"{mo.group(2)}-{MOIS.get(mo.group(1), 1):02d}" if mo else None
+                  rows.append({"filiere": filiere, "pays": pays, "usdParKg": usd, "asOf": asof})
+                  print(f"{filiere}/{pays}: {usd} USD/kg (as of {asof})")
+              except Exception as e:
+                  print(f"{filiere}/{pays}: {str(e)[:70]}")
+          json.dump({"rows": rows}, open("/tmp/refprices.json", "w"))
+          print(f"Total lignes: {len(rows)}")
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/refprices.json'))['rows']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/refprices" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/refprices.json | head -c 300
             echo
           fi
         env:
