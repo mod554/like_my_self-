@@ -12,7 +12,7 @@ interface ArticleIn {
   titre: string;
   lien: string;
   source: string;
-  filiere: string;   // MAIS | CAJOU | COLA
+  filiere: string;   // MAIS | CAJOU | COLA | CAFE | CACAO | PALMIER | HEVEA
   resume?: string;
   datePublication?: string; // ISO
 }
@@ -35,7 +35,9 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Aucun article valide" }, { status: 400 });
     }
 
-    const filieres = await prisma.filiere.findMany({ where: { code: { in: ["MAIS", "CAJOU", "COLA"] } } });
+    // Toutes les filières (maïs, cajou, cola + cultures de rente café/cacao/
+    // palmier/hévéa) — ouvert aux nouvelles filières sans liste en dur.
+    const filieres = await prisma.filiere.findMany();
     const filiereMap = Object.fromEntries(filieres.map((f) => [f.code, f.id]));
 
     // Liens déjà présents (dédup) — une seule requête

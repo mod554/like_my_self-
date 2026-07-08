@@ -371,12 +371,20 @@ jobs:
 
           import urllib.parse
           REQUETES = [
-              ("MAIS",  gnews("maize OR corn price Africa", "en")),
-              ("MAIS",  gnews("maïs prix Afrique de l'Ouest", "fr")),
-              ("CAJOU", gnews("cashew OR anacarde price", "en")),
-              ("CAJOU", gnews("anacarde cajou Côte d'Ivoire prix", "fr")),
-              ("COLA",  gnews('"kola nut" OR "cola nut" price', "en")),
-              ("COLA",  gnews("noix de cola Afrique de l'Ouest", "fr")),
+              ("MAIS",    gnews("maize OR corn price Africa", "en")),
+              ("MAIS",    gnews("maïs prix Afrique de l'Ouest", "fr")),
+              ("CAJOU",   gnews("cashew OR anacarde price", "en")),
+              ("CAJOU",   gnews("anacarde cajou Côte d'Ivoire prix", "fr")),
+              ("COLA",    gnews('"kola nut" OR "cola nut" price', "en")),
+              ("COLA",    gnews("noix de cola Afrique de l'Ouest", "fr")),
+              ("CAFE",    gnews("coffee arabica price market", "en")),
+              ("CAFE",    gnews("café prix marché Afrique", "fr")),
+              ("CACAO",   gnews("cocoa price market Côte d'Ivoire Ghana", "en")),
+              ("CACAO",   gnews("cacao prix marché Côte d'Ivoire", "fr")),
+              ("PALMIER", gnews('"palm oil" price market', "en")),
+              ("PALMIER", gnews("huile de palme prix marché", "fr")),
+              ("HEVEA",   gnews('"natural rubber" price market', "en")),
+              ("HEVEA",   gnews("caoutchouc naturel hévéa prix", "fr")),
           ]
           arts = []
           for filiere, url in REQUETES:

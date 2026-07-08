@@ -43,6 +43,22 @@ const REQUETES: { filiereCode: string; query: string }[] = [
     filiereCode: "COLA",
     query: '("kola nut" OR "cola nut" OR "noix de cola" OR "bitter kola")',
   },
+  {
+    filiereCode: "CAFE",
+    query: '(coffee OR café OR arabica OR robusta) (price OR market OR export OR harvest OR prix)',
+  },
+  {
+    filiereCode: "CACAO",
+    query: '(cocoa OR cacao OR "cocoa beans" OR "fèves de cacao") (price OR market OR export OR prix)',
+  },
+  {
+    filiereCode: "PALMIER",
+    query: '("palm oil" OR "huile de palme" OR "crude palm oil" OR CPO) (price OR market OR export OR prix)',
+  },
+  {
+    filiereCode: "HEVEA",
+    query: '("natural rubber" OR "caoutchouc naturel" OR "rubber price" OR hevea) (price OR market OR export OR prix)',
+  },
 ];
 
 function parseSeendate(s: string): Date {
@@ -69,7 +85,7 @@ export class GdeltNewsConnector implements Connector {
       const source = await prisma.source.findUnique({ where: { code: SOURCE_CODE } });
       if (!source) throw new Error(`Source ${SOURCE_CODE} introuvable en BD — relancer /api/init`);
 
-      const filieres = await prisma.filiere.findMany({ where: { code: { in: ["MAIS", "CAJOU", "COLA"] } } });
+      const filieres = await prisma.filiere.findMany();
       const filiereMap = Object.fromEntries(filieres.map((f) => [f.code, f.id]));
 
       // SEQUENTIEL avec espacement : GDELT limite les requetes rapprochees
@@ -78,7 +94,11 @@ export class GdeltNewsConnector implements Connector {
       const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const reponses: Array<{ filiereCode: string; data?: GdeltResponse; erreur?: string }> = [];
       const budgetMs = 32_000; // garde-fou : la route entière doit tenir sous 60s
-      for (const [i, { filiereCode, query }] of REQUETES.entries()) {
+      // Rotation horaire : avec 7 filières et un budget de 32s, on décale l'ordre
+      // de départ chaque heure pour que café/cacao/palme/hévéa passent aussi en tête.
+      const offset = new Date().getUTCHours() % REQUETES.length;
+      const requetesRot = [...REQUETES.slice(offset), ...REQUETES.slice(0, offset)];
+      for (const [i, { filiereCode, query }] of requetesRot.entries()) {
         if (Date.now() - debut.getTime() > budgetMs) {
           reponses.push({ filiereCode, erreur: "budget temps épuisé — au prochain run" });
           continue;
