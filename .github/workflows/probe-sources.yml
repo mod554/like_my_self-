@@ -418,11 +418,18 @@ jobs:
               ("HEVEA",   gnews("caoutchouc naturel hévéa prix", "fr")),
           ]
           arts = []
+          # Plafond par requête : avec 14 requêtes (7 filières × 2 langues), on
+          # limite chacune pour que TOUTES les filières tiennent dans le payload
+          # (café/cacao/palme/hévéa ne sont plus tronquées par le cap serveur).
+          PAR_REQUETE = 18
           for filiere, url in REQUETES:
               try:
                   xml = get(url)
                   root = ET.fromstring(xml)
+                  n = 0
                   for item in root.iter("item"):
+                      if n >= PAR_REQUETE:
+                          break
                       titre = (item.findtext("title") or "").strip()
                       lien = (item.findtext("link") or "").strip()
                       pub = (item.findtext("pubDate") or "").strip()
@@ -431,6 +438,7 @@ jobs:
                       if titre and lien:
                           arts.append({"titre": titre, "lien": lien, "source": f"Google News · {src}",
                                        "filiere": filiere, "datePublication": pub})
+                          n += 1
               except Exception as e:
                   print(f"{filiere}: {str(e)[:70]}")
           print(f"Articles collectés: {len(arts)}")
