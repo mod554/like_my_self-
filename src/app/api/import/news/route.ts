@@ -28,9 +28,25 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json() as { articles?: ArticleIn[] };
-    const articles = (body.articles ?? [])
-      .filter((a) => a?.titre?.trim() && a?.lien?.trim() && a?.filiere)
-      .slice(0, 300);
+    // Cap large + entrelacement par filière : avec 7 filières × 2 langues, un
+    // simple slice(0, 300) coupait la queue (café/cacao/palme/hévéa). On
+    // entrelace pour garantir une couverture équitable de toutes les filières.
+    const valides = (body.articles ?? []).filter((a) => a?.titre?.trim() && a?.lien?.trim() && a?.filiere);
+    const parFiliere = new Map<string, ArticleIn[]>();
+    for (const a of valides) {
+      const arr = parFiliere.get(a.filiere) ?? [];
+      arr.push(a);
+      parFiliere.set(a.filiere, arr);
+    }
+    const articles: ArticleIn[] = [];
+    const listes = [...parFiliere.values()];
+    for (let i = 0; articles.length < 900; i++) {
+      let ajoute = false;
+      for (const l of listes) {
+        if (l[i]) { articles.push(l[i]); ajoute = true; }
+      }
+      if (!ajoute) break;
+    }
     if (articles.length === 0) {
       return Response.json({ error: "Aucun article valide" }, { status: 400 });
     }
