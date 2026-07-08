@@ -70,8 +70,21 @@ jobs:
             echo "## $URL"
             code=$(curl -s -o /tmp/page.html -w "%{http_code}" --max-time 40 -A "$UA" "$URL")
             echo "HTTP $code — $(wc -c < /tmp/page.html) octets"
-            echo "-- premiers 1500 caractères --"
-            head -c 1500 /tmp/page.html; echo
+            # Pour les réponses JSON data.gov.in : afficher count + records ; sinon aperçu
+            python3 - <<'PYEOF' || head -c 2000 /tmp/page.html
+          import json
+          try:
+              d = json.load(open("/tmp/page.html"))
+              print("count:", d.get("count"), "total:", d.get("total"))
+              recs = d.get("records", [])
+              print("records renvoyés:", len(recs))
+              for r in recs[:6]:
+                  print("  ", {k: r.get(k) for k in ("commodity","variety","market","state","arrival_date","min_price","max_price","modal_price")})
+          except Exception as e:
+              print("(pas du JSON exploitable:", str(e)[:60], ")")
+              raise SystemExit(1)
+          PYEOF
+            echo
           done
 
   # Le sandbox Claude Code ne peut pas joindre le CDN Higgsfield (Network
