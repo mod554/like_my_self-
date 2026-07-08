@@ -61,9 +61,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Inspecter des URLs externes depuis le runner
+        env:
+          URLS: ${{ inputs.probe_url }}
         run: |
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-          for URL in ${{ inputs.probe_url }}; do
+          for URL in $URLS; do
             echo "############################################################"
             echo "## $URL"
             code=$(curl -s -o /tmp/page.html -w "%{http_code}" --max-time 40 -A "$UA" "$URL")
