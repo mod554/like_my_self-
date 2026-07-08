@@ -24,6 +24,16 @@ on:
         required: false
         type: string
         default: ""
+      run_init:
+        description: "Ré-initialiser le référentiel (POST /api/init) — seed idempotent"
+        required: false
+        type: boolean
+        default: false
+      probe_url:
+        description: "Inspecter une ou plusieurs URLs externes (séparées par des espaces)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   run-connector:
@@ -36,6 +46,31 @@ jobs:
           curl -s --max-time 120 -X POST "https://like-my-self.vercel.app/api/connectors" \
             -H "Content-Type: application/json" -d "{\"code\": \"${{ inputs.run_connector }}\"}" \
             | python3 -m json.tool || echo "réponse illisible"
+
+  run-init:
+    if: inputs.run_init == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ré-initialiser le référentiel
+        run: |
+          curl -s --max-time 120 -X POST "https://like-my-self.vercel.app/api/init" \
+            | python3 -m json.tool || echo "réponse illisible"
+
+  probe-url:
+    if: inputs.probe_url != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspecter des URLs externes depuis le runner
+        run: |
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+          for URL in ${{ inputs.probe_url }}; do
+            echo "############################################################"
+            echo "## $URL"
+            code=$(curl -s -o /tmp/page.html -w "%{http_code}" --max-time 40 -A "$UA" "$URL")
+            echo "HTTP $code — $(wc -c < /tmp/page.html) octets"
+            echo "-- premiers 1500 caractères --"
+            head -c 1500 /tmp/page.html; echo
+          done
 
   # Le sandbox Claude Code ne peut pas joindre le CDN Higgsfield (Network
   # Policy figée du conteneur) — le runner GitHub a un egress ouvert : il
