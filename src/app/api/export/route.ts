@@ -18,7 +18,9 @@ export async function GET() {
   try {
     const [releves, taux, sources] = await Promise.all([
       prisma.prixReleve.findMany({
-        where: { fiabilite: { not: "EXEMPLE" } },
+        // Export orienté analyse : séries quotidiennes & de référence — on exclut
+        // l'intraday (1h/1min) qui, à des centaines de barres/jour, noierait le reste.
+        where: { fiabilite: { not: "EXEMPLE" }, typePrix: { notIn: ["SPOT_1H", "SPOT_1MIN"] } },
         orderBy: { dateReleve: "desc" },
         take: 5000,
         include: {
