@@ -15,12 +15,19 @@ const SOURCES_INIT = [
   { code: "COMTRADE_UN",         nom: "UN Comtrade — Export cajou & cola",              type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Valeurs unitaires d'export ONU (FOB implicite) — mensuel prioritaire + annuel en repli — cajou HS 080131, cola HS 080270, CIV/NGA" },
   { code: "YAHOO_FINANCE",       nom: "Yahoo Finance — CBOT ZC=F (parité TradingView)", type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Clôtures quotidiennes des futures maïs CBOT ZC=F via Yahoo Finance — mêmes cotations que TradingView (ZC1!)" },
   { code: "TAUX_CHANGE_LIVE",    nom: "Taux de change live — USD/XOF, EUR/USD",        type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Taux de change USD/XOF, EUR/USD — ECB via open.er-api.com" },
+  { code: "ICE_SOFTS",           nom: "ICE Softs — Café Arabica (KC=F) & Cacao (CC=F)", type: "API",  fiabiliteDefaut: "OFFICIEL", frequence: "QUOTIDIEN", description: "Futures café Arabica & cacao (ICE) via Yahoo Finance — quotidien + intraday, parité TradingView (KC1!/CC1!)" },
+  { code: "AGMARKNET_INDIA",     nom: "AGMARKNET Inde — Prix cajou quotidiens (mandis)",type: "API", fiabiliteDefaut: "OFFICIEL", frequence: "QUOTIDIEN", description: "Prix quotidiens du cajou sur les marchés (mandis) indiens — data.gov.in / AGMARKNET" },
 ];
 
 const FILIERES_INIT = [
   { code: "MAIS",  nom: "Maïs",         description: "Filière maïs — commodity internationale (CBOT/CME)" },
   { code: "CAJOU", nom: "Cajou",        description: "Filière cajou/anacarde — Côte d'Ivoire & Afrique de l'Ouest" },
   { code: "COLA",  nom: "Noix de Cola", description: "Filière noix de cola — marché régional AOF" },
+  // Cultures de rente — ajout des 5 filières phares (cajou déjà présent ci-dessus)
+  { code: "CAFE",    nom: "Café",            description: "Filière café — Arabica (ICE KC=F), culture de rente" },
+  { code: "CACAO",   nom: "Cacao",           description: "Filière cacao — fèves (ICE CC=F), culture de rente" },
+  { code: "PALMIER", nom: "Palmier à huile", description: "Filière palmier à huile — huile de palme brute (référence World Bank)" },
+  { code: "HEVEA",   nom: "Hévéa",           description: "Filière hévéa — caoutchouc naturel (référence World Bank)" },
 ];
 
 const ZONES_INIT = [
@@ -35,6 +42,7 @@ const ZONES_INIT = [
   { code: "GHANA",         nom: "Ghana",                type: "PAYS" },
   { code: "NIGERIA",       nom: "Nigeria",              type: "PAYS" },
   { code: "NIGER",         nom: "Niger",                type: "PAYS" },
+  { code: "INDE",          nom: "Inde",                 type: "PAYS" },
 ];
 
 const MARCHES_INIT = [
@@ -56,12 +64,23 @@ const MARCHES_INIT = [
   { code: "ACCRA_COLA",        nom: "Accra — Cola",                     zoneCode: "GHANA",       devise: "GHS", type: "GROSSISTE" },
   { code: "COTONOU_COLA",      nom: "Cotonou — Cola",                   zoneCode: "BENIN",       devise: "XOF", type: "GROSSISTE" },
   { code: "DAKAR_COLA",        nom: "Dakar — Cola",                     zoneCode: "SENEGAL",     devise: "XOF", type: "GROSSISTE" },
+  // Cultures de rente — marchés de référence
+  { code: "ICE_CAFE",          nom: "ICE — Café Arabica (KC=F)",        zoneCode: "MONDIAL",     devise: "USD", type: "BOURSE" },
+  { code: "ICE_CACAO",         nom: "ICE — Cacao (CC=F)",               zoneCode: "MONDIAL",     devise: "USD", type: "BOURSE" },
+  { code: "MONDIAL_PALME_WB",  nom: "Marché mondial huile de palme (World Bank)", zoneCode: "MONDIAL", devise: "USD", type: "BOURSE" },
+  { code: "MONDIAL_HEVEA_WB",  nom: "Marché mondial caoutchouc (World Bank)",     zoneCode: "MONDIAL", devise: "USD", type: "BOURSE" },
+  { code: "INDE_CAJOU",        nom: "Inde — Cajou (mandis AGMARKNET)",   zoneCode: "INDE",        devise: "INR", type: "GROSSISTE" },
 ];
 
 const PRODUITS_INIT = [
   { code: "MAIS_GRAIN", nom: "Maïs grain",        filiereCode: "MAIS",  uniteRef: "tonne", estDerive: false, description: "Maïs grain sec — prix CBOT/CME et marchés AOF" },
   { code: "CAJOU_RCN",  nom: "Cajou RCN",          filiereCode: "CAJOU", uniteRef: "tonne", estDerive: false, description: "Noix de cajou brute (Raw Cashew Nut) — bord-champ CI" },
   { code: "COLA_ROUGE", nom: "Noix de cola rouge", filiereCode: "COLA",  uniteRef: "kg",    estDerive: false, description: "Noix de cola rouge (Cola nitida) — marché régional AOF" },
+  // Cultures de rente
+  { code: "CAFE_ARABICA", nom: "Café Arabica",     filiereCode: "CAFE",    uniteRef: "tonne", estDerive: false, description: "Café Arabica — futures ICE KC=F (parité TradingView KC1!)" },
+  { code: "CACAO_FEVE",   nom: "Cacao (fèves)",    filiereCode: "CACAO",   uniteRef: "tonne", estDerive: false, description: "Fèves de cacao — futures ICE CC=F (parité TradingView CC1!)" },
+  { code: "HUILE_PALME",  nom: "Huile de palme",   filiereCode: "PALMIER", uniteRef: "tonne", estDerive: false, description: "Huile de palme brute — référence mensuelle World Bank Pink Sheet" },
+  { code: "CAOUTCHOUC",   nom: "Caoutchouc naturel", filiereCode: "HEVEA", uniteRef: "tonne", estDerive: false, description: "Caoutchouc naturel (TSR20/RSS3) — référence mensuelle World Bank Pink Sheet" },
 ];
 
 async function upsertByCode<T extends { code: string }>(

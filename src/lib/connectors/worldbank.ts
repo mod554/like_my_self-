@@ -33,7 +33,24 @@ function parseDate(wbDate: string): Date | null {
 const PINK_SHEET_XLSX =
   "https://thedocs.worldbank.org/en/doc/5d903e848db1d1b83e0ec8f744e55570-0350012021/related/CMO-Historical-Data-Monthly.xlsx";
 
-async function fetchPinkSheetMaize(): Promise<WBDataPoint[]> {
+// Cible d'une série Pink Sheet : produit/marché en base + matcheur de colonne
+// + facteur de conversion vers USD/tonne (les unités du Pink Sheet varient :
+// maïs/huile de palme en $/mt ; caoutchouc en $/kg → ×1000).
+interface CiblePink {
+  produitCode: string;
+  marcheCode: string;
+  colonneMatch: RegExp; // testé sur l'en-tête de colonne
+  facteurTonne: number; // multiplie la valeur brute pour obtenir USD/tonne
+  label: string;
+}
+
+const CIBLES_PINK: CiblePink[] = [
+  { produitCode: "HUILE_PALME", marcheCode: "MONDIAL_PALME_WB", colonneMatch: /palm\s*oil/i,               facteurTonne: 1,    label: "Huile de palme" },
+  { produitCode: "CAOUTCHOUC",  marcheCode: "MONDIAL_HEVEA_WB", colonneMatch: /rubber.*(tsr20|rss3|sgp)/i, facteurTonne: 1000, label: "Caoutchouc" },
+];
+
+// Charge le classeur Pink Sheet une seule fois et renvoie la feuille mensuelle.
+async function chargerFeuillePink() {
   const ExcelJS = (await import("exceljs")).default;
   const res = await fetch(PINK_SHEET_XLSX, {
     headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
@@ -45,26 +62,36 @@ async function fetchPinkSheetMaize(): Promise<WBDataPoint[]> {
   await wb.xlsx.load(buf as unknown as ArrayBuffer);
   const feuille = wb.getWorksheet("Monthly Prices") ?? wb.worksheets[0];
   if (!feuille) throw new Error("Feuille Monthly Prices introuvable");
+  return feuille;
+}
 
-  // Trouver la colonne dont un en-tete (10 premieres lignes) contient "Maize"
-  let colMaize = -1;
-  for (let r = 1; r <= 10 && colMaize < 0; r++) {
-    const row = feuille.getRow(r);
-    row.eachCell((cell, col) => {
-      const v = String(cell.value ?? "");
-      if (colMaize < 0 && /^maize$/i.test(v.trim())) colMaize = col;
+type FeuillePink = Awaited<ReturnType<typeof chargerFeuillePink>>;
+
+// Extrait une colonne du Pink Sheet par regex d'en-tête → points bruts.
+function extrairePinkSheet(feuille: FeuillePink, colonneMatch: RegExp): WBDataPoint[] {
+  let col = -1;
+  for (let r = 1; r <= 10 && col < 0; r++) {
+    feuille.getRow(r).eachCell((cell, c) => {
+      const v = String(cell.value ?? "").trim();
+      if (col < 0 && colonneMatch.test(v)) col = c;
     });
   }
-  if (colMaize < 0) throw new Error("Colonne Maize introuvable dans le Pink Sheet");
-
+  if (col < 0) return [];
   const points: WBDataPoint[] = [];
   feuille.eachRow((row) => {
     const dateCell = String(row.getCell(1).value ?? "");
     if (!/^\d{4}M\d{2}$/.test(dateCell)) return;
-    const val = Number(row.getCell(colMaize).value);
+    const val = Number(row.getCell(col).value);
     if (isFinite(val) && val > 0) points.push({ date: dateCell, value: val });
   });
   return points.slice(-60);
+}
+
+async function fetchPinkSheetMaize(): Promise<WBDataPoint[]> {
+  const feuille = await chargerFeuillePink();
+  const points = extrairePinkSheet(feuille, /^maize$/i);
+  if (points.length === 0) throw new Error("Colonne Maize introuvable dans le Pink Sheet");
+  return points;
 }
 
 async function fetchWBData(url: string): Promise<WBDataPoint[]> {
@@ -159,6 +186,43 @@ export class WorldBankConnector implements Connector {
             resultat.nbErreurs++;
           }
         }
+      }
+
+      // Huile de palme + caoutchouc — mêmes séries mensuelles Pink Sheet
+      try {
+        const feuille = await chargerFeuillePink();
+        for (const cible of CIBLES_PINK) {
+          const prod = await prisma.produit.findUnique({ where: { code: cible.produitCode } });
+          const mar = await prisma.marche.findUnique({ where: { code: cible.marcheCode } });
+          if (!prod || !mar) {
+            resultat.erreurs.push(`${cible.label}: produit/marché absent — lancer /api/init`);
+            resultat.nbErreurs++;
+            continue;
+          }
+          const pts = extrairePinkSheet(feuille, cible.colonneMatch);
+          if (pts.length === 0) {
+            resultat.erreurs.push(`${cible.label}: colonne introuvable dans le Pink Sheet`);
+            resultat.nbErreurs++;
+            continue;
+          }
+          const data = pts
+            .map((p) => {
+              const d = parseDate(p.date);
+              if (!d || p.value === null) return null;
+              return {
+                produitId: prod.id, marcheId: mar.id, sourceId: source.id,
+                typePrix: "SPOT", valeur: Math.round(p.value * cible.facteurTonne * 100) / 100,
+                devise: "USD", unite: "tonne", dateReleve: d, fiabilite: "OFFICIEL" as const,
+                notes: `World Bank Pink Sheet — ${cible.label} — ${p.date}`,
+              };
+            })
+            .filter((x): x is NonNullable<typeof x> => x !== null);
+          const r = await prisma.prixReleve.createMany({ data, skipDuplicates: true });
+          resultat.nbImportes += r.count;
+        }
+      } catch (e) {
+        resultat.erreurs.push(`Pink Sheet palme/hévéa: ${e instanceof Error ? e.message.slice(0, 60) : e}`);
+        resultat.nbErreurs++;
       }
 
       const fin = new Date();

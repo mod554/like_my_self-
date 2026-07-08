@@ -13,10 +13,12 @@ import { ComtradeConnector } from "./comtrade";
 // World Bank, fiabilité INDICATIF) et indexmundi.com bloque les IP Vercel,
 // ce qui gelait la route /api/connectors. Le fichier reste disponible.
 import { TauxChangeLiveConnector } from "./taux-change";
+import { IceSoftsConnector } from "./ice-softs";
 import type { Connector } from "./base";
 
 export const CONNECTEURS: Connector[] = [
   new TauxChangeLiveConnector(),
+  new IceSoftsConnector(),
   new WorldBankConnector(),
   new FaoFpmaConnector(),
   new UsdaFasConnector(),
