@@ -13,7 +13,7 @@ export default async function PrixPage() {
       prisma.source.findMany({ where: { actif: true, type: "MANUEL" }, orderBy: { code: "asc" } }),
     ]);
     derniers = await prisma.prixReleve.findMany({
-      where: { fiabilite: { not: "EXEMPLE" } },
+      where: { fiabilite: { not: "EXEMPLE" }, typePrix: { notIn: ["SPOT_1H", "SPOT_1MIN"] } },
       orderBy: { dateCollecte: "desc" },
       take: 20,
       include: {

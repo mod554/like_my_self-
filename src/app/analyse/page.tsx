@@ -92,7 +92,9 @@ async function getAnalyseData() {
         orderBy: { code: "asc" },
         include: {
           prixReleves: {
-            where: { fiabilite: { not: "EXEMPLE" } },
+            // Indicateurs calculés sur la série de référence (quotidien & +) —
+            // on exclut les barres intraday (1h/1min) qui écraseraient les MM/RSI.
+            where: { fiabilite: { not: "EXEMPLE" }, typePrix: { notIn: ["SPOT_1H", "SPOT_1MIN"] } },
             orderBy: { dateReleve: "desc" },
             take: 120,
             select: {
