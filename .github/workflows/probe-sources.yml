@@ -77,8 +77,9 @@ jobs:
           LOGPID=$!
           sleep 6
           echo "== Déclenchement de ${{ inputs.debug_page }} =="
-          curl -s -o /dev/null -w "HTTP %{http_code}\n" "https://like-my-self.vercel.app${{ inputs.debug_page }}"
-          curl -s -o /dev/null -w "HTTP %{http_code}\n" "https://like-my-self.vercel.app${{ inputs.debug_page }}"
+          echo "== CORPS DE RÉPONSE =="
+          curl -s -w "\nHTTP %{http_code}\n" "https://like-my-self.vercel.app${{ inputs.debug_page }}" | head -c 4000
+          echo
           sleep 20
           kill $LOGPID 2>/dev/null || true
           echo "== LOGS RUNTIME =="

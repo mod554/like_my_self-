@@ -45,6 +45,31 @@ async function fetchImfCommodityPrices(indicator: string): Promise<Record<string
   return series;
 }
 
+// Source primaire : Yahoo Finance — futures maïs CBOT ZC=F (parité TradingView
+// ZC1!). API JSON publique sans clé. Prix en cents USD/boisseau → USD/tonne.
+async function fetchYahooCorn(): Promise<{ date: string; usdParTonne: number }[]> {
+  const res = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range=3mo&interval=1d", {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
+  const json = await res.json() as {
+    chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
+  };
+  const r = json.chart?.result?.[0];
+  const ts = r?.timestamp ?? [];
+  const closes = r?.indicators?.quote?.[0]?.close ?? [];
+  const sorties: { date: string; usdParTonne: number }[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const c = closes[i];
+    if (c == null || c <= 0) continue;
+    const date = new Date(ts[i] * 1000).toISOString().slice(0, 10);
+    sorties.push({ date, usdParTonne: Math.round((c / 100) * 39.3683 * 100) / 100 });
+  }
+  if (sorties.length === 0) throw new Error("Yahoo série vide");
+  return sorties;
+}
+
 // Fallback 1 : FRED (Federal Reserve) — serie PMAIZMTUSDM = "Global price of Maize"
 // (donnees IMF redistribuees), CSV public sans cle : USD/tonne, mensuel.
 async function fetchFredMaize(): Promise<{ date: string; usdParTonne: number }[]> {
@@ -113,15 +138,20 @@ export class UsdaFasConnector implements Connector {
 
       if (!marche) throw new Error("Aucun marché MAIS trouvé en BD");
 
-      // Prix mais — ordre optimise pour datacenters : Stooq (CBOT, jamais bloque)
-      // d'abord, puis FRED, puis IMF (403 systematique depuis Vercel/GitHub).
-      // Les echecs de fallback sont des notes informatives, pas des erreurs,
-      // tant qu'une source a fonctionne.
+      // Prix mais — Yahoo Finance (ZC=F, parité TradingView) en primaire ;
+      // fonctionne depuis les IP Vercel contrairement à Stooq/FRED. Repli
+      // Stooq → FRED → IMF. Les echecs de repli sont des notes, pas des erreurs.
       let entries: [string, number][] = [];
       let sourceNote = "";
       const notesFallback: string[] = [];
 
       try {
+        const yahoo = await fetchYahooCorn();
+        sourceNote = "Yahoo Finance — CBOT ZC=F quotidien (parité TradingView ZC1!)";
+        entries = yahoo.map((s) => [s.date, s.usdParTonne] as [string, number]);
+      } catch (yahooErr) {
+        notesFallback.push(`Yahoo: ${yahooErr instanceof Error ? yahooErr.message.slice(0, 60) : yahooErr}`);
+        try {
         const stooq = await fetchStooqCorn();
         sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
         entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
@@ -144,6 +174,7 @@ export class UsdaFasConnector implements Connector {
             notesFallback.push(`IMF: ${imfErr instanceof Error ? imfErr.message.slice(0, 60) : imfErr}`);
           }
         }
+      }
       }
       if (entries.length === 0) {
         // Les IP partagées Vercel épuisent les quotas Stooq/FRED/IMF — mais les
