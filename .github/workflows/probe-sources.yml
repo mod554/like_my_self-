@@ -52,14 +52,22 @@ jobs:
       - name: Inspecter une URL externe depuis le runner
         run: |
           URL="${{ inputs.probe_url }}"
-          echo "== HEAD =="
-          curl -s -I --max-time 30 -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" "$URL" | head -40
-          echo "== BODY (4000 premiers caractères) =="
-          curl -s --max-time 30 -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" "$URL" | head -c 4000
-          echo
-          echo "== Recherche d'endpoints API/JSON dans le HTML =="
-          curl -s --max-time 30 -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" "$URL" \
-            | grep -oiE "(api|ajax|json|graphql|/data|prices?|grid)[^\"' <>]*" | sort -u | head -40 || echo "aucun"
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+          curl -s --max-time 40 -A "$UA" "$URL" > /tmp/page.html
+          echo "== TAILLE ==" ; wc -c /tmp/page.html
+          echo "== APPELS AJAX/FETCH/PHP dans les scripts inline =="
+          grep -oiE "(fetch|ajax|\.load|\.get|\.post)\s*\(?['\"][^'\"]+['\"]|url\s*:\s*['\"][^'\"]+['\"]|[a-zA-Z0-9_/.-]+\.php[^'\" <>]*" /tmp/page.html | sort -u | head -40 || echo "aucun"
+          echo "== LIGNES CONTENANT cajou/anacarde/cola/noix (contexte) =="
+          grep -inE "cajou|anacarde|cola|noix|ma[iï]s" /tmp/page.html | head -40 || echo "aucun mot-clé produit"
+          echo "== BLOCS price-item (structure d'une entrée de prix) =="
+          python3 - <<'PYEOF'
+          import re
+          html = open("/tmp/page.html", encoding="utf-8", errors="replace").read()
+          # isole les blocs autour de 'price-item' ou 'price-detail'
+          for m in list(re.finditer(r'price-(item|detail|gros)', html))[:6]:
+              seg = re.sub(r'\s+', ' ', html[m.start()-80:m.start()+600])
+              print("…", seg[:650], "\n")
+          PYEOF
 
   fetch-assets:
     if: inputs.fetch_assets == true
