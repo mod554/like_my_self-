@@ -29,8 +29,39 @@ on:
         required: false
         type: boolean
         default: false
+      probe_url:
+        description: "Inspecter une ou plusieurs URLs (JSON/HTML) depuis le runner"
+        required: false
+        type: string
+        default: ""
 
 jobs:
+  probe-url:
+    if: inputs.probe_url != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspecter des URLs depuis le runner
+        env:
+          URLS: ${{ inputs.probe_url }}
+        run: |
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+          for URL in $URLS; do
+            echo "#### $URL"
+            curl -s -o /tmp/p.json -w "HTTP %{http_code}\n" --max-time 40 -A "$UA" "$URL"
+            python3 - <<'PYEOF' || head -c 1500 /tmp/p.json
+          import json
+          d = json.load(open("/tmp/p.json"))
+          if isinstance(d, dict) and "news" in d:
+              print("count:", d.get("count"))
+              for n in d.get("news", [])[:8]:
+                  fc = (n.get("filiere") or {}).get("code")
+                  print("  ", fc, "|", (n.get("titre") or "")[:90], "|", n.get("source"))
+          else:
+              print(json.dumps(d)[:1500])
+          PYEOF
+            echo
+          done
+
   run-connector:
     if: inputs.run_connector != ''
     runs-on: ubuntu-latest
