@@ -70,6 +70,35 @@ async function fetchYahooCorn(): Promise<{ date: string; usdParTonne: number }[]
   return sorties;
 }
 
+// Intraday maïs CBOT ZC=F — Yahoo est joignable depuis les IP Vercel, donc la
+// granularité horaire (range=5d&interval=1h) et minute (range=1d&interval=1m)
+// est collectée directement par le cron Vercel, sans runner externe. Renvoie
+// des timestamps ISO complets (≠ point quotidien de minuit).
+async function fetchYahooIntraday(range: string, interval: string): Promise<{ iso: string; usdParTonne: number; cents: number }[]> {
+  const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range=${range}&interval=${interval}`, {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Yahoo intraday HTTP ${res.status}`);
+  const json = await res.json() as {
+    chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
+  };
+  const r = json.chart?.result?.[0];
+  const ts = r?.timestamp ?? [];
+  const closes = r?.indicators?.quote?.[0]?.close ?? [];
+  const out: { iso: string; usdParTonne: number; cents: number }[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const c = closes[i];
+    if (c == null || c <= 0) continue;
+    out.push({
+      iso: new Date(ts[i] * 1000).toISOString(),
+      usdParTonne: Math.round((c / 100) * 39.3683 * 100) / 100,
+      cents: Math.round(c * 100) / 100,
+    });
+  }
+  return out;
+}
+
 // Fallback 1 : FRED (Federal Reserve) — serie PMAIZMTUSDM = "Global price of Maize"
 // (donnees IMF redistribuees), CSV public sans cle : USD/tonne, mensuel.
 async function fetchFredMaize(): Promise<{ date: string; usdParTonne: number }[]> {
@@ -230,6 +259,36 @@ export class UsdaFasConnector implements Connector {
             resultat.erreurs.push(`Prix ${dateStr}: ${msg}`);
             resultat.nbErreurs++;
           }
+        }
+      }
+
+      // Intraday maïs (horaire + minute) — collecté directement depuis Vercel
+      // via Yahoo (le seul produit avec un marché live). Échec = note, pas erreur.
+      for (const { range, interval, typePrix, note } of [
+        { range: "5d", interval: "1h", typePrix: "SPOT_1H",   note: "CBOT ZC=F horaire via Yahoo (parité TradingView ZC1!)" },
+        { range: "1d", interval: "1m", typePrix: "SPOT_1MIN", note: "CBOT ZC=F minute via Yahoo (parité TradingView ZC1!)" },
+      ]) {
+        try {
+          const barres = await fetchYahooIntraday(range, interval);
+          if (barres.length === 0) continue;
+          const res = await prisma.prixReleve.createMany({
+            data: barres.map((b) => ({
+              produitId: produit.id,
+              marcheId: marche.id,
+              sourceId: source.id,
+              typePrix,
+              valeur: b.usdParTonne,
+              devise: "USD",
+              unite: "tonne",
+              dateReleve: new Date(b.iso),
+              fiabilite: "OFFICIEL" as const,
+              notes: `${note} — ${b.cents.toFixed(2)} ¢/bu`,
+            })),
+            skipDuplicates: true,
+          });
+          resultat.nbImportes += res.count;
+        } catch (e) {
+          resultat.erreurs.push(`Intraday ${interval}: ${e instanceof Error ? e.message.slice(0, 50) : e}`);
         }
       }
 
