@@ -29,11 +29,6 @@ on:
         required: false
         type: boolean
         default: false
-      probe_url:
-        description: "Inspecter une ou plusieurs URLs externes (séparées par des espaces)"
-        required: false
-        type: string
-        default: ""
 
 jobs:
   run-connector:
@@ -56,45 +51,7 @@ jobs:
           curl -s --max-time 120 -X POST "https://like-my-self.vercel.app/api/init" \
             | python3 -m json.tool || echo "réponse illisible"
 
-  probe-url:
-    if: inputs.probe_url != ''
-    runs-on: ubuntu-latest
-    steps:
-      - name: Inspecter des URLs externes depuis le runner
-        env:
-          URLS: ${{ inputs.probe_url }}
-        run: |
-          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-          for URL in $URLS; do
-            echo "############################################################"
-            echo "## $URL"
-            code=$(curl -s -o /tmp/page.html -w "%{http_code}" --max-time 40 -A "$UA" "$URL")
-            echo "HTTP $code — $(wc -c < /tmp/page.html) octets"
-            # Pour les réponses JSON data.gov.in : afficher count + records ; sinon aperçu
-            python3 - <<'PYEOF' || head -c 2000 /tmp/page.html
-          import json
-          try:
-              d = json.load(open("/tmp/page.html"))
-          except Exception as e:
-              print("(pas du JSON:", str(e)[:60], ")"); raise SystemExit(1)
-          if isinstance(d, dict) and "records" in d:
-              print("count:", d.get("count"), "total:", d.get("total"), "records:", len(d.get("records", [])))
-              for r in d.get("records", [])[:6]:
-                  print("  ", {k: r.get(k) for k in ("commodity","variety","market","arrival_date","modal_price")})
-          elif isinstance(d, dict) and "prixReleves" in d:
-              pr = d.get("prixReleves", [])
-              print("produit:", d.get("code"), "— prixReleves:", len(pr))
-              for r in pr[:6]:
-                  print("  ", {k: r.get(k) for k in ("valeur","devise","unite","typePrix","dateReleve","notes")})
-          else:
-              print(json.dumps(d)[:2500])
-          PYEOF
-            echo
-          done
 
-  # Le sandbox Claude Code ne peut pas joindre le CDN Higgsfield (Network
-  # Policy figée du conteneur) — le runner GitHub a un egress ouvert : il
-  # télécharge les 3 assets et les committe sur la branche design.
   fetch-assets:
     if: inputs.fetch_assets == true
     runs-on: ubuntu-latest
