@@ -50,6 +50,13 @@ export class AgmarknetConnector implements Connector {
       const zone = await prisma.zone.findUnique({ where: { code: "INDE" } });
       if (!produit || !zone) throw new Error("Produit CAJOU_RCN ou zone INDE absent — lancer /api/init");
 
+      // Auto-nettoyage : le produit est le cajou BRUT (RCN). On purge d'éventuels
+      // relevés « kernel » (variété non-raw, ex. Mumbai « Other » à ~13 500 $/t)
+      // importés avant ce filtre, qui fausseraient les statistiques RCN.
+      await prisma.prixReleve.deleteMany({
+        where: { sourceId: source.id, NOT: { notes: { contains: "Raw" } } },
+      }).catch(() => {});
+
       const key = process.env.AGMARKNET_KEY || DEMO_KEY;
       const url = `https://api.data.gov.in/resource/${RESOURCE}?api-key=${key}&format=json&limit=100&filters%5Bcommodity%5D=Cashewnuts`;
       const res = await fetch(url, {
@@ -64,11 +71,14 @@ export class AgmarknetConnector implements Connector {
         const modal = Number(r.modal_price);
         const dateReleve = parseDateInde(r.arrival_date ?? "");
         const mandi = (r.market ?? "").trim();
+        const variete = (r.variety ?? "NA").trim();
         if (!isFinite(modal) || modal <= 0 || !dateReleve || !mandi) continue;
+        // Produit = cajou BRUT (RCN) → on ne garde que les variétés « raw ».
+        // Les variétés transformées (kernel/« Other », ~13 500 $/t) sont ignorées.
+        if (!/raw/i.test(variete)) continue;
 
         // INR/quintal → USD/tonne : ×10 (quintal→tonne) puis ÷ taux INR/USD
         const usdTonne = Math.round((modal * 10 / INR_PAR_USD) * 100) / 100;
-        const variete = (r.variety ?? "NA").trim();
         const marcheCode = `AGM_${normCode(mandi)}_${normCode(variete)}`.slice(0, 40);
 
         const marche = await prisma.marche.upsert({
