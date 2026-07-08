@@ -14,11 +14,13 @@ import { ComtradeConnector } from "./comtrade";
 // ce qui gelait la route /api/connectors. Le fichier reste disponible.
 import { TauxChangeLiveConnector } from "./taux-change";
 import { IceSoftsConnector } from "./ice-softs";
+import { AgmarknetConnector } from "./agmarknet";
 import type { Connector } from "./base";
 
 export const CONNECTEURS: Connector[] = [
   new TauxChangeLiveConnector(),
   new IceSoftsConnector(),
+  new AgmarknetConnector(),
   new WorldBankConnector(),
   new FaoFpmaConnector(),
   new UsdaFasConnector(),

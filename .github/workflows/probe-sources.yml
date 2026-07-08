@@ -451,8 +451,8 @@ jobs:
           URL="https://like-my-self.vercel.app"
           HEURE=$(date -u +%H)
 
-          # Toutes les heures : taux de change + prix CBOT quotidiens + actualités
-          CODES="TAUX_CHANGE_LIVE USDA_FAS_PSD RSS_NEWS_AGRI GDELT_NEWS"
+          # Toutes les heures : taux de change + prix CBOT + café/cacao + cajou Inde + actualités
+          CODES="TAUX_CHANGE_LIVE USDA_FAS_PSD ICE_SOFTS AGMARKNET_INDIA RSS_NEWS_AGRI GDELT_NEWS"
 
           # 2x/jour (07h et 19h UTC) : prix locaux WFP/HDX + sources officielles
           if [ "$HEURE" = "07" ] || [ "$HEURE" = "19" ]; then

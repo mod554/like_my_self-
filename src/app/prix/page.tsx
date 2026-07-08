@@ -26,7 +26,7 @@ export default async function PrixPage() {
     console.error("PrixPage DB error:", e);
   }
 
-  const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
+  const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A", CAFE: "#C4622D", CACAO: "#7B4A2D", PALMIER: "#C99A2E", HEVEA: "#4A6B57" };
 
   return (
     <div style={{ flex: 1, padding: "32px 0 64px" }}>

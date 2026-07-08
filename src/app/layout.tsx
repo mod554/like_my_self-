@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Ubuntu, Ubuntu_Mono, Fraunces } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/layout/Header";
+import AutoRefresh from "@/components/AutoRefresh";
 
 const ubuntu = Ubuntu({
   weight: ["300", "400", "500", "700"],
@@ -41,6 +42,7 @@ export default function RootLayout({
       <body style={{ fontFamily: "var(--font-ubuntu, 'Ubuntu', system-ui, sans-serif)" }}>
         <Header />
         <main className="flex-1 flex flex-col">{children}</main>
+        <AutoRefresh />
         <footer style={{ borderTop: "1px solid var(--border-subtle)" }}>
           <div className="ag-container" style={{ padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span className="ag-section-label">© 2026 Africa Agro Partners · Terminal v1.0</span>

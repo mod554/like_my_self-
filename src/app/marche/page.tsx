@@ -6,8 +6,8 @@ import CountUp from "@/components/ui/CountUp";
 import AfricaMarketMap from "@/components/brand/AfricaMarketMap";
 import LiveNewsFeed from "@/components/live/LiveNewsFeed";
 
-const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
-const FILIERE_ICON: Record<string, string> = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰" };
+const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A", CAFE: "#C4622D", CACAO: "#7B4A2D", PALMIER: "#C99A2E", HEVEA: "#4A6B57" };
+const FILIERE_ICON: Record<string, string> = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰", CAFE: "☕", CACAO: "🍫", PALMIER: "🌴", HEVEA: "🌳" };
 
 async function getMarketData() {
   const filieres = await prisma.filiere.findMany({
