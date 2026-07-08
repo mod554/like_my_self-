@@ -226,6 +226,62 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
+      # Prix maïs locaux ivoiriens (SIMAGRI-CI) — le bouclier anti-bot Anubis
+      # du site bloque le proxy/Vercel ; le runner (IP propre + UA navigateur)
+      # passe. Prix physiques FCFA/kg (détail & gros) par marché.
+      - name: Prix maïs locaux SIMAGRI-CI depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, re, urllib.request
+          from datetime import datetime, timezone
+
+          url = "https://www.simagri-ci.info/prices-entries-grids"
+          req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+          try:
+              html = urllib.request.urlopen(req, timeout=40).read().decode("utf-8", "replace")
+          except Exception as e:
+              print("SIMAGRI indisponible:", str(e)[:80]); html = ""
+
+          html = re.sub(r"\s+", " ", html)
+          # <span class="price-item"> <strong>PRODUIT</strong> - Détail: D / Gros: G FCFA/KG à MARCHE (DATE)
+          pat = re.compile(
+              r'price-item">\s*<strong>(.*?)</strong>\s*-\s*'
+              r'<span class="price-detail">D[ée]tail:\s*([\d.]+)</span>\s*/\s*'
+              r'<span class="price-gros">Gros:\s*([\d.]+)</span>[^<]*?à\s+([A-ZÀ-Ÿ\' -]+?)\s*\(([^)]*)\)'
+          )
+          rows, seen = [], set()
+          for m in pat.finditer(html):
+              prod, detail, gros, marche, datetxt = (x.strip() for x in m.groups())
+              if "MAÏS" not in prod.upper() and "MAIS" not in prod.upper():
+                  continue  # on ne suit que le maïs ici
+              dm = re.search(r"(\d{2})/(\d{2})/(\d{4})", datetxt)
+              iso = f"{dm.group(3)}-{dm.group(2)}-{dm.group(1)}" if dm else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+              for typ, val in (("DETAIL", detail), ("GROS", gros)):
+                  try:
+                      v = float(val)
+                  except ValueError:
+                      continue
+                  if v <= 0:
+                      continue
+                  key = (marche, typ, iso)
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  rows.append({"produitCode": "MAIS_GRAIN", "marche": marche, "typePrix": typ, "valeur": v, "date": iso})
+          print(f"Prix maïs locaux collectés: {len(rows)}")
+          json.dump({"rows": rows}, open("/tmp/simagri.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/simagri.json'))['rows']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/local" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/simagri.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
       # Actualités Google News collectées sur le runner (IP propre) — les IP
       # partagées Vercel sont bloquées par Google News RSS (réponse vide).
       - name: Actualités Google News depuis le runner
