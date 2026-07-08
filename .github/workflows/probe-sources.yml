@@ -171,6 +171,61 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
+      # Cotations INTRADAY maïs CBOT (ZC=F) — horaire (5 jours) + minute (1 jour)
+      # depuis le runner. Seul le maïs a un marché live ; cajou/cola n'ont aucun
+      # marché intraday. typePrix SPOT_1H / SPOT_1MIN pour ne pas collisionner
+      # avec le point quotidien.
+      - name: Cotations maïs intraday (horaire + minute) depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, urllib.request
+          from datetime import datetime, timezone
+
+          def get(url, timeout=25):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8", "replace")
+
+          def collecte(rng, interval):
+              url = f"https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range={rng}&interval={interval}"
+              d = json.loads(get(url))
+              res = d["chart"]["result"][0]
+              ts = res["timestamp"]
+              closes = res["indicators"]["quote"][0]["close"]
+              pts = []
+              for t, c in zip(ts, closes):
+                  if c and c > 0:
+                      iso = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                      pts.append({"date": iso, "usd": round(c / 100 * 39.3683, 2), "cents": round(c, 2)})
+              return pts
+
+          for rng, interval, typ, note in (
+              ("5d", "1h", "SPOT_1H",   "CBOT ZC=F horaire via Yahoo (parité TradingView ZC1!)"),
+              ("1d", "1m", "SPOT_1MIN", "CBOT ZC=F minute via Yahoo (parité TradingView ZC1!)"),
+          ):
+              try:
+                  pts = collecte(rng, interval)
+                  json.dump({"points": pts, "sourceNote": note, "sourceCode": "YAHOO_FINANCE", "typePrix": typ},
+                            open(f"/tmp/intraday_{typ}.json", "w"))
+                  print(f"{typ}: {len(pts)} barres collectées")
+              except Exception as e:
+                  json.dump({"points": []}, open(f"/tmp/intraday_{typ}.json", "w"))
+                  print(f"{typ} indisponible: {str(e)[:80]}")
+          PYEOF
+          for typ in SPOT_1H SPOT_1MIN; do
+            N=$(python3 -c "import json; print(len(json.load(open('/tmp/intraday_'+'$typ'+'.json'))['points']))")
+            if [ "$N" -gt 0 ]; then
+              echo "POST $typ ($N points)"
+              curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/mais" \
+                -H "Content-Type: application/json" \
+                ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+                --data-binary @/tmp/intraday_$typ.json | head -c 200
+              echo
+            fi
+          done
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
       # Actualités Google News collectées sur le runner (IP propre) — les IP
       # partagées Vercel sont bloquées par Google News RSS (réponse vide).
       - name: Actualités Google News depuis le runner

@@ -9,9 +9,20 @@ import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 
 interface PointPrix {
-  date: string;   // "2026-07-04"
+  date: string;   // "2026-07-04" (quotidien) ou ISO complet "2026-07-04T14:30:00Z" (intraday)
   usd: number;    // USD par tonne
   cents?: number; // cotation d'origine en cents USD / boisseau (parité TradingView)
+}
+
+// typePrix acceptés : SPOT (quotidien) + intraday horaire/minute.
+// Un typePrix distinct évite toute collision avec le point quotidien de minuit.
+const TYPES_PRIX = new Set(["SPOT", "SPOT_1H", "SPOT_1MIN"]);
+
+// Accepte "YYYY-MM-DD" (→ minuit UTC) ou un ISO complet avec heure (intraday).
+function versDate(v: string): Date | null {
+  const iso = v.includes("T") ? v : `${v}T00:00:00.000Z`;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 export async function POST(req: NextRequest) {
@@ -24,14 +35,17 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json() as { points?: PointPrix[]; sourceNote?: string; sourceCode?: string };
+    const body = await req.json() as { points?: PointPrix[]; sourceNote?: string; sourceCode?: string; typePrix?: string };
     // Sources autorisées pour cet import (liste blanche)
     const sourceCode = ["YAHOO_FINANCE", "USDA_FAS_PSD"].includes(body.sourceCode ?? "")
       ? (body.sourceCode as string)
       : "USDA_FAS_PSD";
+    const typePrix = TYPES_PRIX.has(body.typePrix ?? "") ? (body.typePrix as string) : "SPOT";
+    // Intraday : on peut recevoir des centaines de barres 1min → plafond plus large
+    const limite = typePrix === "SPOT" ? 200 : 500;
     const points = (body.points ?? []).filter(
       (p) => p?.date && isFinite(p.usd) && p.usd > 0 && p.usd < 10_000
-    ).slice(0, 200);
+    ).slice(0, limite);
     if (points.length === 0) {
       return Response.json({ error: "Aucun point valide" }, { status: 400 });
     }
@@ -46,21 +60,28 @@ export async function POST(req: NextRequest) {
     }
 
     const note = (body.sourceNote ?? "CBOT ZC via GitHub Actions").slice(0, 120);
-    const res = await prisma.prixReleve.createMany({
-      data: points.map((p) => ({
-        produitId: produit.id,
-        marcheId: marche.id,
-        sourceId: source.id,
-        typePrix: "SPOT",
-        valeur: p.usd,
-        devise: "USD",
-        unite: "tonne",
-        dateReleve: new Date(`${p.date}T00:00:00.000Z`),
-        fiabilite: "OFFICIEL",
-        notes: p.cents ? `${note} — ${p.cents.toFixed(2)} ¢/bu (cotation brute, parité TradingView ZC1!)` : note,
-      })),
-      skipDuplicates: true,
-    });
+    const data = points
+      .map((p) => {
+        const dateReleve = versDate(p.date);
+        if (!dateReleve) return null;
+        return {
+          produitId: produit.id,
+          marcheId: marche.id,
+          sourceId: source.id,
+          typePrix,
+          valeur: p.usd,
+          devise: "USD",
+          unite: "tonne",
+          dateReleve,
+          fiabilite: "OFFICIEL",
+          notes: p.cents ? `${note} — ${p.cents.toFixed(2)} ¢/bu (cotation brute, parité TradingView ZC1!)` : note,
+        };
+      })
+      .filter((d): d is NonNullable<typeof d> => d !== null);
+    if (data.length === 0) {
+      return Response.json({ error: "Aucune date valide" }, { status: 400 });
+    }
+    const res = await prisma.prixReleve.createMany({ data, skipDuplicates: true });
 
     await prisma.source.update({
       where: { code: sourceCode },
