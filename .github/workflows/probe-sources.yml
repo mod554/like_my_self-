@@ -75,14 +75,19 @@ jobs:
           import json
           try:
               d = json.load(open("/tmp/page.html"))
-              print("count:", d.get("count"), "total:", d.get("total"))
-              recs = d.get("records", [])
-              print("records renvoyés:", len(recs))
-              for r in recs[:6]:
-                  print("  ", {k: r.get(k) for k in ("commodity","variety","market","state","arrival_date","min_price","max_price","modal_price")})
           except Exception as e:
-              print("(pas du JSON exploitable:", str(e)[:60], ")")
-              raise SystemExit(1)
+              print("(pas du JSON:", str(e)[:60], ")"); raise SystemExit(1)
+          if isinstance(d, dict) and "records" in d:
+              print("count:", d.get("count"), "total:", d.get("total"), "records:", len(d.get("records", [])))
+              for r in d.get("records", [])[:6]:
+                  print("  ", {k: r.get(k) for k in ("commodity","variety","market","arrival_date","modal_price")})
+          elif isinstance(d, dict) and "prixReleves" in d:
+              pr = d.get("prixReleves", [])
+              print("produit:", d.get("code"), "— prixReleves:", len(pr))
+              for r in pr[:6]:
+                  print("  ", {k: r.get(k) for k in ("valeur","devise","unite","typePrix","dateReleve","notes")})
+          else:
+              print(json.dumps(d)[:2500])
           PYEOF
             echo
           done
