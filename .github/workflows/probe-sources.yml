@@ -47,7 +47,7 @@ jobs:
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
           for URL in $URLS; do
             echo "#### $URL"
-            curl -s -o /tmp/p.json -w "HTTP %{http_code}\n" --max-time 40 -A "$UA" "$URL" || echo "(timeout/erreur réseau)"
+            curl -sL -o /tmp/p.json -w "HTTP %{http_code} → %{url_effective}\n" --max-time 40 -A "$UA" "$URL" || echo "(timeout/erreur réseau)"
             python3 - <<'PYEOF' || head -c 1500 /tmp/p.json
           import json
           d = json.load(open("/tmp/p.json"))
@@ -455,13 +455,74 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
+      # Actualités GDELT collectées sur le runner (IP propre) — GDELT rate-limite
+      # sévèrement les IP partagées Vercel ; depuis le runner les 7 filières
+      # passent en un seul run avec un pacing léger.
+      - name: Actualités GDELT depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, time, urllib.parse, urllib.request
+
+          REQUETES = [
+              ("MAIS",    '(maize OR corn) (price OR market OR harvest OR export OR africa)'),
+              ("CAJOU",   '(cashew OR anacarde OR "noix de cajou" OR "raw cashew nut")'),
+              ("COLA",    '("kola nut" OR "cola nut" OR "noix de cola" OR "bitter kola")'),
+              ("CAFE",    '(coffee OR arabica OR robusta) (price OR market OR export OR harvest)'),
+              ("CACAO",   '(cocoa OR cacao OR "cocoa beans") (price OR market OR export)'),
+              ("PALMIER", '("palm oil" OR "huile de palme" OR "crude palm oil") (price OR market OR export)'),
+              ("HEVEA",   '("natural rubber" OR "caoutchouc naturel" OR "rubber price") (price OR market OR export)'),
+          ]
+
+          def iso(seendate):
+              # "20260713T090000Z" → "2026-07-13T09:00:00Z"
+              s = (seendate or "").strip()
+              if len(s) >= 15:
+                  return f"{s[0:4]}-{s[4:6]}-{s[6:8]}T{s[9:11]}:{s[11:13]}:{s[13:15]}Z"
+              return None
+
+          arts = []
+          for i, (filiere, q) in enumerate(REQUETES):
+              if i:
+                  time.sleep(6)
+              url = ("https://api.gdeltproject.org/api/v2/doc/doc?query=" + urllib.parse.quote(q)
+                     + "&mode=ArtList&format=json&maxrecords=25&timespan=3d&sort=DateDesc")
+              try:
+                  req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+                  d = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace"))
+                  n = 0
+                  for a in d.get("articles", []):
+                      titre = (a.get("title") or "").strip()
+                      lien = (a.get("url") or "").strip()
+                      if not titre or not lien:
+                          continue
+                      src = f"GDELT · {a.get('domain', 'web')}" + (f" ({a.get('sourcecountry')})" if a.get("sourcecountry") else "")
+                      arts.append({"titre": titre, "lien": lien, "source": src,
+                                   "filiere": filiere, "datePublication": iso(a.get("seendate"))})
+                      n += 1
+                  print(f"{filiere}: {n} articles")
+              except Exception as e:
+                  print(f"{filiere}: {str(e)[:70]}")
+          print(f"Articles GDELT collectés: {len(arts)}")
+          json.dump({"articles": arts, "sourceCode": "GDELT_NEWS"}, open("/tmp/gdelt.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/gdelt.json'))['articles']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/news" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/gdelt.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
       - name: Déclencher les connecteurs temps réel
         run: |
           URL="https://like-my-self.vercel.app"
           HEURE=$(date -u +%H)
 
           # Toutes les heures : taux de change + prix CBOT + café/cacao + cajou Inde + actualités
-          CODES="TAUX_CHANGE_LIVE USDA_FAS_PSD ICE_SOFTS AGMARKNET_INDIA RSS_NEWS_AGRI GDELT_NEWS"
+          CODES="TAUX_CHANGE_LIVE USDA_FAS_PSD ICE_SOFTS AGMARKNET_INDIA RSS_NEWS_AGRI"
 
           # 2x/jour (07h et 19h UTC) : prix locaux WFP/HDX + sources officielles
           if [ "$HEURE" = "07" ] || [ "$HEURE" = "19" ]; then

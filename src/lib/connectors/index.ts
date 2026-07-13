@@ -7,7 +7,9 @@ import { UsdaFasConnector } from "./usda-fas";
 import { ConseilAnacardeCiConnector } from "./conseil-anacarde";
 import { ResimaoConnector } from "./resimao";
 import { RssNewsConnector } from "./rss-news";
-import { GdeltNewsConnector } from "./gdelt-news";
+// GdeltNewsConnector retiré du registre : GDELT rate-limite les IP partagées
+// Vercel — la collecte GDELT se fait désormais côté runner GitHub (IP propre)
+// via /api/import/news. Le fichier reste disponible.
 import { ComtradeConnector } from "./comtrade";
 // IndexMundiConnector retiré du registre : redondant (doublon du prix maïs
 // World Bank, fiabilité INDICATIF) et indexmundi.com bloque les IP Vercel,
@@ -27,7 +29,6 @@ export const CONNECTEURS: Connector[] = [
   new ConseilAnacardeCiConnector(),
   new ResimaoConnector(),
   new RssNewsConnector(),
-  new GdeltNewsConnector(),
   new ComtradeConnector(),
 ];
 

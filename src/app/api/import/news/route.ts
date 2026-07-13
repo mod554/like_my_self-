@@ -27,7 +27,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json() as { articles?: ArticleIn[] };
+    const body = await req.json() as { articles?: ArticleIn[]; sourceCode?: string };
+    // Source dont le statut sera mis à jour (le runner collecte pour plusieurs
+    // sources : Google News → RSS_NEWS_AGRI, GDELT → GDELT_NEWS).
+    const sourceCode = ["RSS_NEWS_AGRI", "GDELT_NEWS"].includes(body.sourceCode ?? "")
+      ? (body.sourceCode as string)
+      : "RSS_NEWS_AGRI";
     // Cap large + entrelacement par filière : avec 7 filières × 2 langues, un
     // simple slice(0, 300) coupait la queue (café/cacao/palme/hévéa). On
     // entrelace pour garantir une couverture équitable de toutes les filières.
@@ -87,7 +92,7 @@ export async function POST(req: NextRequest) {
     }
 
     await prisma.source.update({
-      where: { code: "RSS_NEWS_AGRI" },
+      where: { code: sourceCode },
       data: { statutDernier: "OK", derniereExecution: new Date(), messageErreur: null },
     }).catch(() => {});
 
