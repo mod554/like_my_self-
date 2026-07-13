@@ -2,7 +2,9 @@
 // Chaque connecteur correspond à une Source en base de données
 
 import { WorldBankConnector } from "./worldbank";
-import { FaoFpmaConnector } from "./fao-fpma";
+// FaoFpmaConnector retiré du registre : FAOSTAT exige une authentification
+// (HTTP 401) depuis 2026 — la source FAO_FPMA est désormais alimentée par le
+// runner GitHub via l'API GIEWS FPMA (fpma.fao.org) → POST /api/import/fpma.
 import { UsdaFasConnector } from "./usda-fas";
 import { ConseilAnacardeCiConnector } from "./conseil-anacarde";
 import { ResimaoConnector } from "./resimao";
@@ -24,7 +26,6 @@ export const CONNECTEURS: Connector[] = [
   new IceSoftsConnector(),
   new AgmarknetConnector(),
   new WorldBankConnector(),
-  new FaoFpmaConnector(),
   new UsdaFasConnector(),
   new ConseilAnacardeCiConnector(),
   new ResimaoConnector(),

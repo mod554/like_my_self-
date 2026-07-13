@@ -455,6 +455,73 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
+      # Prix maïs mensuels des marchés AOF — API FAO GIEWS FPMA (publique, JSON,
+      # remplace FAOSTAT mort). 2×/jour + déclenchement manuel : les données
+      # sont mensuelles, inutile de marteler la FAO toutes les heures.
+      - name: Prix maïs FPMA/GIEWS (marchés AOF) depuis le runner
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        run: |
+          HEURE=$(date -u +%H)
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$HEURE" != "07" ] && [ "$HEURE" != "19" ]; then
+            echo "FPMA : collecte 2×/jour (07h/19h UTC) — sauté à ${HEURE}h"; exit 0
+          fi
+          python3 - <<'PYEOF'
+          import json, time, urllib.request
+
+          BASE = "https://fpma.fao.org/giews/v4/global/price_module/api/v1"
+          # Pays AOF en zone franc (XOF) — les devises GHS/NGN sont écartées tant
+          # que la conversion n'est pas branchée côté app.
+          PAYS = ["CIV", "BFA", "MLI", "SEN", "BEN", "TGO", "NER"]
+
+          def get(url, timeout=25):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return json.loads(r.read().decode("utf-8", "replace"))
+
+          rows = []
+          for iso3 in PAYS:
+              try:
+                  series = get(f"{BASE}/FpmaSerieDomestic/?format=json&iso3_country_code={iso3}").get("results", [])
+              except Exception as e:
+                  print(f"{iso3}: liste indisponible — {str(e)[:60]}"); continue
+              mais = [s for s in series
+                      if "maize" in (s.get("commodity_name") or "").lower()
+                      and (s.get("currency") or "") == "XOF"][:4]
+              print(f"{iso3}: {len(series)} séries, {len(mais)} maïs retenues")
+              for s in mais:
+                  time.sleep(0.4)
+                  try:
+                      pts = get(f"{BASE}/FpmaSeriePrice/{s['uuid']}/?format=json").get("datapoints", [])
+                  except Exception as e:
+                      print(f"  {s.get('market_name')}: {str(e)[:50]}"); continue
+                  typ = "GROS" if "wholesale" in (s.get("price_type") or "").lower() else "DETAIL"
+                  n = 0
+                  for p in pts:
+                      if p.get("periodicity") != "monthly":
+                          continue
+                      v = p.get("price_value")
+                      d = (p.get("date") or "")[:10]
+                      if not v or v <= 0 or len(d) != 10 or d < "2023-01-01":
+                          continue
+                      rows.append({"produitCode": "MAIS_GRAIN", "marcheNom": s.get("market_name", "?"),
+                                   "iso3": iso3, "devise": "XOF", "typePrix": typ,
+                                   "date": d, "valeur": round(v, 2)})
+                      n += 1
+                  print(f"  {s.get('market_name')} ({typ}): {n} points mensuels")
+          print(f"Total lignes FPMA: {len(rows)}")
+          json.dump({"rows": rows}, open("/tmp/fpma.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/fpma.json'))['rows']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/fpma" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/fpma.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
       # Actualités GDELT collectées sur le runner (IP propre) — GDELT rate-limite
       # sévèrement les IP partagées Vercel ; depuis le runner les 7 filières
       # passent en un seul run avec un pacing léger.
