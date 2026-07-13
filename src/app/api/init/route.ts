@@ -171,6 +171,18 @@ export async function POST(_req: NextRequest) {
     if (zombies.count > 0) created.push(`Statuts: ${zombies.count} source(s) EN_COURS zombie(s) → ERREUR`);
     // INDEXMUNDI est retiré du registre des connecteurs — on le désactive.
     await prisma.source.updateMany({ where: { code: "INDEXMUNDI" }, data: { actif: false } }).catch(() => null);
+    // GDELT rate-limite toutes les IP cloud partagées (Vercel ET GitHub) : la
+    // collecte runner reste en best-effort mais la source sort du tableau de
+    // bord — les actualités sont couvertes par Google News (RSS_NEWS_AGRI).
+    await prisma.source.updateMany({
+      where: { code: "GDELT_NEWS" },
+      data: { actif: false, statutDernier: "ERREUR", messageErreur: "GDELT rate-limite les IP cloud partagées — collecte best-effort via runner, actualités assurées par Google News" },
+    }).catch(() => null);
+    // Alignement des métadonnées FAO_FPMA sur le nouveau pipeline GIEWS
+    await prisma.source.updateMany({
+      where: { code: "FAO_FPMA" },
+      data: { nom: "FAO GIEWS FPMA — Prix maïs marchés AOF", frequence: "MENSUEL", description: "Prix mensuels du maïs sur les marchés AOF (XOF/kg) — API GIEWS FPMA via runner GitHub" },
+    }).catch(() => null);
   } catch { /* table absente au premier run */ }
 
   // 1. Filières
