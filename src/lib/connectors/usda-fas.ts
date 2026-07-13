@@ -292,26 +292,29 @@ export class UsdaFasConnector implements Connector {
         }
       }
 
-      // Créer une actualité résumé pour les données IMF
+      // Créer une actualité résumé pour les données IMF — la table Actualite
+      // n'a PAS de contrainte unique : il faut vérifier l'existence avant
+      // d'insérer, sinon chaque run (horaire) ajoute un doublon au fil.
       if (entries.length > 0) {
         const filiere = await prisma.filiere.findUnique({ where: { code: "MAIS" } }).catch(() => null);
         if (filiere) {
           const dernierEntry = [...entries].sort(([a], [b]) => b.localeCompare(a))[0];
           const [annee, prix] = dernierEntry;
-          try {
+          const titre = `Maïs mondial ${annee.slice(0, 10)}: ${prix.toFixed(0)} USD/T`;
+          const lien = "https://stooq.com/q/?s=zc.f";
+          const deja = await prisma.actualite.findFirst({ where: { lien, titre }, select: { id: true } }).catch(() => null);
+          if (!deja) {
             await prisma.actualite.create({
               data: {
                 filiereId: filiere.id,
-                titre: `Maïs mondial ${annee.slice(0, 10)}: ${prix.toFixed(0)} USD/T`,
-                lien: "https://stooq.com/q/?s=zc.f",
+                titre,
+                lien,
                 source: sourceNote,
                 resume: `Prix mondial du maïs au ${annee.slice(0, 10)} : ${prix.toFixed(2)} USD/tonne. Source : ${sourceNote}.`,
                 datePublication: dernierEntry[0].length === 4 ? new Date(`${annee}-07-01T00:00:00.000Z`) : new Date(`${annee}T00:00:00.000Z`),
               },
-            });
+            }).catch(() => {});
             resultat.nbImportes++;
-          } catch {
-            // doublon ignoré
           }
         }
       }

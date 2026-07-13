@@ -39,11 +39,17 @@ export async function POST(req: NextRequest) {
       parFiliere.set(a.filiere, arr);
     }
     const articles: ArticleIn[] = [];
+    const liensVus = new Set<string>(); // un même article dans 2 requêtes filière = 1 seule ligne
     const listes = [...parFiliere.values()];
     for (let i = 0; articles.length < 900; i++) {
       let ajoute = false;
       for (const l of listes) {
-        if (l[i]) { articles.push(l[i]); ajoute = true; }
+        if (!l[i]) continue;
+        ajoute = true;
+        const lien = l[i].lien.trim();
+        if (liensVus.has(lien)) continue;
+        liensVus.add(lien);
+        articles.push(l[i]);
       }
       if (!ajoute) break;
     }

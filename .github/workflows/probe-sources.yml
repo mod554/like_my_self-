@@ -47,7 +47,7 @@ jobs:
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
           for URL in $URLS; do
             echo "#### $URL"
-            curl -s -o /tmp/p.json -w "HTTP %{http_code}\n" --max-time 40 -A "$UA" "$URL"
+            curl -s -o /tmp/p.json -w "HTTP %{http_code}\n" --max-time 40 -A "$UA" "$URL" || echo "(timeout/erreur réseau)"
             python3 - <<'PYEOF' || head -c 1500 /tmp/p.json
           import json
           d = json.load(open("/tmp/p.json"))

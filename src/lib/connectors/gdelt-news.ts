@@ -96,14 +96,16 @@ export class GdeltNewsConnector implements Connector {
       const budgetMs = 32_000; // garde-fou : la route entière doit tenir sous 60s
       // Rotation horaire : avec 7 filières et un budget de 32s, on décale l'ordre
       // de départ chaque heure pour que café/cacao/palme/hévéa passent aussi en tête.
+      // GDELT rate-limite agressivement (~1 req/5s) : on se limite à 4 requêtes
+      // par run avec un pacing de 5s — la rotation couvre les 7 filières en 2 runs.
       const offset = new Date().getUTCHours() % REQUETES.length;
-      const requetesRot = [...REQUETES.slice(offset), ...REQUETES.slice(0, offset)];
+      const requetesRot = [...REQUETES.slice(offset), ...REQUETES.slice(0, offset)].slice(0, 4);
       for (const [i, { filiereCode, query }] of requetesRot.entries()) {
         if (Date.now() - debut.getTime() > budgetMs) {
           reponses.push({ filiereCode, erreur: "budget temps épuisé — au prochain run" });
           continue;
         }
-        if (i > 0) await attendre(2_500);
+        if (i > 0) await attendre(5_000);
         const url =
           `${API_BASE}?query=${encodeURIComponent(query)}` +
           `&mode=ArtList&format=json&maxrecords=40&timespan=3d&sort=DateDesc`;
@@ -153,7 +155,7 @@ export class GdeltNewsConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbErreurs >= REQUETES.length ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK";
+      const statut = resultat.nbErreurs >= requetesRot.length ? "ERREUR" : resultat.nbErreurs > 0 ? "PARTIEL" : "OK";
 
       await prisma.source.update({
         where: { code: SOURCE_CODE },
@@ -163,7 +165,7 @@ export class GdeltNewsConnector implements Connector {
         data: {
           sourceId: source.id, debut, fin, statut,
           nbImportes: resultat.nbImportes, nbErreurs: resultat.nbErreurs,
-          message: `${resultat.nbImportes} articles GDELT importés (${REQUETES.length} filières)`,
+          message: `${resultat.nbImportes} articles GDELT importés (${requetesRot.length}/${REQUETES.length} filières ce run)`,
           detail: { erreurs: resultat.erreurs.slice(0, 5) },
         },
       });

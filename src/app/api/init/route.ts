@@ -140,6 +140,39 @@ export async function POST(_req: NextRequest) {
     await prisma.structureCout.deleteMany({ where: { fiabilite: "EXEMPLE" } }).catch(() => null);
   } catch { /* table absente au premier run */ }
 
+  // 0bis. Dédoublonnage des actualités — la table n'a pas de contrainte unique
+  // et certains connecteurs inséraient un résumé à chaque run. On garde la plus
+  // ancienne de chaque (lien, filiereId, titre). Idempotent.
+  try {
+    const arts = await prisma.actualite.findMany({
+      select: { id: true, lien: true, titre: true, filiereId: true },
+      orderBy: { dateCollecte: "asc" },
+    });
+    const vus = new Set<string>();
+    const aSupprimer: string[] = [];
+    for (const a of arts) {
+      const cle = `${a.lien}|${a.filiereId ?? ""}|${a.titre}`;
+      if (vus.has(cle)) aSupprimer.push(a.id);
+      else vus.add(cle);
+    }
+    if (aSupprimer.length > 0) {
+      const del = await prisma.actualite.deleteMany({ where: { id: { in: aSupprimer } } });
+      created.push(`Purge: ${del.count} actualités dupliquées supprimées`);
+    }
+  } catch { /* table absente au premier run */ }
+
+  // 0ter. Statuts zombies — un connecteur tué par le budget serverless (60s)
+  // reste bloqué EN_COURS pour toujours. Au-delà de 20 min, c'est une erreur.
+  try {
+    const zombies = await prisma.source.updateMany({
+      where: { statutDernier: "EN_COURS", derniereExecution: { lt: new Date(Date.now() - 20 * 60_000) } },
+      data: { statutDernier: "ERREUR", messageErreur: "Interrompu — budget d'exécution serverless dépassé" },
+    });
+    if (zombies.count > 0) created.push(`Statuts: ${zombies.count} source(s) EN_COURS zombie(s) → ERREUR`);
+    // INDEXMUNDI est retiré du registre des connecteurs — on le désactive.
+    await prisma.source.updateMany({ where: { code: "INDEXMUNDI" }, data: { actif: false } }).catch(() => null);
+  } catch { /* table absente au premier run */ }
+
   // 1. Filières
   await upsertByCode("Filière", FILIERES_INIT,
     (code) => prisma.filiere.findUnique({ where: { code } }),

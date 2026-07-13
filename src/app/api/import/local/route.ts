@@ -44,9 +44,13 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Aucune ligne valide" }, { status: 400 });
     }
 
-    // Zone CI (déjà seedée) + source SIMAGRI-CI (créée à la volée si absente)
-    const zone = await prisma.zone.findUnique({ where: { code: "CI" } });
-    if (!zone) return Response.json({ error: "Zone CI absente — lancer /api/init" }, { status: 503 });
+    // Zone Côte d'Ivoire — le seed historique l'a créée sous "CI", /api/init
+    // sous "COTE_IVOIRE" : on accepte les deux, et on crée "CI" en dernier
+    // recours pour rester robuste sur une base vierge.
+    const zone =
+      (await prisma.zone.findUnique({ where: { code: "CI" } })) ??
+      (await prisma.zone.findUnique({ where: { code: "COTE_IVOIRE" } })) ??
+      (await prisma.zone.create({ data: { code: "CI", nom: "Côte d'Ivoire", type: "PAYS" } }));
 
     const source = await prisma.source.upsert({
       where: { code: "SIMAGRI_CI" },
