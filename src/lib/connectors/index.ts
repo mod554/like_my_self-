@@ -19,6 +19,12 @@ import { ComtradeConnector } from "./comtrade";
 import { TauxChangeLiveConnector } from "./taux-change";
 import { IceSoftsConnector } from "./ice-softs";
 import { AgmarknetConnector } from "./agmarknet";
+// Scraping via Firecrawl : franchit les boucliers anti-bot qui bloquent les IP
+// Vercel (SIMAGRI/Anubis, Selina/403) et remplace les regex collées au HTML par
+// de l'extraction structurée. Inactifs tant que FIRECRAWL_API_KEY est absente —
+// la collecte reste alors assurée par le runner GitHub, sans régression.
+import { SimagriFirecrawlConnector } from "./simagri-firecrawl";
+import { SelinaFirecrawlConnector } from "./selina-firecrawl";
 import type { Connector } from "./base";
 
 export const CONNECTEURS: Connector[] = [
@@ -31,6 +37,8 @@ export const CONNECTEURS: Connector[] = [
   new ResimaoConnector(),
   new RssNewsConnector(),
   new ComtradeConnector(),
+  new SimagriFirecrawlConnector(),
+  new SelinaFirecrawlConnector(),
 ];
 
 export { type Connector, type ConnectorResult } from "./base";
