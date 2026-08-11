@@ -16,6 +16,7 @@ export async function GET() {
       // Scraping Firecrawl : sans clé, SIMAGRI/Selina restent collectés par le
       // runner GitHub (aucune régression), mais l'extraction structurée dort.
       FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY ? "SET" : "NOT_SET",
+      FIRECRAWL_API_URL: process.env.FIRECRAWL_API_URL ? "SET" : "NOT_SET",
       NODE_ENV: process.env.NODE_ENV,
     },
   };

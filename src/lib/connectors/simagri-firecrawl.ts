@@ -79,10 +79,10 @@ export class SimagriFirecrawlConnector implements Connector {
         where: { code: SOURCE_CODE },
         data: {
           statutDernier: "NON_CONFIGURE",
-          messageErreur: "FIRECRAWL_API_KEY absente — collecte assurée par le runner GitHub en attendant",
+          messageErreur: "Firecrawl non configuré (FIRECRAWL_API_KEY ou FIRECRAWL_API_URL) — collecte assurée par le runner GitHub en attendant",
         },
       }).catch(() => {});
-      return { ...resultat, fin: new Date(), erreurs: ["FIRECRAWL_API_KEY absente"] };
+      return { ...resultat, fin: new Date(), erreurs: ["Firecrawl non configuré"] };
     }
 
     await prisma.source.update({

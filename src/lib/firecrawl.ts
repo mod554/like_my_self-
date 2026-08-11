@@ -21,9 +21,22 @@ function apiUrl(): string {
   return (process.env.FIRECRAWL_API_URL || DEFAUT_API).replace(/\/+$/, "");
 }
 
-/** Firecrawl n'est utilisable que si la clé est configurée. */
+/**
+ * Deux chemins d'activation :
+ *  - cloud : FIRECRAWL_API_KEY (api.firecrawl.dev) ;
+ *  - self-hosted : FIRECRAWL_API_URL seul. Vérifié dans le dépôt Firecrawl
+ *    (apps/api/src/controllers/auth.ts) : quand `USE_DB_AUTHENTICATION !== true`
+ *    l'API renvoie un ACUC simulé sans valider la moindre clé — mais l'absence
+ *    totale d'en-tête `Authorization` retombe sur `handleKeylessAuth`, qui
+ *    répond 401. D'où le jeton fictif envoyé plus bas.
+ */
 export function firecrawlActif(): boolean {
-  return Boolean(process.env.FIRECRAWL_API_KEY);
+  return Boolean(process.env.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_URL);
+}
+
+/** true si l'on parle à une instance auto-hébergée sans clé. */
+export function firecrawlSelfHosted(): boolean {
+  return Boolean(process.env.FIRECRAWL_API_URL && !process.env.FIRECRAWL_API_KEY);
 }
 
 /** Erreur dédiée : permet aux connecteurs de distinguer « pas de clé » d'un vrai échec. */
@@ -95,10 +108,13 @@ export async function scraper<T = unknown>(
   url: string,
   opts: OptionsScrape = {},
 ): Promise<ResultatScrape<T>> {
-  const cle = process.env.FIRECRAWL_API_KEY;
+  // Jeton fictif accepté par une instance self-hosted en USE_DB_AUTHENTICATION=false ;
+  // il évite le 401 déclenché par l'absence d'en-tête Authorization.
+  const cle = process.env.FIRECRAWL_API_KEY
+    ?? (process.env.FIRECRAWL_API_URL ? "self-hosted" : undefined);
   if (!cle) {
     throw new FirecrawlIndisponible(
-      "FIRECRAWL_API_KEY absente — définir la variable d'environnement pour activer le scraping Firecrawl",
+      "Firecrawl non configuré — définir FIRECRAWL_API_KEY (cloud) ou FIRECRAWL_API_URL (instance auto-hébergée)",
     );
   }
 
@@ -143,7 +159,10 @@ export async function scraper<T = unknown>(
     // 401/402 = clé invalide ou crédits épuisés : à distinguer d'une page en échec.
     const detail = json.error ?? `HTTP ${res.status}`;
     if (res.status === 401 || res.status === 402) {
-      throw new FirecrawlIndisponible(`Firecrawl ${res.status} — ${detail}`);
+      const indice = res.status === 401 && firecrawlSelfHosted()
+        ? " (instance auto-hébergée : vérifier USE_DB_AUTHENTICATION=false)"
+        : "";
+      throw new FirecrawlIndisponible(`Firecrawl ${res.status} — ${detail}${indice}`);
     }
     throw new Error(`Firecrawl ${res.status} — ${detail}`);
   }

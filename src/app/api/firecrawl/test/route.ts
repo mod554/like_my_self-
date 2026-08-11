@@ -9,7 +9,7 @@ export const maxDuration = 60;
 // C'est le smoke test à lancer juste après avoir ajouté FIRECRAWL_API_KEY.
 
 import { type NextRequest } from "next/server";
-import { scraper, firecrawlActif, FirecrawlIndisponible, resumeFraicheur } from "@/lib/firecrawl";
+import { scraper, firecrawlActif, firecrawlSelfHosted, FirecrawlIndisponible, resumeFraicheur } from "@/lib/firecrawl";
 
 const CIBLES_CONNUES: Record<string, { url: string; note: string }> = {
   simagri: {
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       ok: false,
       configure: false,
       message:
-        "FIRECRAWL_API_KEY absente. Ajouter la variable d'environnement (Vercel → Settings → Environment Variables) pour activer le scraping Firecrawl.",
+        "Firecrawl non configuré. Deux options (Vercel → Settings → Environment Variables) : FIRECRAWL_API_KEY=fc-… pour le cloud, ou FIRECRAWL_API_URL=http://… pour une instance auto-hébergée démarrée avec USE_DB_AUTHENTICATION=false (aucune clé requise).",
       ciblesDisponibles: Object.entries(CIBLES_CONNUES).map(([k, v]) => ({ cible: k, ...v })),
     }, { status: 503 });
   }
@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
     return Response.json({
       ok: true,
       configure: true,
-      message: "Clé Firecrawl détectée. Ajouter ?cible=simagri|selina ou ?url=… pour lancer un scrape réel.",
+      mode: firecrawlSelfHosted() ? "self-hosted" : "cloud",
+      message: "Firecrawl configuré. Ajouter ?cible=simagri|selina ou ?url=… pour lancer un scrape réel.",
       ciblesDisponibles: Object.entries(CIBLES_CONNUES).map(([k, v]) => ({ cible: k, ...v })),
     });
   }
