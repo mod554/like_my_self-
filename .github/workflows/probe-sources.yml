@@ -34,6 +34,11 @@ on:
         required: false
         type: string
         default: ""
+      probe_bytes:
+        description: "Octets de corps à afficher pour les réponses non-JSON (défaut 1500)"
+        required: false
+        type: string
+        default: "1500"
 
 jobs:
   probe-url:
@@ -43,12 +48,13 @@ jobs:
       - name: Inspecter des URLs depuis le runner
         env:
           URLS: ${{ inputs.probe_url }}
+          PROBE_BYTES: ${{ inputs.probe_bytes }}
         run: |
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
           for URL in $URLS; do
             echo "#### $URL"
             curl -sL -o /tmp/p.json -w "HTTP %{http_code} → %{url_effective}\n" --max-time 40 -A "$UA" "$URL" || echo "(timeout/erreur réseau)"
-            python3 - <<'PYEOF' || head -c 1500 /tmp/p.json
+            python3 - <<'PYEOF' || head -c ${PROBE_BYTES:-1500} /tmp/p.json
           import json
           d = json.load(open("/tmp/p.json"))
           if isinstance(d, dict) and "news" in d:
