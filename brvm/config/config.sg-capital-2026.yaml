@@ -1,0 +1,289 @@
+# ==============================================================================
+#  Configuration pré-remplie — exemple travaillé
+# ==============================================================================
+#
+#  Ce fichier est le jumeau rempli de `config.exemple.yaml`. Chaque valeur porte
+#  sa PROVENANCE. Rien n'y a été deviné : tout vient soit des documents que vous
+#  avez fournis, soit reste vide.
+#
+#  Sources citées ci-dessous :
+#    [XLSX]   BRVM_Portefeuille_2026.xlsx, onglet « Comparatif SGI », 28/03/2026
+#    [C1.2]   cours « Organisation du marché BRVM » du dossier brvm-trader
+#    [C1.3]   cours « Les acteurs : SGI, CREPMF, BRVM »
+#    [C8.1]   cours « Fiscalité UEMOA & BRVM »
+#    [CACHE]  capture sikafinance.com du 30/03/2026 du même dossier
+#
+#  ⚠️ CES SOURCES SONT DES DOCUMENTS DE TRAVAIL, PAS DES ACTES OPPOSABLES.
+#  Avant de vous fier à un chiffre : recoupez-le avec votre convention de compte,
+#  vos avis d'opéré et les textes en vigueur. Un taux faux ici fausse tout prix de
+#  revient calculé ensuite.
+#
+#  Pour l'utiliser : copiez-le en `config.yaml`, puis corrigez au moins
+#  `ingestion.agent_utilisateur` — le fichier refuse de se charger sans lui.
+# ==============================================================================
+
+general:
+  devise: XOF
+  fuseau_horaire: Africa/Abidjan
+  repertoire_donnees: ../data
+  base_donnees: ../data/brvm.sqlite3
+  methode_valorisation: PMP
+  mode_arrondi: HALF_UP
+
+marche:
+  pays_place: CI
+  fichier_univers: ./univers.csv
+  # [C1.2] « Variation max par séance : ±7.5% (coupe-circuit automatique) ».
+  # À confirmer dans les textes en vigueur de l'entreprise de marché : ce seuil
+  # sert à mettre en quarantaine les cotations aberrantes.
+  seuil_variation_journaliere: 0.075
+  # [C1.2] « Horaires : 9h00–15h30 GMT (heure Abidjan) ».
+  heure_cloture_locale: "15:30"
+
+calendrier:
+  jours_ouvres: [0, 1, 2, 3, 4]   # [C1.2] lundi–vendredi, hors fériés UEMOA
+  couverture_debut: 2026-01-01
+  couverture_fin: 2026-12-31
+  # ⚠️ À REMPLIR : aucune source disponible ne donne les jours fériés 2026.
+  # Tant que ce fichier est vide, le système avertit au démarrage et compte
+  # toutes les semaines comme cinq séances pleines.
+  fichier_feries: ./jours_feries.yaml
+  fermetures_exceptionnelles: []
+
+sources:
+  - nom: fichier_manuel
+    type: fichier_csv
+    actif: true
+    priorite: 1
+    url_base:
+    chemin_fichier: ../data/cotations_manuelles.csv
+    timeout_s: 30
+    tentatives_max: 1
+    backoff_initial_s: 1
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 0
+    age_max_minutes: 1440
+
+  # --------------------------------------------------------------------------
+  #  Page de cote — structure relevée sur une capture du 30/03/2026 [CACHE]
+  # --------------------------------------------------------------------------
+  #  La capture montrait, sous le titre « BRVM : Les actions cotées », un tableau
+  #  aux en-têtes suivants :
+  #
+  #      Nom | Ouverture | +Haut | +Bas | Volume (titres) | Volume (XOF) | Dernier | Variation
+  #
+  #  et un premier tableau d'indices juste au-dessus — d'où `index_tableau: 1`.
+  #  Le code de la valeur n'apparaît PAS dans la cellule « Nom » : il n'existe
+  #  que dans l'adresse du lien (« …/cotation_SNTS.sn »), d'où `colonnes_lien`.
+  #
+  #  ⚠️ TOUT CECI EST À REVÉRIFIER. La capture a plusieurs mois, la mise en page a
+  #  pu changer, et l'index d'un tableau HTML ne correspond pas forcément à
+  #  l'ordre visuel. Avant d'activer :
+  #
+  #      python -m brvm.ingestion.capture --plan
+  #      python -m brvm.ingestion.capture --config config/config.yaml --source cote_du_jour
+  #      python -m brvm.ingestion.capture --lister-tableaux <fichier capturé>
+  #
+  #  Si un en-tête déclaré est introuvable, la collecte s'arrête et le dit : elle
+  #  ne renvoie jamais un tableau vide qui passerait pour une séance sans échange.
+  # --------------------------------------------------------------------------
+  - nom: cote_du_jour
+    type: web
+    actif: false          # passez à true après avoir vérifié url_base ET l'analyseur
+    priorite: 2
+    url_base:             # À RENSEIGNER — l'adresse exacte de la page que vous consultez
+    chemin_fichier:
+    timeout_s: 20
+    tentatives_max: 3
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+    analyseur:
+      type: tableau_html
+      index_tableau: 1
+      colonnes:
+        "Ouverture": ouverture
+        "+Haut": plus_haut
+        "+Bas": plus_bas
+        "Volume (titres)": volume_titres
+        "Volume (XOF)": volume_xof
+        "Dernier": cloture
+      colonnes_lien:
+        "Nom":
+          champ: ticker
+          # Capture le code court sans son suffixe pays : « cotation_SNTS.sn » → SNTS,
+          # ce qui correspond aux tickers du fichier univers.csv de référence.
+          motif: "cotation_([A-Za-z0-9]+)"
+      # La page de cote du jour ne porte pas de colonne de date.
+      date_seance_depuis: jour_de_collecte
+
+ingestion:
+  # ⚠️ À RENSEIGNER — c'est le seul champ qui empêche ce fichier de se charger,
+  # et c'est volontaire : identifiez-vous auprès des serveurs que vous interrogez.
+  # Forme attendue : "suivi-brvm/0.1 (contact: vous@exemple.org)"
+  agent_utilisateur:
+  repertoire_cache: ../data/cache
+  delai_entre_requetes_s: 2
+  tolerance_volume_xof: 0.02
+  quarantaine_si_variation_hors_seuil: true
+  refuser_seance_hors_calendrier: true
+  refuser_date_future: true
+
+# ------------------------------------------------------------------------------
+#  Frais — SG Capital Securities WA
+# ------------------------------------------------------------------------------
+frais:
+  source_bareme: >-
+    SG Capital Securities WA — comparatif SGI du 28/03/2026
+    (BRVM_Portefeuille_2026.xlsx). À CONFIRMER sur la convention de compte
+    et les avis d'opéré.
+  minimum_perception_global:
+  lignes:
+    # [XLSX] « Frais de courtage : SG Capital 0,80% ».
+    - libelle: Commission de courtage SGI
+      base_calcul: MONTANT_BRUT
+      ordre: 1
+      applicable_a: LES_DEUX
+      taux: 0.008
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+
+    # [C1.3] « TVA sur courtage 18% ». L'exemple du cours applique bien la TVA
+    # au seul courtage : ici l'assiette est le total des commissions d'ordre
+    # inférieur, ce qui revient au même tant que le courtage est la seule ligne.
+    - libelle: TVA sur commissions
+      base_calcul: TOTAL_COMMISSIONS
+      ordre: 9
+      applicable_a: LES_DEUX
+      taux: 0.18
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+
+    # ⚠️ ZONE D'INCERTITUDE À TRANCHER AVEC VOTRE SGI
+    #
+    # Le comparatif annonce « 0,80 % de courtage » sans dire si ce taux est tout
+    # compris ou s'il s'ajoute à une commission d'entreprise de marché et à une
+    # commission du dépositaire central (DC/BR), toutes deux mentionnées dans les
+    # cours mais jamais chiffrées.
+    #
+    # Prenez un avis d'opéré réel et comptez les lignes :
+    #   • une seule ligne de commission → laissez ce bloc commenté ;
+    #   • plusieurs lignes → décommentez et renseignez chaque taux.
+    #
+    # Tant que le doute subsiste, le coût d'acquisition calculé est un PLANCHER.
+    #
+    # - libelle: Commission entreprise de marché
+    #   base_calcul: MONTANT_BRUT
+    #   ordre: 2
+    #   applicable_a: LES_DEUX
+    #   taux:                  # À RENSEIGNER
+    #   montant_fixe:
+    #   minimum_perception:
+    #   maximum_perception:
+    #
+    # - libelle: Commission dépositaire central (DC/BR)
+    #   base_calcul: MONTANT_BRUT
+    #   ordre: 3
+    #   applicable_a: LES_DEUX
+    #   taux:                  # À RENSEIGNER
+    #   montant_fixe:
+    #   minimum_perception:
+    #   maximum_perception:
+
+  periodiques:
+    # [XLSX] « Tenue de compte : SG Capital 2 500/trimestre ».
+    - libelle: Tenue de compte
+      base_calcul: FORFAIT
+      periodicite: TRIMESTRIELLE
+      montant_fixe: 2500
+
+    # ⚠️ [XLSX] donne « Conservation / an : SG Capital 0,25 – 0,50% » — une
+    # FOURCHETTE, pas un taux. Le système ne choisit pas à votre place.
+    # Demandez le taux exact applicable à votre encours, puis décommentez.
+    # Tant que cette ligne manque, le coût de détention est sous-estimé, et le
+    # système le signale au démarrage.
+    #
+    # - libelle: Droits de garde
+    #   base_calcul: ENCOURS
+    #   periodicite: ANNUELLE
+    #   taux:                  # À RENSEIGNER, entre 0.0025 et 0.005 d'après [XLSX]
+
+# ------------------------------------------------------------------------------
+#  Fiscalité — résident Côte d'Ivoire
+# ------------------------------------------------------------------------------
+fiscalite:
+  pays_residence: CI
+  source_reference: >-
+    Cours « Fiscalité UEMOA & BRVM » du dossier brvm-trader (module 8.1).
+    Document pédagogique — À CONFIRMER auprès de l'administration fiscale
+    ou d'un conseil avant toute déclaration.
+  # [C8.1] tableau « Taux par pays » : Côte d'Ivoire 15 %.
+  retenue_dividendes: 0.15
+  # [C8.1] « Plus-values sur actions cotées BRVM : exonérées en Côte d'Ivoire
+  # pour les particuliers ». Si votre situation diffère (personne morale,
+  # résidence changée), passez à true et renseignez le taux.
+  plus_values_imposables: false
+  plus_values_taux:
+  plus_values_exoneration_mois:
+
+indicateurs:
+  ratio_minimum_seances_cotees: 0.60
+  remplissage_max_seances: 3
+  fenetre_volume_moyen: 20
+  taux_remplissage_alerte: 0.25
+
+risque:
+  # Le portefeuille cible du dossier fourni est concentré sur 3 lignes
+  # (40 / 35 / 25 %). Ces plafonds sont plus larges que cette cible : ajustez-les
+  # à votre tolérance réelle, ils déclenchent des alertes, pas des blocages.
+  poids_max_ligne: 0.45
+  poids_max_secteur: 0.60
+  poids_max_pays: 0.80
+  part_max_volume_moyen: 0.25
+  fenetre_volume_moyen: 20
+  # Le dossier fourni retient un stop à -15 % du prix d'achat pour un profil
+  # débutant. Ici le stop est adossé à la volatilité réelle (ATR) plutôt qu'à un
+  # pourcentage fixe ; ajustez le multiple après avoir comparé les deux.
+  multiple_atr_stop: 2.5
+  fenetre_atr: 14
+  drawdown_alerte: 0.15
+  fenetre_volatilite: 60
+
+backtest:
+  # Capital indiqué dans le dossier fourni.
+  capital_initial: 500000
+  slippage: 0.005
+  part_max_volume_seance: 0.10
+  execution: OUVERTURE_BARRE_SUIVANTE
+  walk_forward_apprentissage: 250
+  walk_forward_validation: 60
+
+alertes:
+  age_donnee_max_minutes: 1440
+  alerter_signal_technique: true
+  alerter_seuil_risque: true
+  alerter_echec_source: true
+  canaux:
+    - nom: journal_fichier
+      type: fichier
+      actif: true
+      parametres:
+        chemin: ../data/alertes.log
+
+journalisation:
+  niveau: INFO
+  fichier: ../data/brvm.log
+  taille_max_octets: 10485760
+  nb_sauvegardes: 5
+  format_json: true
+
+ordonnanceur:
+  actif: false
+  # Clôture à 15h30 heure d'Abidjan [C1.2] : collecte à 16h00, séances seulement.
+  cron_collecte: "0 16 * * 1-5"
+  fuseau_horaire: Africa/Abidjan

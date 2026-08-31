@@ -143,6 +143,14 @@ sources:
     #     "<en-tête du cours de clôture>": cloture
     #     "<en-tête du cours de la veille>": cours_precedent
     #     "<en-tête du volume>": volume_titres
+    #   # Colonnes dont l'information utile est dans le LIEN et non dans le texte.
+    #   # Cas courant : la cellule affiche « SONATEL » mais le code de la valeur
+    #   # n'existe que dans l'adresse du lien. Le motif est une expression
+    #   # régulière à un seul groupe de capture, appliquée à cette adresse.
+    #   colonnes_lien:
+    #     "<en-tête de la colonne des noms>":
+    #       champ: ticker
+    #       motif: "cotation_([A-Za-z0-9]+)"
     #   # « colonne » si la page porte une date de séance, sinon « jour_de_collecte ».
     #   date_seance_depuis: jour_de_collecte
 
@@ -216,6 +224,28 @@ frais:
     #   montant_fixe:          # À RENSEIGNER, en XOF
     #   minimum_perception:
     #   maximum_perception:
+
+  # ----------------------------------------------------------------------------
+  #  Frais récurrents — [FAIT] À RENSEIGNER si votre SGI en perçoit
+  # ----------------------------------------------------------------------------
+  #  Droits de garde et tenue de compte ne se déclenchent pas à l'achat : ils
+  #  courent tant que la ligne est détenue. Les omettre sous-estime le coût réel
+  #  de détention, souvent de plusieurs points par an sur un petit portefeuille.
+  #  Le système avertit au démarrage si aucun n'est déclaré.
+  #
+  #  base_calcul : ENCOURS (taux annuel sur la valeur des titres) ou FORFAIT
+  #  (montant fixe par période). periodicite : MENSUELLE, TRIMESTRIELLE,
+  #  SEMESTRIELLE ou ANNUELLE.
+  periodiques: []
+  # periodiques:
+  #   - libelle: Droits de garde
+  #     base_calcul: ENCOURS
+  #     periodicite: ANNUELLE
+  #     taux:                  # À RENSEIGNER
+  #   - libelle: Tenue de compte
+  #     base_calcul: FORFAIT
+  #     periodicite: TRIMESTRIELLE
+  #     montant_fixe:          # À RENSEIGNER, en XOF
 
 # ------------------------------------------------------------------------------
 #  Fiscalité — [FAIT] TOUT EST À RENSEIGNER

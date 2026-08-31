@@ -18,6 +18,7 @@ c'est presque toujours une saisie en pourcentage.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -25,7 +26,14 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from brvm.domain.enums import BaseFrais, Devise, MethodeValorisation, Pays, SensOperation
+from brvm.domain.enums import (
+    BaseFrais,
+    Devise,
+    MethodeValorisation,
+    Pays,
+    Periodicite,
+    SensOperation,
+)
 from brvm.domain.monnaie import ModeArrondi
 
 #: Taux exprimé en fraction de l'assiette (0.006 = 0,6 %).
@@ -113,6 +121,33 @@ class ConfigCalendrier(_Base):
         return self
 
 
+class ConfigColonneLien(_Base):
+    """Colonne dont l'information utile est dans le lien, pas dans le texte affiché.
+
+    Cas courant sur une page de cote : la cellule affiche « SONATEL » tandis que
+    le code de la valeur n'existe que dans l'adresse du lien. Le motif est une
+    expression régulière à **un seul groupe de capture**, appliquée à l'adresse.
+    """
+
+    champ: str
+    #: Expression régulière appliquée au lien ; le groupe capturé devient la valeur.
+    motif: str = Field(min_length=1)
+
+    @field_validator("motif")
+    @classmethod
+    def _valider_motif(cls, valeur: str) -> str:
+        try:
+            compile_ = re.compile(valeur)
+        except re.error as exc:
+            raise ValueError(f"Expression régulière invalide : {exc}") from exc
+        if compile_.groups != 1:
+            raise ValueError(
+                "Le motif doit comporter exactement un groupe de capture, celui qui "
+                f"isole la valeur à retenir (il en compte {compile_.groups})."
+            )
+        return valeur
+
+
 class ConfigAnalyseur(_Base):
     """Description de la structure d'une page, telle que VOUS l'avez constatée.
 
@@ -134,6 +169,8 @@ class ConfigAnalyseur(_Base):
     #: cours_precedent, volume_titres, volume_xof, nb_transactions, limite_achat,
     #: limite_vente.
     colonnes: dict[str, str] = Field(default_factory=dict)
+    #: Colonnes dont on lit le lien plutôt que le texte affiché.
+    colonnes_lien: dict[str, ConfigColonneLien] = Field(default_factory=dict)
     #: D'où vient la date de séance : d'une colonne de la page, ou du jour de la
     #: collecte. Le second cas suppose que la page montre bien la séance du jour ;
     #: le contrôle « séance hors calendrier » rattrape l'erreur si ce n'est pas le cas.
@@ -143,12 +180,19 @@ class ConfigAnalyseur(_Base):
     def _valider(self) -> ConfigAnalyseur:
         if self.type != "tableau_html":
             return self
-        if not self.colonnes:
+        if not self.colonnes and not self.colonnes_lien:
             raise ValueError(
                 "Analyseur de type tableau_html sans correspondance de colonnes : "
                 "décrivez les en-têtes de la page que vous avez consultée."
             )
-        cibles = set(self.colonnes.values())
+        doublons = set(self.colonnes) & set(self.colonnes_lien)
+        if doublons:
+            raise ValueError(
+                "Ces colonnes sont déclarées à la fois en texte et en lien : "
+                + ", ".join(sorted(doublons))
+                + ". Choisissez laquelle des deux lectures fait foi."
+            )
+        cibles = set(self.colonnes.values()) | {lien.champ for lien in self.colonnes_lien.values()}
         if "ticker" not in cibles:
             raise ValueError(
                 "Aucune colonne ne correspond au champ `ticker` : sans identifiant de "
@@ -265,6 +309,48 @@ class ConfigLigneFrais(_Base):
         return self.applicable_a in ("LES_DEUX", sens.value)
 
 
+class ConfigFraisPeriodique(_Base):
+    """Frais récurrent, indépendant des ordres passés.
+
+    Droits de garde et tenue de compte ne se déclenchent pas à l'achat : ils
+    courent tant que la ligne est détenue. Les omettre sous-estime le coût réel
+    de détention — souvent de plusieurs points de pourcentage par an sur un
+    petit portefeuille.
+    """
+
+    libelle: str = Field(min_length=1)
+    #: ENCOURS : taux appliqué à la valeur des titres détenus.
+    #: FORFAIT : montant fixe par période, quelle que soit la taille du portefeuille.
+    base_calcul: Literal["ENCOURS", "FORFAIT"]
+    periodicite: Periodicite
+    #: Taux annuel, pour une assiette ENCOURS.
+    taux: Taux | None = None
+    #: Montant par période, pour un FORFAIT.
+    montant_fixe: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _valider(self) -> ConfigFraisPeriodique:
+        if self.base_calcul == "ENCOURS":
+            if self.taux is None:
+                raise ValueError(
+                    f"Le frais périodique {self.libelle!r} est assis sur l'encours : "
+                    "renseignez son taux annuel d'après la grille tarifaire de votre SGI."
+                )
+            if self.montant_fixe is not None:
+                raise ValueError(
+                    f"{self.libelle!r} porte un taux et ne doit pas porter de montant_fixe."
+                )
+        else:
+            if self.montant_fixe is None:
+                raise ValueError(
+                    f"Le frais périodique {self.libelle!r} est forfaitaire : renseignez "
+                    "montant_fixe, le montant perçu à chaque période."
+                )
+            if self.taux is not None:
+                raise ValueError(f"{self.libelle!r} est forfaitaire et ne doit pas porter de taux.")
+        return self
+
+
 class ConfigFrais(_Base):
     """Barème complet, à recopier depuis la grille tarifaire de votre SGI."""
 
@@ -272,6 +358,9 @@ class ConfigFrais(_Base):
     #: Un barème sans provenance n'est pas auditable.
     source_bareme: str = Field(min_length=3)
     lignes: tuple[ConfigLigneFrais, ...] = Field(min_length=1)
+    #: Frais récurrents : droits de garde, tenue de compte. Leur absence est
+    #: signalée au démarrage, car elle sous-estime le coût de détention.
+    periodiques: tuple[ConfigFraisPeriodique, ...] = ()
     #: Minimum de perception global sur l'ensemble des frais d'un ordre, si la SGI
     #: en applique un.
     minimum_perception_global: int | None = Field(default=None, ge=0)
@@ -485,6 +574,19 @@ class Configuration(_Base):
                 f"Place de cotation ({self.marche.pays_place.value}) et résidence fiscale "
                 f"({self.fiscalite.pays_residence.value}) diffèrent : vérifiez qu'une "
                 "convention fiscale ne modifie pas la retenue sur dividendes."
+            )
+        if not self.frais.periodiques:
+            messages.append(
+                "Aucun frais périodique déclaré (droits de garde, tenue de compte) : le "
+                "coût de détention affiché sera sous-estimé. Complétez frais.periodiques "
+                "dès que vous connaissez les taux exacts de votre SGI."
+            )
+        elif not any(frais.base_calcul == "ENCOURS" for frais in self.frais.periodiques):
+            messages.append(
+                "Aucun droit de garde assis sur l'encours n'est déclaré. C'est le frais "
+                "récurrent qui croît avec le portefeuille : si votre SGI en perçoit un, "
+                "son absence sous-estime le coût de détention d'autant plus que le "
+                "portefeuille grossit."
             )
         if self.indicateurs.remplissage_max_seances == 0:
             messages.append(

@@ -40,8 +40,11 @@ from brvm.domain.enums import (
 )
 
 #: Format de ticker accepté. Volontairement permissif : la BRVM utilise des codes
-#: courts alphanumériques, mais le système ne présume d'aucune liste fermée.
-MOTIF_TICKER: Final[str] = r"^[A-Z0-9]{2,12}$"
+#: courts alphanumériques, mais certaines sources les suffixent d'un code pays
+#: (``SNTS.SN``). Le système ne présume d'aucune liste fermée ; il impose
+#: seulement des majuscules, pour qu'une même valeur ne soit jamais enregistrée
+#: sous deux clés différant par la casse.
+MOTIF_TICKER: Final[str] = r"^[A-Z0-9][A-Z0-9.\-]{1,15}$"
 
 #: ISO 6166 : 2 lettres de pays, 9 caractères alphanumériques, 1 chiffre de contrôle.
 MOTIF_ISIN: Final[str] = r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$"

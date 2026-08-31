@@ -138,3 +138,21 @@ class StatutCollecte(StrEnum):
     ECHEC = "ECHEC"
     #: La source est tombée, le système a servi le cache local.
     DEGRADE = "DEGRADE"
+
+
+class Periodicite(StrEnum):
+    """Fréquence de perception d'un frais récurrent."""
+
+    MENSUELLE = "MENSUELLE"
+    TRIMESTRIELLE = "TRIMESTRIELLE"
+    SEMESTRIELLE = "SEMESTRIELLE"
+    ANNUELLE = "ANNUELLE"
+
+    @property
+    def occurrences_par_an(self) -> int:
+        return {
+            Periodicite.MENSUELLE: 12,
+            Periodicite.TRIMESTRIELLE: 4,
+            Periodicite.SEMESTRIELLE: 2,
+            Periodicite.ANNUELLE: 1,
+        }[self]

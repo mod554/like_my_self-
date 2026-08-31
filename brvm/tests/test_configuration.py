@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -258,3 +259,85 @@ def test_les_fichiers_exemples_ne_contiennent_aucun_taux(tmp_path: Path) -> None
     assert brut["fiscalite"]["retenue_dividendes"] is None
     assert brut["fiscalite"]["plus_values_taux"] is None
     assert brut["marche"]["seuil_variation_journaliere"] is None
+
+
+class TestConfigurationPreRemplie:
+    """Le fichier travaillé ne doit rien avoir deviné, et ne buter que sur l'identité."""
+
+    CHEMIN = RACINE_PROJET / "config" / "config.sg-capital-2026.yaml"
+
+    def test_le_fichier_existe(self) -> None:
+        assert self.CHEMIN.is_file()
+
+    def test_ne_bute_que_sur_l_identite_du_robot(self) -> None:
+        with pytest.raises(ErreurConfiguration) as capture:
+            charger_configuration(self.CHEMIN)
+        lignes = [ligne for ligne in str(capture.value).splitlines() if ligne.startswith("  •")]
+        assert len(lignes) == 1
+        assert "ingestion.agent_utilisateur" in lignes[0]
+
+    def _charge(self, tmp_path: Path) -> Configuration:
+        brut = yaml.safe_load(self.CHEMIN.read_text(encoding="utf-8"))
+        assert isinstance(brut, dict)
+        brut["ingestion"]["agent_utilisateur"] = "test/0.1 (contact: test@exemple.org)"
+        return charger_configuration(ecrire(tmp_path / "rempli.yaml", brut))
+
+    def test_se_charge_une_fois_l_identite_renseignee(self, tmp_path: Path) -> None:
+        configuration = self._charge(tmp_path)
+        assert configuration.marche.seuil_variation_journaliere == Decimal("0.075")
+        assert configuration.marche.heure_cloture_locale == "15:30"
+        assert configuration.fiscalite.retenue_dividendes == Decimal("0.15")
+        assert configuration.fiscalite.plus_values_imposables is False
+
+    def test_chaque_valeur_porte_sa_provenance(self, tmp_path: Path) -> None:
+        """Un barème sans source n'est pas auditable : la provenance est dans le champ."""
+        configuration = self._charge(tmp_path)
+        assert "28/03/2026" in configuration.frais.source_bareme
+        assert "CONFIRMER" in configuration.frais.source_bareme.upper()
+        assert "CONFIRMER" in configuration.fiscalite.source_reference.upper()
+
+    def test_les_taux_incertains_restent_absents(self, tmp_path: Path) -> None:
+        """La conservation est donnée en fourchette par la source : le système ne
+        choisit pas à la place de l'utilisateur, il signale le manque."""
+        configuration = self._charge(tmp_path)
+        assert not any(frais.base_calcul == "ENCOURS" for frais in configuration.frais.periodiques)
+        assert any("droit de garde" in m for m in configuration.avertissements())
+
+    def test_frais_periodique_forfaitaire_conserve(self, tmp_path: Path) -> None:
+        configuration = self._charge(tmp_path)
+        tenue = next(f for f in configuration.frais.periodiques if f.base_calcul == "FORFAIT")
+        assert tenue.montant_fixe == 2500
+        assert tenue.periodicite.occurrences_par_an == 4
+
+    def test_analyseur_lit_le_ticker_dans_le_lien(self, tmp_path: Path) -> None:
+        """Sur la page de cote observée, le code valeur n'est pas dans la cellule."""
+        configuration = self._charge(tmp_path)
+        source = next(s for s in configuration.sources if s.type == "web")
+        assert source.analyseur is not None
+        assert source.analyseur.colonnes_lien["Nom"].champ == "ticker"
+        assert source.actif is False  # inactive tant que l'URL n'est pas vérifiée
+
+
+class TestFraisPeriodiques:
+    def test_encours_sans_taux_refuse(self, dossier_config: Path) -> None:
+        brut = charger_brut(dossier_config)
+        brut["frais"]["periodiques"] = [
+            {"libelle": "Droits de garde", "base_calcul": "ENCOURS", "periodicite": "ANNUELLE"}
+        ]
+        with pytest.raises(ErreurConfiguration, match="taux annuel"):
+            charger_configuration(ecrire(dossier_config / "periodiques.yaml", brut))
+
+    def test_forfait_sans_montant_refuse(self, dossier_config: Path) -> None:
+        brut = charger_brut(dossier_config)
+        brut["frais"]["periodiques"] = [
+            {
+                "libelle": "Tenue de compte",
+                "base_calcul": "FORFAIT",
+                "periodicite": "TRIMESTRIELLE",
+            }
+        ]
+        with pytest.raises(ErreurConfiguration, match="montant_fixe"):
+            charger_configuration(ecrire(dossier_config / "periodiques.yaml", brut))
+
+    def test_absence_totale_signalee(self, configuration: Configuration) -> None:
+        assert any("Aucun frais périodique" in m for m in configuration.avertissements())

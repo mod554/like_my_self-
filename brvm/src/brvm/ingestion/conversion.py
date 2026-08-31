@@ -154,7 +154,11 @@ class ConvertisseurCotation:
             if champ in CHAMPS_ENTIERS:
                 champs[champ] = entier_xof(valeur, nom_brut)
             elif valeur:
-                champs[champ] = valeur
+                # Le ticker est mis en majuscules : une source qui publie « snts »
+                # et une autre « SNTS » désignent la même valeur, et deux clés
+                # distinctes en base casseraient l'idempotence. C'est la seule
+                # normalisation appliquée à une donnée reçue.
+                champs[champ] = valeur.upper() if champ == "ticker" else valeur
         manquants = CHAMPS_OBLIGATOIRES - {
             nom for nom in CHAMPS_OBLIGATOIRES if nettoyer(brut.get(nom))
         }

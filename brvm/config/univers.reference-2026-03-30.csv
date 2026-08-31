@@ -1,0 +1,67 @@
+# Univers BRVM — référence extraite d'une capture utilisateur
+#
+# PROVENANCE : liste des actions cotées relevée sur la page de cote de
+# sikafinance.com, capture du 30/03/2026 fournie par l'utilisateur
+# (financial-analyst/skills/brvm-trader/data/cache/2026-03-30_sikafinance-aaz.md).
+# Les secteurs proviennent du même dossier (data/valeurs_brvm.md, 28/03/2026)
+# et ne couvrent qu'une partie des valeurs : une cellule vide signifie
+# « non renseigné », jamais « aucun secteur ».
+#
+# CE FICHIER N'EST PAS UNE SOURCE OFFICIELLE. Il fait gagner la saisie initiale.
+# Avant de l'utiliser pour des décisions : recoupez-le avec la cote officielle,
+# vérifiez les radiations et les introductions postérieures au 30/03/2026, et
+# complétez les ISIN (le chiffre de contrôle est vérifié à l'import).
+#
+# Le ticker retenu est le code court, sans suffixe pays : le pays figure dans sa
+# propre colonne. La source le publie sous la forme « SNTS.sn ».
+#
+# Pour l'utiliser : copiez ce fichier en univers.csv.
+ticker,nom,isin,pays,secteur,compartiment,actif
+ABJC,SERVAIR ABIDJAN CI,,CI,,,true
+BICB,BANQUE INTERNATIONALE POUR LE COMMERCE DU BENIN,,BJ,,,true
+BICC,BICICI,,CI,Banques & Finance,,true
+BNBC,BERNABE,,CI,,,true
+BOAB,BANK OF AFRICA BENIN,,BJ,Banques & Finance,,true
+BOABF,BANK OF AFRICA BURKINA FASO,,BF,Banques & Finance,,true
+BOAC,BANK OF AFRICA CI,,CI,Banques & Finance,,true
+BOAM,BANK OF AFRICA MALI,,ML,Banques & Finance,,true
+BOAN,BANK OF AFRICA NIGER,,NE,Banques & Finance,,true
+BOAS,BANK OF AFRICA SENEGAL,,SN,Banques & Finance,,true
+CABC,SICABLE CI,,CI,Industrie & BTP,,true
+CBIBF,CORIS BANK INTERNATIONAL BF,,BF,Banques & Finance,,true
+CFAC,CFAO CI,,CI,,,true
+CIEC,CIE CI,,CI,,,true
+ECOC,ECOBANK CI,,CI,Banques & Finance,,true
+ETIT,ETI TG,,TG,,,true
+FTSC,FILTISAC CI,,CI,,,true
+LNBB,LOTERIE NATIONALE DU BENIN,,BJ,,,true
+NEIC,NEI CEDA CI,,CI,,,true
+NSBC,NSIA BANQUE,,CI,Banques & Finance,,true
+NTLC,NESTLE CI,,CI,,,true
+ONTBF,ONATEL BF,,BF,,,true
+ORAC,ORANGE CI,,CI,Télécommunications,,true
+ORGT,ORAGROUP TOGO,,TG,Banques & Finance,,true
+PALC,PALMCI,,CI,Agriculture & Agro-industrie,,true
+PRSC,TRACTAFRIC MOTORS CI,,CI,,,true
+SAFC,SAFCA CI,,CI,,,true
+SCRC,SUCRIVOIRE,,CI,,,true
+SDCC,SODECI,,CI,,,true
+SDSC,AFRICA GLOBAL LOGISTICS,,CI,,,true
+SEMC,CROWN SIEM,,CI,,,true
+SGBC,SGBCI,,CI,Banques & Finance,,true
+SHEC,VIVO ENERGY CI,,CI,,,true
+SIBC,SOCIETE IVOIRIENNE DE BANQUE CI,,CI,Banques & Finance,,true
+SICC,SICOR,,CI,,,true
+SIVC,ERIUM,,CI,,,true
+SLBC,SOLIBRA CI,,CI,,,true
+SMBC,SMB CI,,CI,,,true
+SNTS,SONATEL,,SN,Télécommunications,,true
+SOGC,SOGB,,CI,Agriculture & Agro-industrie,,true
+SPHC,SAPH CI,,CI,,,true
+STAC,SETAO CI,,CI,Industrie & BTP,,true
+STBC,SITAB,,CI,Consommation,,true
+SVOC,MOVIS CI,,CI,,,true
+TTLC,TOTAL CI,,CI,Énergie & Distribution,,true
+TTLS,TOTAL SENEGAL,,SN,Énergie & Distribution,,true
+UNLC,UNILEVER CI,,CI,Consommation,,true
+UNXC,UNIWAX CI,,CI,,,true
