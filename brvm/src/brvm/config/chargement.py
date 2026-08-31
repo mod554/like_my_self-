@@ -29,6 +29,7 @@ CHEMINS_A_RESOUDRE: Final[tuple[tuple[str, ...], ...]] = (
     ("marche", "fichier_univers"),
     ("calendrier", "fichier_feries"),
     ("journalisation", "fichier"),
+    ("ingestion", "repertoire_cache"),
 )
 
 #: Explications attachées aux champs que le système s'interdit de deviner.
@@ -68,6 +69,11 @@ AIDES: Final[dict[str, str]] = {
     "sources.*.url_base": (
         "Adresse de la source, à vérifier vous-même. Le système ne devine aucune URL et "
         "aucune structure de page qu'il n'a pas constatée."
+    ),
+    "ingestion.agent_utilisateur": (
+        "Identifiez votre robot : nom de l'outil et un moyen de vous joindre. Un robot "
+        "anonyme est une impolitesse envers la source interrogée, et souvent contraire à "
+        "ses conditions d'utilisation."
     ),
     "calendrier.*": (
         "Le calendrier de séances est une donnée de configuration : renseignez la période "

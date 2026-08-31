@@ -21,7 +21,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 |---|---|---|
 | 1 — Socle | Configuration unique, erreurs, journal structuré, arithmétique XOF, calendrier de séances | ✅ livrée |
 | 2 — Modèle de données | Modèles pydantic, schéma SQLite, écriture idempotente, historisation des corrections, ajustement des OST | ✅ livrée |
-| 3 — Ingestion | Interface `DataSource`, connecteurs site BRVM / agrégateur / fichier manuel, anomalies et quarantaine | ⏳ à venir |
+| 3 — Ingestion | Interface `DataSource`, connecteur fichier opérationnel, connecteur web à analyse déclarée, politique réseau, anomalies et quarantaine | ✅ livrée |
 | 4 — Analyse technique | SMA, EMA, RSI, MACD, Bollinger, ATR, OBV, momentum, extrêmes glissants, score de confiance liquidité | ⏳ à venir |
 | 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, IRR, simulateur d'ordre | ⏳ à venir |
 | 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ⏳ à venir |
@@ -122,6 +122,105 @@ question posée au calendrier lève une erreur plutôt que de répondre au hasar
 
 ---
 
+## Collecter des cotations
+
+### Où passent les ordres, où passent les données
+
+Ce sont deux choses différentes, et la configuration les sépare :
+
+- **Les ordres** sont acheminés par une **SGI**, chez qui vous tenez votre
+  compte-titres. C'est elle qui vous facture, et c'est **sa grille tarifaire**
+  qu'il faut recopier dans `frais.lignes`. Un portail d'information n'exécute
+  aucun ordre et ne détermine aucun frais.
+- **Les données** peuvent venir d'ailleurs : d'un portail que vous consultez, ou
+  d'un export que vous produisez vous-même.
+
+### Le connecteur fichier fonctionne tout de suite
+
+`type: fichier_csv` ne dépend d'aucune source extérieure et fait tourner tout le
+reste du système. Créez le modèle, remplissez-le, collectez :
+
+```python
+from brvm.ingestion.fichier import SourceFichier
+SourceFichier.ecrire_modele(Path("data/cotations_manuelles.csv"))
+```
+
+Une cellule vide y signifie « non publié », jamais zéro. Et si vous laissez
+`statut_seance` vide avec un volume nul, le statut retenu est `INCONNU` : le
+système ne suppose pas qu'il s'agit d'une séance sans transaction.
+
+### Activer une source web
+
+Aucun connecteur réseau n'est livré avec des sélecteurs. Aucune URL, aucun
+`robots.txt` et aucune structure de page n'ont été vérifiés par l'auteur du code —
+l'environnement de développement n'avait pas accès aux sites concernés. Écrire des
+sélecteurs sans les avoir vus produirait des cours faux **sans le signaler**, ce
+qui est le pire résultat possible pour un outil de suivi de portefeuille.
+
+À la place, vous décrivez la page et le système exécute votre description :
+
+```bash
+# 1. La marche à suivre complète
+python -m brvm.ingestion.capture --plan
+
+# 2. Capturer la page (robots.txt respecté, identité annoncée)
+python -m brvm.ingestion.capture --config config/config.yaml --source sikafinance
+
+# 3. Repérer le tableau des cotations et ses en-têtes
+python -m brvm.ingestion.capture --lister-tableaux data/captures/sikafinance-….html
+```
+
+Puis reportez dans `sources[].analyseur` le rang du tableau et la correspondance
+entre chaque en-tête et un champ du système. Tant que ce bloc est absent, la
+source refuse de collecter et rappelle la procédure.
+
+Avant d'activer une source, lisez ses conditions d'utilisation et son
+`robots.txt`. Le connecteur revérifie le `robots.txt` à chaque exécution et
+s'abstient s'il est illisible, mais la décision d'ensemble vous revient.
+
+**Si la page charge ses cotations en JavaScript**, l'analyseur de tableaux ne
+verra rien — et le dira. Aucun contournement n'est fourni : restez sur le fichier
+manuel, ou trouvez une réponse de données documentée.
+
+### Politique réseau appliquée
+
+| Garde-fou | Comportement |
+|---|---|
+| `robots.txt` | Consulté avant toute requête. `Crawl-delay` annoncé respecté s'il est plus long que le délai configuré. Un `robots.txt` en erreur serveur **interdit** la collecte : dans le doute, on s'abstient. |
+| Temporisation | Délai minimal configurable entre deux requêtes vers le même hôte. |
+| Cache | Une réponse encore fraîche évite une requête inutile. |
+| Reprises | Recul exponentiel, sur incident transitoire seulement. Un 404 n'est jamais réessayé. |
+| Mode dégradé | Toutes les tentatives ayant échoué, une entrée de cache périmée est servie, **explicitement marquée comme telle** et datée. Jamais de valeur fabriquée. |
+| Schéma | `https` exclusivement. |
+
+Une source qui tombe n'emporte jamais la collecte des autres : son échec devient
+une anomalie et une entrée de journal.
+
+### Ce qui est contrôlé à l'ingestion
+
+Chaque contrôle **signale**, ne corrige jamais. La gravité décide seule du sort de
+l'enregistrement : `AVERTISSEMENT` marque la cotation `SUSPECTE` (elle reste
+exploitable, l'écran le signale) ; `BLOQUANTE` la met en `QUARANTAINE` — écrite en
+base pour investigation, exclue de tous les calculs.
+
+| Contrôle | Gravité |
+|---|---|
+| Ligne illisible par le connecteur | bloquante |
+| Variation au-delà du seuil réglementaire configuré | bloquante (paramétrable) |
+| Séance datée dans le futur | bloquante |
+| Séance un jour que le calendrier ne reconnaît pas | bloquante |
+| Même séance deux fois dans une collecte | bloquante |
+| Montant échangé incompatible avec quantité × cours | avertissement |
+| Carnet inversé (limite d'achat au-dessus de la limite de vente) | avertissement |
+| Donnée plus vieille que l'âge toléré pour la source | avertissement |
+| Ticker absent du référentiel | avertissement |
+| Séance attendue au calendrier et non reçue | avertissement |
+
+Les identifiants d'anomalie sont déterministes : rejouer une collecte ne les
+multiplie pas.
+
+---
+
 ## Choix de conception
 
 ### Aucune donnée inventée
@@ -216,14 +315,14 @@ brvm/
 │   ├── config/      schéma de configuration + chargement à messages actionnables
 │   ├── domain/      enums, arithmétique XOF, calendrier, modèles, ajustement OST
 │   ├── storage/     schéma SQL, connexion/migration, dépôts idempotents
-│   ├── ingestion/   couche 3 — à venir
+│   ├── ingestion/   DataSource, politique réseau, connecteurs, anomalies, orchestrateur
 │   ├── indicators/  couche 4 — à venir
 │   ├── portfolio/   couche 5 — à venir
 │   ├── risk/        couche 6 — à venir
 │   ├── backtest/    couche 6 — à venir
 │   ├── app/         couche 7 — à venir
 │   └── utils/       erreurs, journalisation structurée
-└── tests/           193 tests, 95 % de couverture
+└── tests/           312 tests, 94 % de couverture
 ```
 
 Le stockage passe entièrement par `storage/base.py` et `storage/depots.py` : un
@@ -237,10 +336,14 @@ remplacement de SQLite par DuckDB resterait circonscrit à ces deux fichiers.
   « Temps réel » signifie ici : dernière donnée disponible, horodatée, avec son
   âge en minutes et un statut de fiabilité. Chaque écran affichera l'horodatage
   de la donnée la plus ancienne qu'il utilise.
-- **Aucun connecteur réseau n'est activé par défaut.** Les URL et les structures
-  de page n'ont pas été vérifiées par l'auteur du code ; elles sont à renseigner
-  et à contrôler par l'utilisateur, en respectant le `robots.txt` et les
-  conditions d'utilisation de la source.
+- **Aucun connecteur réseau n'est activé par défaut, et aucun ne contient de
+  sélecteur.** Les URL et les structures de page n'ont pas été vérifiées par
+  l'auteur du code : elles sont à constater et à décrire par l'utilisateur, en
+  respectant le `robots.txt` et les conditions d'utilisation de la source. Voir
+  « Activer une source web » plus haut.
+- **Une page rendue en JavaScript n'est pas exploitable** par l'analyseur de
+  tableaux, qui travaille sur le document servi par le serveur. Le connecteur le
+  signale au lieu de renvoyer un tableau vide.
 - **Les augmentations de capital ne sont pas modélisées** dans l'ajustement : leur
   effet sur le cours dépend du prix de souscription et du ratio, qui ne figurent
   pas toujours dans les sources publiques. Elles sont signalées, pas ignorées en
@@ -267,4 +370,6 @@ La suite couvre en particulier : arrondis et minimum de perception, calendrier e
 jours fériés par pays, refus des paramètres non renseignés, validation des
 cotations aux frontières, distinction séance sans transaction / cours inchangé,
 idempotence et historisation des corrections, ajustement des OST et absence de
-biais d'anticipation.
+biais d'anticipation, respect du `robots.txt` et des reculs exponentiels, mode
+dégradé sur cache périmé, extraction de tableaux HTML et correspondance de
+colonnes déclarée, et chaque contrôle d'anomalie avec sa gravité.

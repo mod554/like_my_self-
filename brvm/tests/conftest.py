@@ -15,8 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from brvm.config.chargement import charger_configuration
+from brvm.config.chargement import charger_configuration, construire_calendrier_depuis_config
 from brvm.config.modeles import Configuration
+from brvm.domain.calendrier import CalendrierSeances
 from brvm.domain.enums import StatutSeance
 from brvm.domain.modeles import Cotation
 from brvm.storage.base import BaseDonnees
@@ -80,3 +81,23 @@ def fabrique_cotation() -> Callable[..., Cotation]:
         return Cotation(**parametres)  # type: ignore[arg-type]
 
     return fabriquer
+
+
+# --------------------------------------------------------------------- ingestion
+
+
+@pytest.fixture
+def calendrier(configuration: Configuration) -> CalendrierSeances:
+    return construire_calendrier_depuis_config(configuration)
+
+
+@pytest.fixture
+def dormeur() -> Callable[[float], None]:
+    """Remplace `time.sleep` : les tests vérifient les reculs sans les subir."""
+
+    def dormir(secondes: float) -> None:
+        attentes.append(secondes)
+
+    attentes: list[float] = []
+    dormir.attentes = attentes  # type: ignore[attr-defined]
+    return dormir

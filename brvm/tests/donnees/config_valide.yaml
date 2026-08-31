@@ -41,7 +41,7 @@ sources:
     age_max_minutes: 1440
 
   - nom: source_reseau_inactive
-    type: brvm_site
+    type: web
     actif: false
     priorite: 2
     url_base:
@@ -98,6 +98,15 @@ fiscalite:
   plus_values_imposables: false
   plus_values_taux:
   plus_values_exoneration_mois:
+
+ingestion:
+  agent_utilisateur: "suivi-brvm-tests/0.1 (fictif)"
+  repertoire_cache: ./donnees_test/cache
+  delai_entre_requetes_s: 0
+  tolerance_volume_xof: 0.02
+  quarantaine_si_variation_hors_seuil: true
+  refuser_seance_hors_calendrier: true
+  refuser_date_future: true
 
 indicateurs:
   ratio_minimum_seances_cotees: 0.60

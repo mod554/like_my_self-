@@ -86,8 +86,8 @@ sources:
     age_max_minutes: 1440
 
   - nom: brvm_cote_du_jour
-    type: brvm_site
-    actif: false          # [FAIT] passez à true une fois url_base vérifiée
+    type: web
+    actif: false          # [FAIT] passez à true une fois url_base ET analyseur renseignés
     priorite: 2
     url_base:             # À RENSEIGNER — adresse constatée de la cote du jour
     chemin_fichier:
@@ -98,12 +98,13 @@ sources:
     respecter_robots: true
     cache_minutes: 60
     age_max_minutes: 1440
+    # analyseur: voir le bloc commenté de la source suivante.
 
-  - nom: agregateur_tiers
-    type: agregateur
-    actif: false          # [FAIT] passez à true une fois url_base vérifiée
+  - nom: sikafinance
+    type: web
+    actif: false          # [FAIT] passez à true une fois url_base ET analyseur renseignés
     priorite: 3
-    url_base:             # À RENSEIGNER — adresse de l'agrégateur retenu
+    url_base:             # À RENSEIGNER — adresse de la page de cote que vous consultez
     chemin_fichier:
     timeout_s: 20
     tentatives_max: 3
@@ -112,6 +113,38 @@ sources:
     respecter_robots: true
     cache_minutes: 120
     age_max_minutes: 2880
+
+    # ------------------------------------------------------------------------
+    #  [FAIT] Structure de la page, telle que VOUS la constatez
+    # ------------------------------------------------------------------------
+    #  Le système ne devine aucune mise en page et n'en fournit aucune : aucun
+    #  sélecteur n'a été vérifié par l'auteur du code. Sans ce bloc, la source
+    #  refuse de collecter et rappelle la marche à suivre.
+    #
+    #  Marche à suivre :
+    #    python -m brvm.ingestion.capture --plan
+    #    python -m brvm.ingestion.capture --config config/config.yaml --source sikafinance
+    #    python -m brvm.ingestion.capture --lister-tableaux <fichier capturé>
+    #
+    #  `index_tableau` est le rang du tableau des cotations dans la page (0 = le
+    #  premier). `colonnes` associe chaque en-tête tel qu'il s'affiche à un champ
+    #  du système. Champs acceptés : ticker, date_seance, statut_seance,
+    #  ouverture, plus_haut, plus_bas, cloture, cours_precedent, volume_titres,
+    #  volume_xof, nb_transactions, limite_achat, limite_vente, commentaire.
+    #
+    #  Les en-têtes ci-dessous sont des NOMS D'EXEMPLE : remplacez-les par ceux
+    #  que vous lisez réellement sur la page.
+    #
+    # analyseur:
+    #   type: tableau_html
+    #   index_tableau: 0
+    #   colonnes:
+    #     "<en-tête du code valeur>": ticker
+    #     "<en-tête du cours de clôture>": cloture
+    #     "<en-tête du cours de la veille>": cours_precedent
+    #     "<en-tête du volume>": volume_titres
+    #   # « colonne » si la page porte une date de séance, sinon « jour_de_collecte ».
+    #   date_seance_depuis: jour_de_collecte
 
 # ------------------------------------------------------------------------------
 #  Barème de frais — [FAIT] TOUT EST À RENSEIGNER
@@ -201,6 +234,31 @@ fiscalite:
   # Durée de détention, en mois, au-delà de laquelle la plus-value est exonérée.
   # Laisser vide s'il n'existe pas d'abattement de ce type.
   plus_values_exoneration_mois:
+
+# ------------------------------------------------------------------------------
+#  Ingestion — politique commune à tous les connecteurs
+# ------------------------------------------------------------------------------
+ingestion:
+  # [FAIT] À RENSEIGNER — identifiez votre robot auprès des serveurs interrogés :
+  # nom de l'outil et un moyen de vous joindre. Un robot anonyme est une
+  # impolitesse, et souvent contraire aux conditions d'utilisation de la source.
+  # Exemple de forme attendue : "suivi-brvm/0.1 (contact: vous@exemple.org)"
+  agent_utilisateur:
+  repertoire_cache: ../data/cache
+  # Délai minimal entre deux requêtes vers une même source. Ne descendez pas
+  # sous une valeur raisonnable : une collecte de fin de séance n'a aucune raison
+  # d'être pressée.
+  delai_entre_requetes_s: 2
+  # [PRÉFÉRENCE] Écart relatif toléré entre le montant échangé annoncé par la
+  # source et quantité × cours, avant de signaler une incohérence.
+  tolerance_volume_xof: 0.02
+  # Mettre en quarantaine une variation supérieure au seuil réglementaire
+  # déclaré plus haut dans `marche.seuil_variation_journaliere`.
+  quarantaine_si_variation_hors_seuil: true
+  # Refuser une cotation datée d'un jour que le calendrier ne reconnaît pas comme
+  # une séance : c'est presque toujours le signe d'une analyse de page erronée.
+  refuser_seance_hors_calendrier: true
+  refuser_date_future: true
 
 # ------------------------------------------------------------------------------
 #  Analyse technique — [PRÉFÉRENCE] garde-fous liés à l'illiquidité

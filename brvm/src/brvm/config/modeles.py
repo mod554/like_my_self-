@@ -33,6 +33,27 @@ Taux = Annotated[Decimal, Field(ge=0, le=1)]
 #: Fraction d'un total (poids de portefeuille, part de volume…).
 Fraction = Annotated[Decimal, Field(gt=0, le=1)]
 
+#: Champs qu'un analyseur de page peut alimenter. Doit rester aligné sur
+#: `brvm.ingestion.conversion.CHAMPS` ; un test le vérifie.
+CHAMPS_ANALYSABLES: frozenset[str] = frozenset(
+    {
+        "ticker",
+        "date_seance",
+        "statut_seance",
+        "ouverture",
+        "plus_haut",
+        "plus_bas",
+        "cloture",
+        "cours_precedent",
+        "volume_titres",
+        "volume_xof",
+        "nb_transactions",
+        "limite_achat",
+        "limite_vente",
+        "commentaire",
+    }
+)
+
 
 class _Base(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, frozen=True)
@@ -92,6 +113,64 @@ class ConfigCalendrier(_Base):
         return self
 
 
+class ConfigAnalyseur(_Base):
+    """Description de la structure d'une page, telle que VOUS l'avez constatée.
+
+    Le système ne devine aucune mise en page. Pour activer un connecteur web, vous
+    ouvrez la page, vous regardez le tableau de cotations, et vous décrivez ici ce
+    que vous voyez : quel tableau, et à quel champ correspond chaque en-tête de
+    colonne. Le connecteur ne fait qu'appliquer cette description.
+
+    Tant que ce bloc est absent, la source refuse de collecter et explique la
+    marche à suivre plutôt que de produire des cours faux.
+    """
+
+    type: Literal["tableau_html", "non_verifie"]
+    #: Rang du tableau dans la page, 0 pour le premier. Utilisez la commande de
+    #: capture pour les repérer : `python -m brvm.ingestion.capture --lister-tableaux`.
+    index_tableau: int = Field(default=0, ge=0)
+    #: En-tête de colonne du site → champ du système. Champs acceptés : ticker,
+    #: date_seance, statut_seance, ouverture, plus_haut, plus_bas, cloture,
+    #: cours_precedent, volume_titres, volume_xof, nb_transactions, limite_achat,
+    #: limite_vente.
+    colonnes: dict[str, str] = Field(default_factory=dict)
+    #: D'où vient la date de séance : d'une colonne de la page, ou du jour de la
+    #: collecte. Le second cas suppose que la page montre bien la séance du jour ;
+    #: le contrôle « séance hors calendrier » rattrape l'erreur si ce n'est pas le cas.
+    date_seance_depuis: Literal["colonne", "jour_de_collecte"] = "colonne"
+
+    @model_validator(mode="after")
+    def _valider(self) -> ConfigAnalyseur:
+        if self.type != "tableau_html":
+            return self
+        if not self.colonnes:
+            raise ValueError(
+                "Analyseur de type tableau_html sans correspondance de colonnes : "
+                "décrivez les en-têtes de la page que vous avez consultée."
+            )
+        cibles = set(self.colonnes.values())
+        if "ticker" not in cibles:
+            raise ValueError(
+                "Aucune colonne ne correspond au champ `ticker` : sans identifiant de "
+                "valeur, une ligne de cote n'est rattachable à rien."
+            )
+        if self.date_seance_depuis == "colonne" and "date_seance" not in cibles:
+            raise ValueError(
+                "date_seance_depuis vaut « colonne » mais aucune colonne n'est associée "
+                "au champ `date_seance`. Choisissez « jour_de_collecte » si la page ne "
+                "porte pas la date."
+            )
+        inconnus = cibles - CHAMPS_ANALYSABLES
+        if inconnus:
+            raise ValueError(
+                "Champs inconnus dans la correspondance de colonnes : "
+                + ", ".join(sorted(inconnus))
+                + ". Champs acceptés : "
+                + ", ".join(sorted(CHAMPS_ANALYSABLES))
+            )
+        return self
+
+
 class ConfigSource(_Base):
     """Paramétrage d'un connecteur d'ingestion."""
 
@@ -114,6 +193,8 @@ class ConfigSource(_Base):
     cache_minutes: int = Field(ge=0)
     #: Au-delà de cet âge, la donnée servie par cette source est signalée périmée.
     age_max_minutes: int = Field(gt=0)
+    #: Structure de la page, constatée par vous. Absent = source non analysable.
+    analyseur: ConfigAnalyseur | None = None
 
     @model_validator(mode="after")
     def _valider_cible(self) -> ConfigSource:
@@ -266,6 +347,35 @@ class ConfigIndicateurs(_Base):
     taux_remplissage_alerte: Fraction
 
 
+class ConfigIngestion(_Base):
+    """Politique commune à tous les connecteurs.
+
+    Ces réglages ne décrivent pas une source en particulier : ils fixent la
+    manière dont le système se comporte vis-à-vis de n'importe quel serveur
+    interrogé, et le seuil à partir duquel une donnée collectée est jugée
+    suspecte.
+    """
+
+    #: Identité annoncée aux serveurs interrogés, avec un moyen de vous joindre.
+    #: Obligatoire : un robot anonyme est une impolitesse, et souvent une
+    #: violation des conditions d'utilisation.
+    agent_utilisateur: str = Field(min_length=10)
+    repertoire_cache: Path
+    #: Délai minimal entre deux requêtes vers une même source.
+    delai_entre_requetes_s: Decimal = Field(ge=0)
+    #: Écart relatif toléré entre le montant échangé annoncé et
+    #: quantité × cours, avant de signaler une incohérence.
+    tolerance_volume_xof: Fraction
+    #: Mettre en quarantaine une variation supérieure au seuil réglementaire
+    #: déclaré dans `marche.seuil_variation_journaliere`.
+    quarantaine_si_variation_hors_seuil: bool
+    #: Refuser une cotation datée d'un jour que le calendrier ne reconnaît pas
+    #: comme une séance : c'est presque toujours une erreur d'analyse de page.
+    refuser_seance_hors_calendrier: bool
+    #: Refuser une cotation datée dans le futur.
+    refuser_date_future: bool
+
+
 class ConfigRisque(_Base):
     poids_max_ligne: Fraction
     poids_max_secteur: Fraction
@@ -336,6 +446,7 @@ class Configuration(_Base):
     sources: tuple[ConfigSource, ...] = Field(min_length=1)
     frais: ConfigFrais
     fiscalite: ConfigFiscalite
+    ingestion: ConfigIngestion
     indicateurs: ConfigIndicateurs
     risque: ConfigRisque
     backtest: ConfigBacktest
