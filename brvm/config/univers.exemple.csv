@@ -1,0 +1,16 @@
+# Univers des valeurs suivies. Copiez ce fichier en `univers.csv` et remplissez-le.
+#
+# Aucun ticker, aucun nom de société et aucun secteur n'est pré-rempli : ces
+# données doivent venir de la cote officielle que vous consultez, pas de la
+# mémoire du système. Renseignez-les à la main, ou laissez la couche d'ingestion
+# les alimenter depuis une source que vous aurez vérifiée.
+#
+# Colonnes :
+#   ticker        code de la valeur, 2 à 12 caractères alphanumériques majuscules
+#   nom           dénomination sociale
+#   isin          code ISO 6166 (12 caractères) ; le chiffre de contrôle est vérifié
+#   pays          BJ BF CI GW ML NE SN TG XX
+#   secteur       libellé de secteur tel que publié par la cote
+#   compartiment  compartiment de cotation, si la cote en distingue
+#   actif         true/false — false pour une valeur radiée, dont l'historique est conservé
+ticker,nom,isin,pays,secteur,compartiment,actif

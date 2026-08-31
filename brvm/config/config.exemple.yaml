@@ -1,0 +1,294 @@
+# ==============================================================================
+#  Configuration unique du suivi de portefeuille BRVM
+# ==============================================================================
+#
+#  Copiez ce fichier en `config.yaml` puis renseignez les champs marqués
+#  « À RENSEIGNER ». Ils sont volontairement laissés vides : le système refuse de
+#  démarrer tant qu'ils le sont, plutôt que de calculer sur une valeur inventée.
+#
+#  Deux catégories de paramètres :
+#
+#    [FAIT]        Une information que seul vous pouvez fournir : barème de votre
+#                  SGI, taux de fiscalité, seuil réglementaire, adresse d'une
+#                  source. Le système n'en propose aucune valeur.
+#
+#    [PRÉFÉRENCE]  Un choix de votre part : limites de risque, fenêtres de calcul.
+#                  Une valeur de départ est proposée ci-dessous ; ajustez-la.
+#
+#  Convention des taux : tous les taux sont des FRACTIONS, jamais des
+#  pourcentages. 0,6 % s'écrit 0.006. Un taux supérieur à 1 est rejeté.
+#
+#  Devise : XOF exclusivement. Aucune conversion n'est effectuée nulle part.
+# ==============================================================================
+
+general:
+  devise: XOF
+  # Fuseau d'affichage. Les horodatages sont stockés en UTC.
+  fuseau_horaire: Africa/Abidjan
+  repertoire_donnees: ../data
+  base_donnees: ../data/brvm.sqlite3
+  # PMP (prix moyen pondéré) ou FIFO. Le moteur calcule les deux ; ce paramètre
+  # fixe la méthode affichée par défaut.
+  methode_valorisation: PMP
+  # HALF_UP est l'arrondi commercial usuel : 0,5 est arrondi au-dessus.
+  mode_arrondi: HALF_UP
+
+marche:
+  # Pays de la place de cotation : ses jours fériés ferment la bourse.
+  pays_place: CI
+  # Univers suivi. Voir univers.exemple.csv pour le format attendu.
+  fichier_univers: ./univers.csv
+  # [FAIT] À RENSEIGNER — seuil réglementaire de variation d'un cours sur une
+  # séance, en fraction (0.075 pour ±7,5 %). À relever dans les textes en vigueur
+  # de l'entreprise de marché. Sert à détecter une cotation aberrante à
+  # l'ingestion : un seuil inventé rendrait cette détection fausse.
+  seuil_variation_journaliere:
+  # Heure locale de clôture, pour juger de la fraîcheur d'une donnée.
+  heure_cloture_locale: "15:00"
+
+calendrier:
+  # 0 = lundi … 6 = dimanche.
+  jours_ouvres: [0, 1, 2, 3, 4]
+  # Période sur laquelle le calendrier est réputé complet. Hors de cette période,
+  # le système refuse de dire si un jour est une séance.
+  couverture_debut: 2024-01-01
+  couverture_fin: 2026-12-31
+  # [FAIT] Jours fériés par pays. Voir jours_feries.exemple.yaml.
+  fichier_feries: ./jours_feries.yaml
+  # Fermetures ponctuelles annoncées par l'entreprise de marché.
+  fermetures_exceptionnelles: []
+
+# ------------------------------------------------------------------------------
+#  Sources de données
+# ------------------------------------------------------------------------------
+#  Il n'existe pas de flux temps réel public et gratuit sur cette place. « Temps
+#  réel » signifie ici : dernière donnée disponible, horodatée, avec son âge.
+#
+#  Les connecteurs réseau sont livrés INACTIFS et sans URL : aucune adresse ni
+#  aucune structure de page n'a été vérifiée par le système. Renseignez l'URL que
+#  vous avez vous-même constatée, vérifiez les conditions d'utilisation et le
+#  robots.txt du site, puis passez `actif: true`.
+# ------------------------------------------------------------------------------
+sources:
+  - nom: fichier_manuel
+    type: fichier_csv
+    actif: true
+    priorite: 1
+    url_base:
+    # Fichier de secours que vous alimentez à la main (ou par export de votre SGI).
+    chemin_fichier: ../data/cotations_manuelles.csv
+    timeout_s: 30
+    tentatives_max: 1
+    backoff_initial_s: 1
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 0
+    age_max_minutes: 1440
+
+  - nom: brvm_cote_du_jour
+    type: brvm_site
+    actif: false          # [FAIT] passez à true une fois url_base vérifiée
+    priorite: 2
+    url_base:             # À RENSEIGNER — adresse constatée de la cote du jour
+    chemin_fichier:
+    timeout_s: 20
+    tentatives_max: 4
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+
+  - nom: agregateur_tiers
+    type: agregateur
+    actif: false          # [FAIT] passez à true une fois url_base vérifiée
+    priorite: 3
+    url_base:             # À RENSEIGNER — adresse de l'agrégateur retenu
+    chemin_fichier:
+    timeout_s: 20
+    tentatives_max: 3
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 120
+    age_max_minutes: 2880
+
+# ------------------------------------------------------------------------------
+#  Barème de frais — [FAIT] TOUT EST À RENSEIGNER
+# ------------------------------------------------------------------------------
+#  Recopiez ici, ligne à ligne, la grille tarifaire de VOTRE SGI. Le système ne
+#  contient aucun barème par défaut et n'en devinera aucun.
+#
+#  Les lignes sont appliquées par `ordre` croissant. Une ligne assise sur
+#  TOTAL_COMMISSIONS (une TVA, typiquement) doit porter un ordre supérieur aux
+#  commissions qu'elle taxe.
+#
+#  base_calcul :
+#    MONTANT_BRUT       — assiette = quantité × cours
+#    TOTAL_COMMISSIONS  — assiette = somme des lignes d'ordre inférieur
+#    MONTANT_FIXE       — forfait, sans taux
+#
+#  applicable_a : ACHAT | VENTE | LES_DEUX
+# ------------------------------------------------------------------------------
+frais:
+  # À RENSEIGNER — nom de la SGI et date de la grille utilisée. Obligatoire :
+  # un barème sans provenance n'est pas auditable.
+  source_bareme:
+  minimum_perception_global:
+  lignes:
+    - libelle: Commission de courtage SGI
+      base_calcul: MONTANT_BRUT
+      ordre: 1
+      applicable_a: LES_DEUX
+      taux:                    # À RENSEIGNER
+      montant_fixe:
+      minimum_perception:      # minimum de perception éventuel, en XOF
+      maximum_perception:
+
+    - libelle: Commission entreprise de marché
+      base_calcul: MONTANT_BRUT
+      ordre: 2
+      applicable_a: LES_DEUX
+      taux:                    # À RENSEIGNER
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+
+    - libelle: Commission dépositaire central
+      base_calcul: MONTANT_BRUT
+      ordre: 3
+      applicable_a: LES_DEUX
+      taux:                    # À RENSEIGNER
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+
+    - libelle: TVA sur commissions
+      base_calcul: TOTAL_COMMISSIONS
+      ordre: 4
+      applicable_a: LES_DEUX
+      taux:                    # À RENSEIGNER
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+
+    # Ajoutez ou supprimez des lignes selon votre grille réelle. Exemple de ligne
+    # forfaitaire, à décommenter et compléter si votre SGI en applique une :
+    #
+    # - libelle: Frais fixes d'avis d'opéré
+    #   base_calcul: MONTANT_FIXE
+    #   ordre: 5
+    #   applicable_a: LES_DEUX
+    #   taux:
+    #   montant_fixe:          # À RENSEIGNER, en XOF
+    #   minimum_perception:
+    #   maximum_perception:
+
+# ------------------------------------------------------------------------------
+#  Fiscalité — [FAIT] TOUT EST À RENSEIGNER
+# ------------------------------------------------------------------------------
+fiscalite:
+  pays_residence: CI
+  # À RENSEIGNER — texte, avis d'imposition ou note de votre SGI d'où viennent
+  # les taux ci-dessous.
+  source_reference:
+  # À RENSEIGNER — retenue à la source sur dividendes, en fraction.
+  retenue_dividendes:
+  # À RENSEIGNER — true ou false selon votre situation.
+  plus_values_imposables:
+  # À RENSEIGNER si plus_values_imposables vaut true, sinon laisser vide.
+  plus_values_taux:
+  # Durée de détention, en mois, au-delà de laquelle la plus-value est exonérée.
+  # Laisser vide s'il n'existe pas d'abattement de ce type.
+  plus_values_exoneration_mois:
+
+# ------------------------------------------------------------------------------
+#  Analyse technique — [PRÉFÉRENCE] garde-fous liés à l'illiquidité
+# ------------------------------------------------------------------------------
+indicateurs:
+  # Part minimale de séances RÉELLEMENT COTÉES dans la fenêtre pour qu'un
+  # indicateur soit calculé. En deçà, le système refuse de répondre plutôt que de
+  # produire une moyenne mobile assise sur du vide.
+  ratio_minimum_seances_cotees: 0.60
+  # Nombre maximal de séances consécutives que le report de cours peut combler.
+  # Au-delà, le trou reste un trou.
+  remplissage_max_seances: 3
+  fenetre_volume_moyen: 20
+  # Au-delà de ce taux de données reportées, le résultat est marqué peu fiable.
+  taux_remplissage_alerte: 0.25
+
+# ------------------------------------------------------------------------------
+#  Risque — [PRÉFÉRENCE]
+# ------------------------------------------------------------------------------
+risque:
+  poids_max_ligne: 0.20
+  poids_max_secteur: 0.35
+  poids_max_pays: 0.60
+  # Une position ne devrait pas dépasser cette part du volume moyen quotidien,
+  # sous peine de ne pas pouvoir être débouclée.
+  part_max_volume_moyen: 0.25
+  fenetre_volume_moyen: 20
+  multiple_atr_stop: 2.5
+  fenetre_atr: 14
+  drawdown_alerte: 0.15
+  fenetre_volatilite: 60
+
+# ------------------------------------------------------------------------------
+#  Backtest — [PRÉFÉRENCE]
+# ------------------------------------------------------------------------------
+backtest:
+  capital_initial: 1000000
+  # Glissement appliqué au cours d'exécution, en fraction. À majorer sur une
+  # valeur à fourchette large.
+  slippage: 0.005
+  # Part maximale du volume de la séance qu'un ordre simulé peut consommer.
+  # Au-delà, l'exécution est refusée.
+  part_max_volume_seance: 0.10
+  execution: OUVERTURE_BARRE_SUIVANTE
+  walk_forward_apprentissage: 250
+  walk_forward_validation: 60
+
+# ------------------------------------------------------------------------------
+#  Alertes — [PRÉFÉRENCE]
+# ------------------------------------------------------------------------------
+alertes:
+  age_donnee_max_minutes: 1440
+  alerter_signal_technique: true
+  alerter_seuil_risque: true
+  alerter_echec_source: true
+  canaux:
+    - nom: journal_fichier
+      type: fichier
+      actif: true
+      parametres:
+        chemin: ../data/alertes.log
+    # - nom: courriel
+    #   type: email
+    #   actif: false
+    #   parametres:
+    #     destinataire: vous@exemple.org
+    #     serveur_smtp: smtp.exemple.org
+    # - nom: webhook
+    #   type: webhook
+    #   actif: false
+    #   parametres:
+    #     url: https://exemple.org/hook
+
+# ------------------------------------------------------------------------------
+#  Journalisation — [PRÉFÉRENCE]
+# ------------------------------------------------------------------------------
+journalisation:
+  niveau: INFO
+  fichier: ../data/brvm.log
+  taille_max_octets: 10485760
+  nb_sauvegardes: 5
+  format_json: true
+
+# ------------------------------------------------------------------------------
+#  Ordonnanceur — [PRÉFÉRENCE]
+# ------------------------------------------------------------------------------
+ordonnanceur:
+  actif: false
+  # Collecte de fin de séance, appliquée uniquement les jours de séance.
+  cron_collecte: "30 15 * * 1-5"
+  fuseau_horaire: Africa/Abidjan

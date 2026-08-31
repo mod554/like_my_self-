@@ -1,0 +1,40 @@
+# ==============================================================================
+#  Jours fériés — donnée de configuration, jamais une constante du code
+# ==============================================================================
+#
+#  Copiez ce fichier en `jours_feries.yaml` et renseignez-le.
+#
+#  Aucune date n'est fournie ici. Les jours fériés de l'UEMOA varient d'un État à
+#  l'autre et, pour les fêtes mobiles, d'une année à l'autre ; certaines dates ne
+#  sont arrêtées qu'en cours d'année par décision administrative. Une liste
+#  pré-remplie serait fausse une année sur deux, et un calendrier faux fabrique
+#  silencieusement des « séances manquantes » qui n'ont jamais existé.
+#
+#  Où trouver l'information : calendrier officiel des jours fériés de chaque État
+#  concerné, et avis de fermeture publiés par l'entreprise de marché.
+#
+#  Format : code pays ISO à deux lettres, puis liste de dates AAAA-MM-JJ.
+#
+#  Codes acceptés :
+#    BJ Bénin · BF Burkina Faso · CI Côte d'Ivoire · GW Guinée-Bissau
+#    ML Mali · NE Niger · SN Sénégal · TG Togo · XX autre
+#
+#  Le pays de la place de cotation (`marche.pays_place`) est celui dont les jours
+#  fériés FERMENT la bourse. Les jours fériés des autres États n'interrompent pas
+#  les séances : ils servent seulement à expliquer une absence de transaction sur
+#  les valeurs des émetteurs concernés — le système les signale, il ne comble
+#  jamais le trou.
+#
+#  Le système avertit au démarrage si une année couverte ne comporte aucun jour
+#  férié déclaré pour le pays de la place : c'est presque toujours le signe d'un
+#  fichier oublié.
+# ==============================================================================
+
+CI: []
+# BJ: []
+# BF: []
+# GW: []
+# ML: []
+# NE: []
+# SN: []
+# TG: []

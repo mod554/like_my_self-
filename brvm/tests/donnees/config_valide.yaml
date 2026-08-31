@@ -1,0 +1,149 @@
+# Configuration COMPLÈTE de test.
+#
+# Tous les chiffres ci-dessous sont FICTIFS et servent uniquement à vérifier le
+# comportement du code. Ils ne reproduisent aucune grille tarifaire réelle,
+# aucun taux de fiscalité réel et aucun seuil réglementaire réel.
+
+general:
+  devise: XOF
+  fuseau_horaire: Africa/Abidjan
+  repertoire_donnees: ./donnees_test
+  base_donnees: ./donnees_test/test.sqlite3
+  methode_valorisation: PMP
+  mode_arrondi: HALF_UP
+
+marche:
+  pays_place: CI
+  fichier_univers: ./univers_test.csv
+  seuil_variation_journaliere: 0.10   # FICTIF
+  heure_cloture_locale: "15:00"
+
+calendrier:
+  jours_ouvres: [0, 1, 2, 3, 4]
+  couverture_debut: 2026-01-01
+  couverture_fin: 2026-12-31
+  fichier_feries: ./jours_feries_test.yaml
+  fermetures_exceptionnelles: []
+
+sources:
+  - nom: fichier_manuel
+    type: fichier_csv
+    actif: true
+    priorite: 1
+    url_base:
+    chemin_fichier: ./cotations_test.csv
+    timeout_s: 30
+    tentatives_max: 1
+    backoff_initial_s: 1
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 0
+    age_max_minutes: 1440
+
+  - nom: source_reseau_inactive
+    type: brvm_site
+    actif: false
+    priorite: 2
+    url_base:
+    chemin_fichier:
+    timeout_s: 20
+    tentatives_max: 4
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+
+frais:
+  source_bareme: "BARÈME FICTIF DE TEST — ne correspond à aucune SGI réelle"
+  minimum_perception_global:
+  lignes:
+    - libelle: Commission de courtage SGI
+      base_calcul: MONTANT_BRUT
+      ordre: 1
+      applicable_a: LES_DEUX
+      taux: 0.01
+      montant_fixe:
+      minimum_perception: 1000
+      maximum_perception:
+    - libelle: Commission entreprise de marché
+      base_calcul: MONTANT_BRUT
+      ordre: 2
+      applicable_a: LES_DEUX
+      taux: 0.002
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+    - libelle: TVA sur commissions
+      base_calcul: TOTAL_COMMISSIONS
+      ordre: 3
+      applicable_a: LES_DEUX
+      taux: 0.18
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+    - libelle: Frais fixes d'avis d'opéré
+      base_calcul: MONTANT_FIXE
+      ordre: 4
+      applicable_a: LES_DEUX
+      taux:
+      montant_fixe: 500
+      minimum_perception:
+      maximum_perception:
+
+fiscalite:
+  pays_residence: CI
+  source_reference: "RÉFÉRENCE FICTIVE DE TEST"
+  retenue_dividendes: 0.10
+  plus_values_imposables: false
+  plus_values_taux:
+  plus_values_exoneration_mois:
+
+indicateurs:
+  ratio_minimum_seances_cotees: 0.60
+  remplissage_max_seances: 3
+  fenetre_volume_moyen: 20
+  taux_remplissage_alerte: 0.25
+
+risque:
+  poids_max_ligne: 0.20
+  poids_max_secteur: 0.35
+  poids_max_pays: 0.60
+  part_max_volume_moyen: 0.25
+  fenetre_volume_moyen: 20
+  multiple_atr_stop: 2.5
+  fenetre_atr: 14
+  drawdown_alerte: 0.15
+  fenetre_volatilite: 60
+
+backtest:
+  capital_initial: 1000000
+  slippage: 0.005
+  part_max_volume_seance: 0.10
+  execution: OUVERTURE_BARRE_SUIVANTE
+  walk_forward_apprentissage: 250
+  walk_forward_validation: 60
+
+alertes:
+  age_donnee_max_minutes: 1440
+  alerter_signal_technique: true
+  alerter_seuil_risque: true
+  alerter_echec_source: true
+  canaux:
+    - nom: journal_fichier
+      type: fichier
+      actif: true
+      parametres:
+        chemin: ./donnees_test/alertes.log
+
+journalisation:
+  niveau: INFO
+  fichier: ./donnees_test/test.log
+  taille_max_octets: 1048576
+  nb_sauvegardes: 2
+  format_json: true
+
+ordonnanceur:
+  actif: false
+  cron_collecte: "30 15 * * 1-5"
+  fuseau_horaire: Africa/Abidjan

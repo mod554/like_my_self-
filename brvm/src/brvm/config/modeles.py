@@ -1,0 +1,383 @@
+"""Schéma du fichier de configuration unique.
+
+Deux catégories de paramètres coexistent, et la distinction est volontaire :
+
+1. **Les faits que le système n'a pas le droit d'inventer** — barème de frais de
+   votre SGI, taux de fiscalité, seuil réglementaire de variation journalière,
+   URL des sources. Ces champs sont obligatoires et **sans valeur par défaut** :
+   tant qu'ils ne sont pas renseignés, la configuration échoue avec un message
+   qui nomme le champ et indique où trouver l'information.
+2. **Vos préférences** — limites de risque, fenêtres de calcul, niveau de log.
+   Elles sont également obligatoires dans le schéma, mais le fichier d'exemple
+   propose des valeurs de départ explicites, à ajuster.
+
+Convention des taux : tous les taux sont des **fractions**, jamais des
+pourcentages. 0,6 % s'écrit ``0.006``. Un taux supérieur à 1 est rejeté, car
+c'est presque toujours une saisie en pourcentage.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from brvm.domain.enums import BaseFrais, Devise, MethodeValorisation, Pays, SensOperation
+from brvm.domain.monnaie import ModeArrondi
+
+#: Taux exprimé en fraction de l'assiette (0.006 = 0,6 %).
+Taux = Annotated[Decimal, Field(ge=0, le=1)]
+#: Fraction d'un total (poids de portefeuille, part de volume…).
+Fraction = Annotated[Decimal, Field(gt=0, le=1)]
+
+
+class _Base(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, frozen=True)
+
+
+class ConfigGeneral(_Base):
+    devise: Devise = Devise.XOF
+    #: Fuseau des horodatages affichés. Les données sont stockées en UTC.
+    fuseau_horaire: str = Field(min_length=1)
+    repertoire_donnees: Path
+    base_donnees: Path
+    methode_valorisation: MethodeValorisation
+    mode_arrondi: ModeArrondi
+
+    @field_validator("devise")
+    @classmethod
+    def _refuser_autre_devise(cls, valeur: Devise) -> Devise:
+        if valeur is not Devise.XOF:
+            raise ValueError("Le système ne gère que le XOF et ne convertit aucune devise.")
+        return valeur
+
+
+class ConfigMarche(_Base):
+    #: Pays de la place de cotation : ses jours fériés ferment la bourse.
+    pays_place: Pays
+    #: Fichier CSV décrivant l'univers suivi (ticker, nom, ISIN, pays, secteur).
+    fichier_univers: Path
+    #: Seuil réglementaire de variation d'un cours sur une séance, en fraction.
+    #: À relever dans les textes en vigueur de l'entreprise de marché. Aucune
+    #: valeur par défaut n'est fournie : un seuil inventé fausserait la détection
+    #: d'anomalies à l'ingestion.
+    seuil_variation_journaliere: Taux
+    #: Heure de clôture locale, utilisée pour juger de la fraîcheur d'une donnée.
+    heure_cloture_locale: str = Field(pattern=r"^\d{2}:\d{2}$")
+
+
+class ConfigCalendrier(_Base):
+    #: 0 = lundi … 6 = dimanche.
+    jours_ouvres: tuple[int, ...] = Field(min_length=1)
+    couverture_debut: date
+    couverture_fin: date
+    #: Fichier YAML des jours fériés, par pays et par date.
+    fichier_feries: Path
+    fermetures_exceptionnelles: tuple[date, ...] = ()
+
+    @field_validator("jours_ouvres")
+    @classmethod
+    def _valider_jours(cls, valeur: tuple[int, ...]) -> tuple[int, ...]:
+        if any(jour not in range(7) for jour in valeur):
+            raise ValueError("Jours ouvrés attendus entre 0 (lundi) et 6 (dimanche).")
+        return valeur
+
+    @model_validator(mode="after")
+    def _valider_periode(self) -> ConfigCalendrier:
+        if self.couverture_debut > self.couverture_fin:
+            raise ValueError("couverture_debut est postérieure à couverture_fin.")
+        return self
+
+
+class ConfigSource(_Base):
+    """Paramétrage d'un connecteur d'ingestion."""
+
+    nom: str = Field(min_length=1)
+    #: Identifiant du connecteur à instancier (voir la couche ingestion).
+    type: str = Field(min_length=1)
+    actif: bool
+    #: Ordre de préférence lorsqu'une même séance est servie par plusieurs sources.
+    priorite: int = Field(ge=1)
+    #: URL de base. Obligatoire pour un connecteur réseau : le système ne devine
+    #: aucune adresse et aucune structure de page qu'il n'a pas vérifiée.
+    url_base: str | None = None
+    #: Chemin local, pour un connecteur fichier de secours.
+    chemin_fichier: Path | None = None
+    timeout_s: int = Field(gt=0)
+    tentatives_max: int = Field(ge=1)
+    backoff_initial_s: Decimal = Field(gt=0)
+    backoff_facteur: Decimal = Field(ge=1)
+    respecter_robots: bool
+    cache_minutes: int = Field(ge=0)
+    #: Au-delà de cet âge, la donnée servie par cette source est signalée périmée.
+    age_max_minutes: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _valider_cible(self) -> ConfigSource:
+        # Contrôle limité aux sources actives : une source peut rester déclarée et
+        # inactive tant que son adresse n'a pas été vérifiée par l'utilisateur.
+        if self.actif and self.url_base is None and self.chemin_fichier is None:
+            raise ValueError(
+                f"La source {self.nom!r} est active mais ne désigne ni url_base ni "
+                "chemin_fichier : renseignez l'adresse vérifiée de la source, ou le "
+                "fichier de secours."
+            )
+        return self
+
+
+class ConfigLigneFrais(_Base):
+    """Une ligne du barème, telle qu'elle figure sur la grille tarifaire de la SGI."""
+
+    libelle: str = Field(min_length=1)
+    base_calcul: BaseFrais
+    #: Ordre d'application. Une ligne assise sur le total des commissions (TVA)
+    #: doit porter un ordre supérieur aux lignes qu'elle taxe.
+    ordre: int = Field(ge=1)
+    applicable_a: Literal["ACHAT", "VENTE", "LES_DEUX"]
+    #: Obligatoire sauf pour une ligne forfaitaire.
+    taux: Taux | None = None
+    #: Obligatoire pour une ligne forfaitaire.
+    montant_fixe: int | None = Field(default=None, ge=0)
+    #: Minimum de perception éventuel, en XOF.
+    minimum_perception: int | None = Field(default=None, ge=0)
+    #: Plafond éventuel, en XOF.
+    maximum_perception: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _valider_ligne(self) -> ConfigLigneFrais:
+        if self.base_calcul is BaseFrais.MONTANT_FIXE:
+            if self.montant_fixe is None:
+                raise ValueError(
+                    f"La ligne {self.libelle!r} est forfaitaire : renseignez montant_fixe "
+                    "d'après la grille tarifaire de votre SGI."
+                )
+            if self.taux is not None:
+                raise ValueError(
+                    f"La ligne {self.libelle!r} est forfaitaire et ne doit pas porter de taux."
+                )
+        else:
+            if self.taux is None:
+                raise ValueError(
+                    f"La ligne {self.libelle!r} est calculée sur {self.base_calcul.value} : "
+                    "renseignez son taux d'après la grille tarifaire de votre SGI. Aucune "
+                    "valeur par défaut n'est fournie par le système."
+                )
+            if self.montant_fixe is not None:
+                raise ValueError(
+                    f"La ligne {self.libelle!r} porte un taux et ne doit pas porter de "
+                    "montant_fixe."
+                )
+        if (
+            self.minimum_perception is not None
+            and self.maximum_perception is not None
+            and self.minimum_perception > self.maximum_perception
+        ):
+            raise ValueError(
+                f"Ligne {self.libelle!r} : minimum de perception supérieur au plafond."
+            )
+        return self
+
+    def concerne(self, sens: SensOperation) -> bool:
+        return self.applicable_a in ("LES_DEUX", sens.value)
+
+
+class ConfigFrais(_Base):
+    """Barème complet, à recopier depuis la grille tarifaire de votre SGI."""
+
+    #: Traçabilité obligatoire : nom de la SGI et date de la grille utilisée.
+    #: Un barème sans provenance n'est pas auditable.
+    source_bareme: str = Field(min_length=3)
+    lignes: tuple[ConfigLigneFrais, ...] = Field(min_length=1)
+    #: Minimum de perception global sur l'ensemble des frais d'un ordre, si la SGI
+    #: en applique un.
+    minimum_perception_global: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _valider_bareme(self) -> ConfigFrais:
+        ordres = [ligne.ordre for ligne in self.lignes]
+        if len(set(ordres)) != len(ordres):
+            raise ValueError(
+                "Deux lignes de frais portent le même ordre d'application : l'assiette "
+                "d'une TVA deviendrait ambiguë."
+            )
+        for ligne in self.lignes:
+            if ligne.base_calcul is BaseFrais.TOTAL_COMMISSIONS:
+                anterieures = [
+                    autre
+                    for autre in self.lignes
+                    if autre.ordre < ligne.ordre
+                    and autre.base_calcul is not BaseFrais.TOTAL_COMMISSIONS
+                ]
+                if not anterieures:
+                    raise ValueError(
+                        f"La ligne {ligne.libelle!r} est assise sur le total des "
+                        "commissions mais aucune commission ne la précède "
+                        "(ordre trop faible)."
+                    )
+        return self
+
+
+class ConfigFiscalite(_Base):
+    """Fiscalité applicable, selon votre pays de résidence fiscale."""
+
+    pays_residence: Pays
+    #: Traçabilité obligatoire : texte ou avis d'où les taux sont tirés.
+    source_reference: str = Field(min_length=3)
+    #: Retenue à la source sur les dividendes, en fraction. Aucune valeur par défaut.
+    retenue_dividendes: Taux
+    #: Les plus-values de cession sont-elles imposables dans votre situation ?
+    plus_values_imposables: bool
+    #: Taux applicable si elles le sont.
+    plus_values_taux: Taux | None = None
+    #: Abattement éventuel pour durée de détention, en nombre de mois au-delà
+    #: duquel la plus-value est exonérée. ``None`` si aucun.
+    plus_values_exoneration_mois: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _valider(self) -> ConfigFiscalite:
+        if self.plus_values_imposables and self.plus_values_taux is None:
+            raise ValueError(
+                "plus_values_imposables est vrai : renseignez plus_values_taux d'après "
+                "le régime applicable à votre résidence fiscale."
+            )
+        if not self.plus_values_imposables and self.plus_values_taux is not None:
+            raise ValueError(
+                "plus_values_taux est renseigné alors que les plus-values sont déclarées "
+                "non imposables : levez l'ambiguïté."
+            )
+        return self
+
+
+class ConfigIndicateurs(_Base):
+    """Garde-fous imposés aux calculs techniques sur un marché peu liquide."""
+
+    #: Part minimale de séances **réellement cotées** dans la fenêtre pour qu'un
+    #: indicateur soit calculé. En deçà, le système refuse de répondre.
+    ratio_minimum_seances_cotees: Fraction
+    #: Nombre maximal de séances consécutives que le report de cours (forward fill)
+    #: peut combler. Au-delà, le trou reste un trou.
+    remplissage_max_seances: int = Field(ge=0)
+    #: Fenêtre de calcul du volume moyen quotidien servant au score de confiance.
+    fenetre_volume_moyen: int = Field(gt=0)
+    #: Taux de remplissage au-delà duquel un résultat est marqué peu fiable.
+    taux_remplissage_alerte: Fraction
+
+
+class ConfigRisque(_Base):
+    poids_max_ligne: Fraction
+    poids_max_secteur: Fraction
+    poids_max_pays: Fraction
+    #: Part maximale du volume moyen quotidien qu'une position peut représenter.
+    part_max_volume_moyen: Fraction
+    fenetre_volume_moyen: int = Field(gt=0)
+    #: Multiple d'ATR pour le calcul d'un stop.
+    multiple_atr_stop: Decimal = Field(gt=0)
+    fenetre_atr: int = Field(gt=0)
+    #: Drawdown déclenchant une alerte, en fraction.
+    drawdown_alerte: Fraction
+    fenetre_volatilite: int = Field(gt=0)
+
+
+class ConfigBacktest(_Base):
+    capital_initial: int = Field(gt=0)
+    #: Glissement appliqué au cours d'exécution, en fraction.
+    slippage: Taux
+    #: Part maximale du volume de la séance qu'un ordre simulé peut consommer.
+    part_max_volume_seance: Fraction
+    #: Seule hypothèse d'exécution retenue : à l'ouverture de la barre suivante.
+    execution: Literal["OUVERTURE_BARRE_SUIVANTE"]
+    #: Découpage walk-forward : longueurs en nombre de séances.
+    walk_forward_apprentissage: int = Field(gt=0)
+    walk_forward_validation: int = Field(gt=0)
+
+
+class ConfigCanalAlerte(_Base):
+    nom: str = Field(min_length=1)
+    type: Literal["fichier", "email", "webhook"]
+    actif: bool
+    #: Paramètres propres au canal (chemin, destinataires, URL…).
+    parametres: dict[str, str] = Field(default_factory=dict)
+
+
+class ConfigAlertes(_Base):
+    canaux: tuple[ConfigCanalAlerte, ...] = ()
+    #: Âge de donnée déclenchant une alerte de péremption.
+    age_donnee_max_minutes: int = Field(gt=0)
+    alerter_signal_technique: bool
+    alerter_seuil_risque: bool
+    alerter_echec_source: bool
+
+
+class ConfigJournalisation(_Base):
+    niveau: Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+    fichier: Path
+    taille_max_octets: int = Field(gt=0)
+    nb_sauvegardes: int = Field(ge=0)
+    #: Journal structuré en JSON par ligne, pour être relu par une machine.
+    format_json: bool
+
+
+class ConfigOrdonnanceur(_Base):
+    actif: bool
+    #: Expression cron des collectes, appliquée uniquement les jours de séance.
+    cron_collecte: str = Field(min_length=1)
+    fuseau_horaire: str = Field(min_length=1)
+
+
+class Configuration(_Base):
+    """Racine du fichier de configuration."""
+
+    general: ConfigGeneral
+    marche: ConfigMarche
+    calendrier: ConfigCalendrier
+    sources: tuple[ConfigSource, ...] = Field(min_length=1)
+    frais: ConfigFrais
+    fiscalite: ConfigFiscalite
+    indicateurs: ConfigIndicateurs
+    risque: ConfigRisque
+    backtest: ConfigBacktest
+    alertes: ConfigAlertes
+    journalisation: ConfigJournalisation
+    ordonnanceur: ConfigOrdonnanceur
+
+    @model_validator(mode="after")
+    def _valider_ensemble(self) -> Configuration:
+        noms = [source.nom for source in self.sources]
+        if len(set(noms)) != len(noms):
+            raise ValueError("Deux sources portent le même nom.")
+        if not any(source.actif for source in self.sources):
+            raise ValueError("Aucune source active : le système n'aurait aucune donnée à ingérer.")
+        priorites = [source.priorite for source in self.sources if source.actif]
+        if len(set(priorites)) != len(priorites):
+            raise ValueError(
+                "Deux sources actives partagent la même priorité : l'arbitrage entre "
+                "sources concurrentes serait indéterminé."
+            )
+        return self
+
+    def sources_actives(self) -> tuple[ConfigSource, ...]:
+        return tuple(
+            sorted(
+                (source for source in self.sources if source.actif),
+                key=lambda source: source.priorite,
+            )
+        )
+
+    def avertissements(self) -> list[str]:
+        """Signalements non bloquants, à afficher au démarrage."""
+        messages: list[str] = []
+        if self.marche.pays_place != self.fiscalite.pays_residence:
+            messages.append(
+                f"Place de cotation ({self.marche.pays_place.value}) et résidence fiscale "
+                f"({self.fiscalite.pays_residence.value}) diffèrent : vérifiez qu'une "
+                "convention fiscale ne modifie pas la retenue sur dividendes."
+            )
+        if self.indicateurs.remplissage_max_seances == 0:
+            messages.append(
+                "Le report de cours est désactivé (remplissage_max_seances = 0) : sur une "
+                "valeur peu liquide, beaucoup d'indicateurs refuseront de se calculer."
+            )
+        return messages

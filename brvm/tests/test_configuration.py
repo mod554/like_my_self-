@@ -1,0 +1,260 @@
+"""Configuration : refus explicite des paramètres que le système ne doit pas inventer."""
+
+from __future__ import annotations
+
+import shutil
+from collections.abc import Callable
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+from brvm.config.chargement import (
+    charger_configuration,
+    charger_jours_feries,
+    construire_calendrier_depuis_config,
+    resume_configuration,
+)
+from brvm.config.modeles import Configuration
+from brvm.domain.enums import Pays
+from brvm.utils.erreurs import ErreurConfiguration
+
+RACINE_PROJET = Path(__file__).resolve().parents[1]
+CONFIG_EXEMPLE = RACINE_PROJET / "config" / "config.exemple.yaml"
+
+
+def ecrire(chemin: Path, contenu: dict[str, Any]) -> Path:
+    chemin.write_text(yaml.safe_dump(contenu, allow_unicode=True, sort_keys=False), "utf-8")
+    return chemin
+
+
+def charger_brut(dossier: Path) -> dict[str, Any]:
+    contenu = yaml.safe_load((dossier / "config_valide.yaml").read_text(encoding="utf-8"))
+    assert isinstance(contenu, dict)
+    return contenu
+
+
+class TestFichierExemple:
+    """Le fichier livré doit échouer : il ne contient volontairement aucun barème."""
+
+    def test_le_fichier_exemple_existe(self) -> None:
+        assert CONFIG_EXEMPLE.is_file()
+
+    def test_le_fichier_exemple_refuse_de_se_charger(self) -> None:
+        with pytest.raises(ErreurConfiguration) as capture:
+            charger_configuration(CONFIG_EXEMPLE)
+        message = str(capture.value)
+        assert "frais.source_bareme" in message
+        assert "fiscalite.retenue_dividendes" in message
+        assert "marche.seuil_variation_journaliere" in message
+
+    def test_le_message_oriente_vers_la_grille_tarifaire(self) -> None:
+        with pytest.raises(ErreurConfiguration) as capture:
+            charger_configuration(CONFIG_EXEMPLE)
+        message = str(capture.value)
+        assert "grille tarifaire de votre SGI" in message
+        assert "Aucune valeur par défaut n'est substituée" in message
+
+    def test_toutes_les_erreurs_sont_listees_d_un_coup(self) -> None:
+        """L'utilisateur ne doit pas découvrir les champs manquants un par un."""
+        with pytest.raises(ErreurConfiguration) as capture:
+            charger_configuration(CONFIG_EXEMPLE)
+        assert str(capture.value).count("  • ") >= 6
+
+
+class TestChargementValide:
+    def test_configuration_de_test_valide(self, configuration: Configuration) -> None:
+        assert configuration.general.devise.value == "XOF"
+        assert configuration.marche.pays_place is Pays.COTE_DIVOIRE
+        assert len(configuration.frais.lignes) == 4
+
+    def test_chemins_relatifs_resolus_par_rapport_au_fichier(
+        self, configuration: Configuration, dossier_config: Path
+    ) -> None:
+        assert configuration.marche.fichier_univers.is_absolute()
+        assert configuration.marche.fichier_univers.parent == dossier_config
+
+    def test_sources_actives_triees_par_priorite(self, configuration: Configuration) -> None:
+        actives = configuration.sources_actives()
+        assert [source.nom for source in actives] == ["fichier_manuel"]
+
+    def test_resume_affichable(self, configuration: Configuration) -> None:
+        resume = resume_configuration(configuration)
+        assert resume["devise"] == "XOF"
+        assert "FICTIF" in resume["barème de frais"]
+
+    def test_fichier_absent(self, tmp_path: Path) -> None:
+        with pytest.raises(ErreurConfiguration, match="introuvable"):
+            charger_configuration(tmp_path / "absent.yaml")
+
+    def test_fichier_vide(self, tmp_path: Path) -> None:
+        vide = tmp_path / "vide.yaml"
+        vide.write_text("", encoding="utf-8")
+        with pytest.raises(ErreurConfiguration, match="vide"):
+            charger_configuration(vide)
+
+    def test_yaml_invalide(self, tmp_path: Path) -> None:
+        casse = tmp_path / "casse.yaml"
+        casse.write_text("general: [\n  non fermé", encoding="utf-8")
+        with pytest.raises(ErreurConfiguration, match="illisible"):
+            charger_configuration(casse)
+
+
+class TestRefusDesIncoherences:
+    def modifier(self, dossier: Path, mutation: Callable[[dict[str, Any]], None]) -> Path:
+        brut = charger_brut(dossier)
+        mutation(brut)
+        return ecrire(dossier / "modifie.yaml", brut)
+
+    def test_devise_autre_que_xof_refusee(self, dossier_config: Path) -> None:
+        chemin = self.modifier(dossier_config, lambda c: c["general"].update(devise="EUR"))
+        with pytest.raises(ErreurConfiguration):
+            charger_configuration(chemin)
+
+    def test_taux_superieur_a_un_refuse(self, dossier_config: Path) -> None:
+        """0,6 % saisi « 0.6 » passe ; saisi « 60 » doit être rejeté."""
+        chemin = self.modifier(dossier_config, lambda c: c["frais"]["lignes"][0].update(taux=60))
+        with pytest.raises(ErreurConfiguration):
+            charger_configuration(chemin)
+
+    def test_ligne_proportionnelle_sans_taux_refusee(self, dossier_config: Path) -> None:
+        chemin = self.modifier(dossier_config, lambda c: c["frais"]["lignes"][0].update(taux=None))
+        with pytest.raises(ErreurConfiguration) as capture:
+            charger_configuration(chemin)
+        assert "grille tarifaire" in str(capture.value)
+
+    def test_tva_appliquee_avant_toute_commission_refusee(self, dossier_config: Path) -> None:
+        """Une TVA d'ordre 1 n'aurait aucune assiette à taxer."""
+
+        def mutation(config: dict[str, Any]) -> None:
+            config["frais"]["lignes"] = [
+                ligne for ligne in config["frais"]["lignes"] if ligne["ordre"] == 3
+            ]
+            config["frais"]["lignes"][0]["ordre"] = 1
+
+        chemin = self.modifier(dossier_config, mutation)
+        with pytest.raises(ErreurConfiguration) as capture:
+            charger_configuration(chemin)
+        assert "aucune commission ne la précède" in str(capture.value)
+
+    def test_ordres_de_frais_en_double_refuses(self, dossier_config: Path) -> None:
+        chemin = self.modifier(dossier_config, lambda c: c["frais"]["lignes"][1].update(ordre=1))
+        with pytest.raises(ErreurConfiguration, match="même ordre"):
+            charger_configuration(chemin)
+
+    def test_aucune_source_active_refusee(self, dossier_config: Path) -> None:
+        def mutation(config: dict[str, Any]) -> None:
+            for source in config["sources"]:
+                source["actif"] = False
+
+        chemin = self.modifier(dossier_config, mutation)
+        with pytest.raises(ErreurConfiguration, match="Aucune source active"):
+            charger_configuration(chemin)
+
+    def test_priorites_de_sources_actives_en_double_refusees(self, dossier_config: Path) -> None:
+        def mutation(config: dict[str, Any]) -> None:
+            config["sources"][1]["actif"] = True
+            config["sources"][1]["chemin_fichier"] = "./cotations_test.csv"
+            config["sources"][1]["priorite"] = 1
+
+        chemin = self.modifier(dossier_config, mutation)
+        with pytest.raises(ErreurConfiguration, match="même priorité"):
+            charger_configuration(chemin)
+
+    def test_source_active_sans_cible_refusee(self, dossier_config: Path) -> None:
+        chemin = self.modifier(
+            dossier_config, lambda c: c["sources"][1].update(actif=True, priorite=9)
+        )
+        with pytest.raises(ErreurConfiguration) as capture:
+            charger_configuration(chemin)
+        assert "url_base" in str(capture.value)
+
+    def test_source_inactive_sans_cible_toleree(self, dossier_config: Path) -> None:
+        """Un connecteur réseau peut rester déclaré tant que son adresse n'a pas
+        été vérifiée par l'utilisateur."""
+        configuration = charger_configuration(dossier_config / "config_valide.yaml")
+        inactive = next(s for s in configuration.sources if not s.actif)
+        assert inactive.url_base is None
+
+    def test_plus_values_imposables_sans_taux_refusees(self, dossier_config: Path) -> None:
+        chemin = self.modifier(
+            dossier_config, lambda c: c["fiscalite"].update(plus_values_imposables=True)
+        )
+        with pytest.raises(ErreurConfiguration, match="plus_values_taux"):
+            charger_configuration(chemin)
+
+    def test_cle_inconnue_refusee(self, dossier_config: Path) -> None:
+        """Une faute de frappe dans une clé ne doit pas passer inaperçue."""
+        chemin = self.modifier(dossier_config, lambda c: c["general"].update(mode_arondi="HALF_UP"))
+        with pytest.raises(ErreurConfiguration):
+            charger_configuration(chemin)
+
+
+class TestJoursFeries:
+    def test_chargement(self, dossier_config: Path) -> None:
+        feries = charger_jours_feries(dossier_config / "jours_feries_test.yaml")
+        assert date(2026, 1, 1) in feries[Pays.COTE_DIVOIRE]
+        assert date(2026, 4, 4) in feries[Pays.SENEGAL]
+
+    def test_fichier_absent_refuse(self, tmp_path: Path) -> None:
+        with pytest.raises(ErreurConfiguration, match="introuvable"):
+            charger_jours_feries(tmp_path / "absent.yaml")
+
+    def test_code_pays_inconnu_refuse(self, tmp_path: Path) -> None:
+        fichier = tmp_path / "feries.yaml"
+        fichier.write_text("ZZ:\n  - 2026-01-01\n", encoding="utf-8")
+        with pytest.raises(ErreurConfiguration, match="Code pays inconnu"):
+            charger_jours_feries(fichier)
+
+    def test_date_mal_formee_refusee(self, tmp_path: Path) -> None:
+        fichier = tmp_path / "feries.yaml"
+        fichier.write_text("CI:\n  - 01/01/2026\n", encoding="utf-8")
+        with pytest.raises(ErreurConfiguration, match="invalide"):
+            charger_jours_feries(fichier)
+
+    def test_liste_vide_acceptee(self, tmp_path: Path) -> None:
+        fichier = tmp_path / "feries.yaml"
+        fichier.write_text("CI:\n", encoding="utf-8")
+        assert charger_jours_feries(fichier)[Pays.COTE_DIVOIRE] == frozenset()
+
+
+class TestCalendrierDepuisConfiguration:
+    def test_construction(self, configuration: Configuration) -> None:
+        calendrier = construire_calendrier_depuis_config(configuration)
+        assert calendrier.pays_place is Pays.COTE_DIVOIRE
+        # 2026-01-01 est déclaré férié dans le fichier de test.
+        assert not calendrier.est_jour_de_seance(date(2026, 1, 1))
+        assert calendrier.est_jour_de_seance(date(2026, 1, 2))
+
+    def test_ferie_senegalais_ne_ferme_pas_la_place(self, configuration: Configuration) -> None:
+        calendrier = construire_calendrier_depuis_config(configuration)
+        assert calendrier.est_jour_de_seance(date(2026, 4, 3))
+        assert calendrier.est_ferie(date(2026, 4, 4), Pays.SENEGAL)
+
+
+def test_avertissements_non_bloquants(dossier_config: Path) -> None:
+    brut = charger_brut(dossier_config)
+    brut["fiscalite"]["pays_residence"] = "SN"
+    chemin = ecrire(dossier_config / "residence_autre.yaml", brut)
+    configuration = charger_configuration(chemin)
+    messages = configuration.avertissements()
+    assert any("convention fiscale" in message for message in messages)
+
+
+def test_les_fichiers_exemples_ne_contiennent_aucun_taux(tmp_path: Path) -> None:
+    """Garde-fou de gouvernance : le dépôt ne doit livrer aucun barème pré-rempli.
+
+    On recharge le fichier d'exemple et on vérifie que chaque ligne de frais et
+    chaque taux de fiscalité y sont vides.
+    """
+    shutil.copy(CONFIG_EXEMPLE, tmp_path / "exemple.yaml")
+    brut = yaml.safe_load((tmp_path / "exemple.yaml").read_text(encoding="utf-8"))
+    for ligne in brut["frais"]["lignes"]:
+        assert ligne.get("taux") is None
+        assert ligne.get("montant_fixe") is None
+    assert brut["frais"]["source_bareme"] is None
+    assert brut["fiscalite"]["retenue_dividendes"] is None
+    assert brut["fiscalite"]["plus_values_taux"] is None
+    assert brut["marche"]["seuil_variation_journaliere"] is None
