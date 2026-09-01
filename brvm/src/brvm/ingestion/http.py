@@ -28,7 +28,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import urllib.robotparser
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -120,15 +120,16 @@ class CacheFichier:
     def __init__(self, repertoire: Path) -> None:
         self.repertoire = Path(repertoire)
 
-    def _cles(self, url: str) -> tuple[Path, Path]:
-        empreinte = hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
+    def _cles(self, url: str, corps: bytes | None = None) -> tuple[Path, Path]:
+        graine = url.encode("utf-8") + (b"\x00" + corps if corps else b"")
+        empreinte = hashlib.sha256(graine).hexdigest()[:32]
         return (
             self.repertoire / f"{empreinte}.corps",
             self.repertoire / f"{empreinte}.meta.json",
         )
 
-    def lire(self, url: str) -> tuple[bytes, dict[str, str]] | None:
-        corps, meta = self._cles(url)
+    def lire(self, url: str, requete: bytes | None = None) -> tuple[bytes, dict[str, str]] | None:
+        corps, meta = self._cles(url, requete)
         if not corps.is_file() or not meta.is_file():
             return None
         try:
@@ -136,8 +137,14 @@ class CacheFichier:
         except (OSError, json.JSONDecodeError):
             return None
 
-    def ecrire(self, url: str, contenu: bytes, metadonnees: dict[str, str]) -> None:
-        corps, meta = self._cles(url)
+    def ecrire(
+        self,
+        url: str,
+        contenu: bytes,
+        metadonnees: dict[str, str],
+        requete: bytes | None = None,
+    ) -> None:
+        corps, meta = self._cles(url, requete)
         try:
             self.repertoire.mkdir(parents=True, exist_ok=True)
             corps.write_bytes(contenu)
@@ -247,14 +254,43 @@ class ClientHttp:
 
     # ---------------------------------------------------------------- requêtes
 
-    def recuperer(self, url: str) -> ReponseHttp:
+    def recuperer(
+        self,
+        url: str,
+        corps_json: Mapping[str, Any] | None = None,
+        entetes: Mapping[str, str] | None = None,
+    ) -> ReponseHttp:
         """Récupère une ressource en appliquant toute la politique réseau.
+
+        Args:
+            url: adresse à interroger, en https exclusivement.
+            corps_json: corps d'une requête POST. Absent, la requête est un GET.
+                Une API interrogée en POST reste une requête adressée à un hôte :
+                le robots.txt est consulté comme pour n'importe quelle page.
+            entetes: en-têtes supplémentaires que VOUS avez constatés nécessaires
+                (``Referer``, ``Origin``…). L'identité annoncée
+                (``User-Agent``) n'est pas surchargeable : se faire passer pour
+                un autre agent contreviendrait aux conditions d'utilisation que
+                ce module s'engage à respecter.
 
         Raises:
             ErreurSource: uniquement si la ressource est inaccessible *et* qu'aucune
                 entrée de cache ne permet un mode dégradé. Les incidents réseau
                 ordinaires sont absorbés, pas propagés.
         """
+        if entetes and any(nom.lower() == "user-agent" for nom in entetes):
+            raise ErreurSource(
+                "L'en-tête User-Agent ne peut pas être redéfini par une source : "
+                "l'identité annoncée aux serveurs est celle de "
+                "`ingestion.agent_utilisateur`, et elle doit rester vraie.",
+                url=url,
+                source=self.source.nom,
+            )
+        charge = (
+            json.dumps(dict(corps_json), sort_keys=True, ensure_ascii=False).encode("utf-8")
+            if corps_json is not None
+            else None
+        )
         if not url.lower().startswith("https://"):
             raise ErreurSource(
                 "Seul le schéma https est accepté : une collecte en clair exposerait "
@@ -263,7 +299,7 @@ class ClientHttp:
                 source=self.source.nom,
             )
 
-        frais = self._cache_frais(url)
+        frais = self._cache_frais(url, charge)
         if frais is not None:
             return frais
 
@@ -279,7 +315,7 @@ class ClientHttp:
         for tentative in range(1, self.source.tentatives_max + 1):
             self._temporiser(url)
             try:
-                return self._appel_unique(url)
+                return self._appel_unique(url, charge, entetes)
             except urllib.error.HTTPError as exc:
                 derniere_erreur = f"HTTP {exc.code}"
                 if exc.code not in CODES_REESSAYABLES:
@@ -293,7 +329,7 @@ class ClientHttp:
             "Source injoignable, passage en mode dégradé si un cache existe",
             extra={"url": url, "source": self.source.nom, "erreur": derniere_erreur},
         )
-        degrade = self._cache_perime(url)
+        degrade = self._cache_perime(url, charge)
         if degrade is not None:
             return degrade
         raise ErreurSource(
@@ -304,19 +340,33 @@ class ClientHttp:
             derniere_erreur=derniere_erreur,
         )
 
-    def _appel_unique(self, url: str) -> ReponseHttp:
+    def _appel_unique(
+        self,
+        url: str,
+        charge: bytes | None = None,
+        supplementaires: Mapping[str, str] | None = None,
+    ) -> ReponseHttp:
+        entetes = {
+            "User-Agent": self.ingestion.agent_utilisateur,
+            "Accept-Language": "fr",
+        }
+        if charge is not None:
+            entetes["Content-Type"] = "application/json"
+            entetes["Accept"] = "application/json"
+        # Les en-têtes déclarés viennent ensuite : ils peuvent préciser un Accept
+        # ou un Referer, jamais l'identité, filtrée en amont par `recuperer`.
+        entetes.update(supplementaires or {})
         requete = urllib.request.Request(
             url,
-            headers={
-                "User-Agent": self.ingestion.agent_utilisateur,
-                "Accept-Language": "fr",
-            },
+            data=charge,
+            headers=entetes,
+            method="POST" if charge is not None else "GET",
         )
         reponse = self._ouvreur(requete, float(self.source.timeout_s))
         contenu: bytes = reponse.read()
         code = int(getattr(reponse, "status", 200) or 200)
-        entetes = getattr(reponse, "headers", None)
-        horodatage_donnee = _horodatage_entete(entetes)
+        entetes_reponse = getattr(reponse, "headers", None)
+        horodatage_donnee = _horodatage_entete(entetes_reponse)
         maintenant = datetime.now(UTC)
         self._cache.ecrire(
             url,
@@ -326,6 +376,7 @@ class ClientHttp:
                 "donnee": horodatage_donnee.isoformat() if horodatage_donnee else "",
                 "code": str(code),
             },
+            requete=charge,
         )
         return ReponseHttp(
             url=url,
@@ -363,8 +414,10 @@ class ClientHttp:
 
     # ------------------------------------------------------------------- cache
 
-    def _entree_cache(self, url: str) -> tuple[bytes, dict[str, str], datetime] | None:
-        entree = self._cache.lire(url)
+    def _entree_cache(
+        self, url: str, charge: bytes | None = None
+    ) -> tuple[bytes, dict[str, str], datetime] | None:
+        entree = self._cache.lire(url, charge)
         if entree is None:
             return None
         contenu, metadonnees = entree
@@ -382,10 +435,10 @@ class ClientHttp:
         except ValueError:
             return None
 
-    def _cache_frais(self, url: str) -> ReponseHttp | None:
+    def _cache_frais(self, url: str, charge: bytes | None = None) -> ReponseHttp | None:
         if self.source.cache_minutes <= 0:
             return None
-        entree = self._entree_cache(url)
+        entree = self._entree_cache(url, charge)
         if entree is None:
             return None
         contenu, metadonnees, collecte = entree
@@ -400,8 +453,8 @@ class ClientHttp:
             depuis_cache=True,
         )
 
-    def _cache_perime(self, url: str) -> ReponseHttp | None:
-        entree = self._entree_cache(url)
+    def _cache_perime(self, url: str, charge: bytes | None = None) -> ReponseHttp | None:
+        entree = self._entree_cache(url, charge)
         if entree is None:
             return None
         contenu, metadonnees, collecte = entree

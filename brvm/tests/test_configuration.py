@@ -18,7 +18,7 @@ from brvm.config.chargement import (
     construire_calendrier_depuis_config,
     resume_configuration,
 )
-from brvm.config.modeles import Configuration
+from brvm.config.modeles import ConfigSource, Configuration
 from brvm.domain.enums import Pays
 from brvm.utils.erreurs import ErreurConfiguration
 
@@ -311,11 +311,50 @@ class TestConfigurationPreRemplie:
 
     def test_analyseur_lit_le_ticker_dans_le_lien(self, tmp_path: Path) -> None:
         """Sur la page de cote observée, le code valeur n'est pas dans la cellule."""
-        configuration = self._charge(tmp_path)
-        source = next(s for s in configuration.sources if s.type == "web")
+        source = self._source(tmp_path, "cote_du_jour")
         assert source.analyseur is not None
         assert source.analyseur.colonnes_lien["Nom"].champ == "ticker"
         assert source.actif is False  # inactive tant que l'URL n'est pas vérifiée
+
+    def _source(self, tmp_path: Path, nom: str) -> ConfigSource:
+        return next(s for s in self._charge(tmp_path).sources if s.nom == nom)
+
+    def test_toutes_les_sources_reseau_restent_inactives(self, tmp_path: Path) -> None:
+        """Aucune structure de page ou d'API n'a pu être observée depuis
+        l'environnement de développement : rien ne collecte tant que
+        l'utilisateur n'a pas vérifié lui-même."""
+        configuration = self._charge(tmp_path)
+        reseau = [s for s in configuration.sources if s.type in {"web", "api_json"}]
+        assert reseau and all(s.actif is False for s in reseau)
+
+    def test_page_officielle_declaree_avec_len_tete_manquant_en_evidence(
+        self, tmp_path: Path
+    ) -> None:
+        """Les en-têtes attestés sont déclarés ; celui qui ne l'est pas porte la
+        mention qui le signale, plutôt qu'un intitulé plausible inventé."""
+        source = self._source(tmp_path, "brvm_officiel")
+        assert source.analyseur is not None
+        colonnes = source.analyseur.colonnes
+        assert colonnes["Closing price"] == "cloture"
+        assert colonnes["Previous price"] == "cours_precedent"
+        entete_ticker = next(cle for cle, champ in colonnes.items() if champ == "ticker")
+        assert "RENSEIGNER" in entete_ticker
+
+    def test_api_historique_declare_deux_formats_de_date(self, tmp_path: Path) -> None:
+        """Dates envoyées en aaaa-mm-jj, reçues en jj/mm/aaaa : confondre les deux
+        ne produit pas une erreur mais une séance décalée."""
+        source = self._source(tmp_path, "sikafinance_historique")
+        assert source.api is not None
+        assert source.api.format_date == "%d/%m/%Y"
+        assert source.api.format_date_requete == "%Y-%m-%d"
+        assert source.api.gabarit_ticker == "{ticker}.{pays_bas}"
+        assert source.api.chemin_liste == "lst"
+        assert source.api.historique is False
+
+    def test_api_historique_ne_declare_que_les_champs_attestes(self, tmp_path: Path) -> None:
+        source = self._source(tmp_path, "sikafinance_historique")
+        assert source.api is not None
+        assert set(source.api.champs) == {"Date", "Open", "High", "Low", "Close", "Volume"}
 
 
 class TestFraisPeriodiques:

@@ -154,6 +154,63 @@ sources:
     #   # « colonne » si la page porte une date de séance, sinon « jour_de_collecte ».
     #   date_seance_depuis: jour_de_collecte
 
+  # ----------------------------------------------------------------------------
+  #  [FAIT] Troisième forme de source : une API JSON (`type: api_json`)
+  # ----------------------------------------------------------------------------
+  #  À utiliser quand la source répond en JSON plutôt qu'en HTML. Elle est
+  #  interrogée VALEUR PAR VALEUR, sur une fenêtre de dates, à partir du fichier
+  #  d'univers : une valeur injoignable n'interrompt pas la collecte des autres.
+  #
+  #  Comme pour une page, rien n'est deviné : sans bloc `api`, la source refuse
+  #  d'exister. Appelez l'API une fois, regardez sa réponse, puis décrivez-la.
+  #
+  #  Deux pièges à connaître :
+  #    • les dates ENVOYÉES et REÇUES n'ont souvent pas le même format, d'où deux
+  #      champs distincts. Se tromper ne donne pas une erreur mais une séance
+  #      décalée — le connecteur refuse donc toute date non conforme au format
+  #      déclaré plutôt que de la réinterpréter ;
+  #    • `historique: false` ne retient que la séance visée. Passez-le à true le
+  #      temps d'un rattrapage : les barres anciennes seront alors signalées
+  #      « périmées », ce qui est attendu.
+  #
+  # - nom: <votre_api>
+  #   type: api_json
+  #   actif: false
+  #   priorite: 4
+  #   url_base:             # À RENSEIGNER — adresse exacte du point d'entrée
+  #   chemin_fichier:
+  #   timeout_s: 30
+  #   tentatives_max: 3
+  #   backoff_initial_s: 2
+  #   backoff_facteur: 2
+  #   respecter_robots: true
+  #   cache_minutes: 60
+  #   age_max_minutes: 1440
+  #   api:
+  #     # Chemin pointé menant à la liste d'enregistrements. Vide si la réponse
+  #     # est déjà une liste. Un segment numérique indexe une liste.
+  #     chemin_liste: <clé de la liste>
+  #     # Corps de la requête POST. Vide pour un GET.
+  #     # Jetons remplacés à chaque appel : {ticker}, {debut}, {fin}.
+  #     corps:
+  #       <champ attendu>: "{ticker}"
+  #     # Champ de la réponse → champ du système. Champs acceptés : ticker,
+  #     # date_seance, statut_seance, ouverture, plus_haut, plus_bas, cloture,
+  #     # cours_precedent, volume_titres, volume_xof, nb_transactions,
+  #     # limite_achat, limite_vente, commentaire.
+  #     champs:
+  #       <champ de la réponse>: date_seance
+  #       <champ de la réponse>: cloture
+  #     format_date: "%d/%m/%Y"          # format des dates REÇUES
+  #     format_date_requete: "%Y-%m-%d"  # format des dates ENVOYÉES
+  #     # Identifiant attendu par la source. Jetons : {ticker}, {pays}, {pays_bas}.
+  #     gabarit_ticker: "{ticker}"
+  #     fenetre_jours: 90                # profondeur demandée en une requête
+  #     historique: false
+  #     # En-têtes que VOUS avez constatés nécessaires. Jeton : {ticker}.
+  #     # Le User-Agent n'est pas surchargeable : il vient d'ingestion.
+  #     entetes: {}
+
 # ------------------------------------------------------------------------------
 #  Barème de frais — [FAIT] TOUT EST À RENSEIGNER
 # ------------------------------------------------------------------------------

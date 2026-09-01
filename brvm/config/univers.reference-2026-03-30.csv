@@ -15,6 +15,21 @@
 # Le ticker retenu est le code court, sans suffixe pays : le pays figure dans sa
 # propre colonne. La source le publie sous la forme « SNTS.sn ».
 #
+# RECOUPEMENT DE LA COLONNE `pays` — le rattachement pays de chaque valeur a été
+# comparé à celui d'une seconde source indépendante : le paquet R « BRVM »
+# (K. F. Sessie, publié sur le CRAN), fichier R/brvm-company-country.R. Sur les
+# 44 valeurs présentes dans les deux listes, les deux sources s'accordent sur
+# les 44 pays, sans une seule divergence. Ce n'est pas une validation officielle,
+# mais deux relevés indépendants qui concordent valent mieux qu'un seul.
+#
+# Écarts entre les deux listes, tous expliqués et aucun corrigé en silence :
+#   • BICB, LNBB, ORAC figurent dans la capture du 30/03/2026 et pas dans le
+#     paquet R, plus ancien. Ils sont conservés, avec leur pays de la capture ;
+#   • TTRC figure dans le paquet R mais pas dans la capture. Ses auteurs l'ont
+#     eux-mêmes mis en commentaire dans leurs listes de tickers (« #, "TTRC" »).
+#     Il n'est donc PAS ajouté ici : son intitulé n'est attesté nulle part et il
+#     serait inventé. Si vous le retrouvez sur la cote, ajoutez-le vous-même.
+#
 # Pour l'utiliser : copiez ce fichier en univers.csv.
 ticker,nom,isin,pays,secteur,compartiment,actif
 ABJC,SERVAIR ABIDJAN CI,,CI,,,true

@@ -120,6 +120,141 @@ sources:
       # La page de cote du jour ne porte pas de colonne de date.
       date_seance_depuis: jour_de_collecte
 
+  # --------------------------------------------------------------------------
+  #  Site officiel de l'entreprise de marché — structure relevée dans un paquet
+  #  R publié sur le CRAN qui l'exploite en production [R-BRVM]
+  # --------------------------------------------------------------------------
+  #  PROVENANCE : paquet R « BRVM » (K. F. Sessie, O. A. G. Odjo), fichiers
+  #  R/brvm-ticker.R, R/brvm-bysetor.R et R/brvm-top-flop.R. Le paquet lit
+  #  https://www.brvm.org/en/cours-actions/0/status/200, prend le 4e tableau de
+  #  la page (numérotation R, à partir de 1 → `index_tableau: 3` ici, à partir
+  #  de 0) et nomme ses colonnes :
+  #
+  #      1 code valeur | 2 raison sociale | Volume | Previous price |
+  #      Opening price | Closing price | Change (%)
+  #
+  #  Les cinq derniers en-têtes sont ceux de la page : le code R les utilise tels
+  #  quels avant de renommer quoi que ce soit. Les deux premiers, il les renomme
+  #  sans les avoir cités — leur intitulé exact reste donc INCONNU, et c'est la
+  #  seule ligne qui vous reste à remplir ci-dessous.
+  #
+  #  ⚠️ NIVEAU DE PREUVE. Cette structure vient d'un tiers qui l'exploite, pas
+  #  d'une observation faite ici : l'accès réseau de l'environnement de
+  #  développement ne permettait pas d'ouvrir la page. Un paquet publié peut
+  #  avoir pris du retard sur une refonte du site. À revérifier :
+  #
+  #      python -m brvm.ingestion.capture --config config/config.yaml --source brvm_officiel
+  #      python -m brvm.ingestion.capture --lister-tableaux <fichier capturé>
+  #
+  #  Autres pages du même site, mêmes réserves, non câblées ici :
+  #      /en/indices/status/200         (4e tableau)  — indices
+  #      /en/capitalisations/0/status/200            — capitalisations
+  #      /en/volumes/0/status/200                    — volumes échangés
+  #      /en/summary                    (1er tableau) — activité de la séance
+  # --------------------------------------------------------------------------
+  - nom: brvm_officiel
+    type: web
+    actif: false          # passez à true après avoir vérifié la page vous-même
+    priorite: 3
+    url_base: https://www.brvm.org/en/cours-actions/0/status/200
+    chemin_fichier:
+    timeout_s: 20
+    tentatives_max: 3
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+    analyseur:
+      type: tableau_html
+      index_tableau: 3
+      colonnes:
+        # ⚠️ À RENSEIGNER : l'intitulé exact de la colonne du code valeur, tel
+        # qu'il s'affiche sur la page. Tant qu'il est faux, la collecte s'arrête
+        # sur « en-tête introuvable » — elle ne renvoie pas un tableau vide.
+        "À RENSEIGNER — en-tête de la colonne du code valeur": ticker
+        "Volume": volume_titres
+        "Previous price": cours_precedent
+        "Opening price": ouverture
+        "Closing price": cloture
+      # Cette page ne porte pas de colonne de date : elle montre la dernière
+      # séance. Le contrôle « séance hors calendrier » rattrape le cas où la
+      # page servie serait celle d'un autre jour que celui de la collecte.
+      date_seance_depuis: jour_de_collecte
+
+  # --------------------------------------------------------------------------
+  #  API d'historique — schéma relevé dans le même paquet R [R-BRVM]
+  # --------------------------------------------------------------------------
+  #  PROVENANCE : R/brvm-get-data.R et R/create-all-markets.R du paquet « BRVM ».
+  #  Requête POST JSON vers https://www.sikafinance.com/api/general/GetHistos,
+  #  corps {ticker, datedeb, datefin, xperiod}, réponse {"lst": [ {...}, … ]}
+  #  avec les champs Date, Open, High, Low, Close, Volume.
+  #
+  #  Points relevés dans le code, non supposés :
+  #    • les dates ENVOYÉES sont en aaaa-mm-jj, les dates REÇUES en jj/mm/aaaa —
+  #      d'où deux formats distincts ci-dessous. Se tromper de format ne donne
+  #      pas une erreur mais une séance décalée : le connecteur refuse donc toute
+  #      date non conforme au format déclaré plutôt que de la réinterpréter ;
+  #    • le paquet découpe l'historique en fenêtres de 89 jours : `fenetre_jours`
+  #      reprend cette valeur, qui est la seule attestée ;
+  #    • xperiod : 0 = quotidien, 7 = hebdomadaire, 30 = mensuel, 91 =
+  #      trimestriel, 365 = annuel. Seul le quotidien nous intéresse ;
+  #    • le ticker attendu porte un suffixe pays en minuscules (SNTS.sn), d'où
+  #      `gabarit_ticker`. Il vient de la liste déroulante « dpShares » de la page
+  #      d'accueil du site ; la colonne `pays` d'univers.csv doit donc coïncider
+  #      avec ce suffixe. En cas d'écart, la valeur remonte en avertissement
+  #      « n'a pas pu être collectée », jamais en cours faux ;
+  #    • le paquet envoie un Referer par valeur ; il est reproduit ici parce
+  #      qu'il a été constaté nécessaire par son auteur, pas par précaution.
+  #
+  #  ⚠️ MÊME NIVEAU DE PREUVE que ci-dessus, et une réserve de plus : avant
+  #  d'activer une collecte automatisée, lisez les conditions d'utilisation du
+  #  site et son robots.txt. Le connecteur refuse déjà de collecter si le
+  #  robots.txt l'interdit ou reste illisible, mais il ne lit pas les CGU à votre
+  #  place. C'est aussi la plateforme sur laquelle vous passez vos ordres : une
+  #  collecte trop insistante n'est pas un risque technique, c'est un risque de
+  #  compte.
+  #
+  #  MODE HISTORIQUE : `historique: false` ne retient que la séance visée. Pour
+  #  un rattrapage initial, passez-le à true le temps d'un cycle — les barres
+  #  anciennes seront alors signalées « périmées » par le contrôle de fraîcheur,
+  #  ce qui est attendu et non un défaut.
+  # --------------------------------------------------------------------------
+  - nom: sikafinance_historique
+    type: api_json
+    actif: false          # passez à true après avoir lu les CGU et le robots.txt
+    priorite: 4
+    url_base: https://www.sikafinance.com/api/general/GetHistos
+    chemin_fichier:
+    timeout_s: 30
+    tentatives_max: 3
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+    api:
+      chemin_liste: lst
+      corps:
+        ticker: "{ticker}"
+        datedeb: "{debut}"
+        datefin: "{fin}"
+        xperiod: "0"
+      champs:
+        Date: date_seance
+        Open: ouverture
+        High: plus_haut
+        Low: plus_bas
+        Close: cloture
+        Volume: volume_titres
+      format_date: "%d/%m/%Y"
+      format_date_requete: "%Y-%m-%d"
+      gabarit_ticker: "{ticker}.{pays_bas}"
+      fenetre_jours: 89
+      historique: false
+      entetes:
+        Referer: "https://www.sikafinance.com/marches/historiques/{ticker}"
+
 ingestion:
   # ⚠️ À RENSEIGNER — c'est le seul champ qui empêche ce fichier de se charger,
   # et c'est volontaire : identifiez-vous auprès des serveurs que vous interrogez.

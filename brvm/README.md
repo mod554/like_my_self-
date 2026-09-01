@@ -21,7 +21,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 |---|---|---|
 | 1 — Socle | Configuration unique, erreurs, journal structuré, arithmétique XOF, calendrier de séances | ✅ livrée |
 | 2 — Modèle de données | Modèles pydantic, schéma SQLite, écriture idempotente, historisation des corrections, ajustement des OST | ✅ livrée |
-| 3 — Ingestion | Interface `DataSource`, connecteur fichier opérationnel, connecteur web à analyse déclarée, politique réseau, anomalies et quarantaine | ✅ livrée |
+| 3 — Ingestion | Interface `DataSource`, connecteur fichier opérationnel, connecteurs web et API JSON à schéma déclaré, référentiel d'univers, politique réseau, anomalies et quarantaine | ✅ livrée |
 | 4 — Analyse technique | SMA, EMA, RSI, MACD, Bollinger, ATR, OBV, momentum, extrêmes glissants, score de confiance liquidité, signaux | ✅ livrée |
 | 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, TRI, simulateur d'ordre | ✅ livrée |
 | 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ✅ livrée |
@@ -149,6 +149,51 @@ Une cellule vide y signifie « non publié », jamais zéro. Et si vous laissez
 `statut_seance` vide avec un volume nul, le statut retenu est `INCONNU` : le
 système ne suppose pas qu'il s'agit d'une séance sans transaction.
 
+### Renseigner l'univers suivi
+
+Le référentiel des valeurs est une **donnée de configuration**, pas une déduction
+de ce que les sources publient : une source qui cesse de coter une valeur ne doit
+pas la faire disparaître du portefeuille, et une source qui en invente une ne doit
+pas l'y ajouter.
+
+```bash
+cp config/univers.reference-2026-03-30.csv config/univers.csv
+```
+
+Ce fichier de référence liste 48 valeurs relevées sur une capture du 30/03/2026.
+Sa colonne `pays` a été recoupée avec une seconde source indépendante — les deux
+s'accordent sur les 44 valeurs communes, sans divergence. Les écarts d'inventaire
+entre les deux relevés sont documentés en tête du fichier, et aucun n'a été comblé
+en inventant un intitulé. **Ce n'est pas la cote officielle** : recoupez-la avant
+d'en dépendre.
+
+Une ligne mal formée arrête le chargement en nommant son numéro. Un ISIN dont la
+clé de contrôle est fausse est refusé — c'est une erreur de saisie, pas une donnée
+à propager. Une colonne vide signifie « non renseigné », jamais une chaîne vide.
+
+### Activer une source d'API JSON
+
+`type: api_json` interroge une API **valeur par valeur**, sur une fenêtre de
+dates, selon le schéma que vous déclarez dans le bloc `api` : chemin menant à la
+liste d'enregistrements, correspondance des champs, corps de la requête, formats
+de date. Rien n'est deviné ; sans bloc `api`, la source refuse d'exister.
+
+Deux traits méritent d'être connus avant de s'en servir :
+
+- **Les formats de date d'envoi et de réception sont déclarés séparément**
+  (`format_date_requete` et `format_date`), parce qu'une API peut attendre
+  `2026-03-30` et répondre `30/03/2026`. Une date qui ne respecte pas le format
+  déclaré n'est **jamais** réinterprétée : le format est précisément ce qui
+  distingue le 3 février du 2 mars dans `03/02`. La réponse est écartée avec le
+  message qui dit quoi corriger, plutôt qu'importée avec une séance décalée.
+- **Par défaut, seule la séance visée est retenue** de la fenêtre reçue. Pour un
+  rattrapage d'historique, passez `historique: true` le temps d'un cycle : les
+  barres anciennes seront alors signalées « périmées » par le contrôle de
+  fraîcheur, ce qui est le comportement attendu et non un défaut.
+
+Une valeur injoignable n'interrompt pas la collecte des autres : elle remonte en
+avertissement nominatif, et la collecte est marquée `PARTIEL`.
+
 ### Activer une source web
 
 Aucun connecteur réseau n'est livré avec des sélecteurs. Aucune URL, aucun
@@ -181,6 +226,19 @@ s'abstient s'il est illisible, mais la décision d'ensemble vous revient.
 **Si la page charge ses cotations en JavaScript**, l'analyseur de tableaux ne
 verra rien — et le dira. Aucun contournement n'est fourni : restez sur le fichier
 manuel, ou trouvez une réponse de données documentée.
+
+### Ce qui est pré-rempli, et sur quelle preuve
+
+`config/config.sg-capital-2026.yaml` contient deux sources réseau pré-remplies et
+**inactives** : la page de cote du site officiel, et une API d'historique. Leurs
+adresses, leurs schémas et leurs formats de date ne sont pas devinés — ils sont
+relevés dans le code source de paquets R publiés qui les exploitent.
+
+C'est un niveau de preuve intermédiaire, et il est traité comme tel :
+[`docs/sources-verifiees.md`](docs/sources-verifiees.md) donne, pour chaque
+structure, le fichier exact d'où elle vient, ce qui reste inconnu et pourquoi, et
+les deux sources écartées avec leur motif — l'une parce qu'elle ne publie qu'en
+HTTP en clair, l'autre parce que ses données sont dans du JavaScript.
 
 ### Politique réseau appliquée
 
@@ -595,20 +653,24 @@ en quarantaine. Aucun n'est réparé en devinant.
 brvm/
 ├── config/
 │   ├── config.exemple.yaml          fichier unique commenté, champs obligatoires vides
+│   ├── config.sg-capital-2026.yaml  exemple travaillé, sources réseau inactives
 │   ├── jours_feries.exemple.yaml    calendrier UEMOA, à renseigner
-│   └── univers.exemple.csv          univers suivi, à renseigner
+│   ├── univers.exemple.csv          univers suivi, à renseigner
+│   └── univers.reference-*.csv      48 valeurs relevées, pays recoupé
+├── docs/
+│   └── sources-verifiees.md         d'où vient chaque structure pré-remplie
 ├── src/brvm/
 │   ├── config/      schéma de configuration + chargement à messages actionnables
 │   ├── domain/      enums, arithmétique XOF, calendrier, modèles, ajustement OST
 │   ├── storage/     schéma SQL, connexion/migration, dépôts idempotents
-│   ├── ingestion/   DataSource, politique réseau, connecteurs, anomalies, orchestrateur
+│   ├── ingestion/   DataSource, politique réseau, connecteurs, univers, anomalies, orchestrateur
 │   ├── indicators/  série illiquidité-consciente, calculs, confiance, signaux
 │   ├── portfolio/   frais, fiscalité, PMP/FIFO, valorisation, performance, simulateur
 │   ├── risk/        volatilité, corrélation, drawdown, concentration, liquidité, stops
 │   ├── backtest/    moteur événementiel, exécution conservatrice, métriques, walk-forward
 │   ├── app/         couche 7 — à venir
 │   └── utils/       erreurs, journalisation structurée
-└── tests/           595 tests, 94 % de couverture
+└── tests/           663 tests, 95 % de couverture
 ```
 
 Le stockage passe entièrement par `storage/base.py` et `storage/depots.py` : un
@@ -622,11 +684,18 @@ remplacement de SQLite par DuckDB resterait circonscrit à ces deux fichiers.
   « Temps réel » signifie ici : dernière donnée disponible, horodatée, avec son
   âge en minutes et un statut de fiabilité. Chaque écran affichera l'horodatage
   de la donnée la plus ancienne qu'il utilise.
-- **Aucun connecteur réseau n'est activé par défaut, et aucun ne contient de
-  sélecteur.** Les URL et les structures de page n'ont pas été vérifiées par
-  l'auteur du code : elles sont à constater et à décrire par l'utilisateur, en
-  respectant le `robots.txt` et les conditions d'utilisation de la source. Voir
-  « Activer une source web » plus haut.
+- **Aucun connecteur réseau n'est activé par défaut.** Les adresses et structures
+  pré-remplies dans l'exemple travaillé sont attestées par le code source de
+  paquets tiers qui les exploitent, **jamais observées par l'auteur du code** :
+  l'environnement de développement n'avait pas accès aux hôtes concernés. Un
+  paquet publié peut avoir pris du retard sur une refonte de site. À vous de
+  vérifier, en respectant le `robots.txt` et les conditions d'utilisation de la
+  source. Voir [`docs/sources-verifiees.md`](docs/sources-verifiees.md).
+- **Sur la page de cote officielle, l'en-tête de la colonne du code valeur reste
+  inconnu.** La preuve disponible porte sur sa *position*, pas sur son *nom* : le
+  code tiers la renomme sans citer son intitulé. Plutôt qu'un libellé plausible,
+  la configuration porte une mention « À RENSEIGNER » — la collecte s'arrête sur
+  « en-tête introuvable » tant qu'elle n'est pas corrigée.
 - **Une page rendue en JavaScript n'est pas exploitable** par l'analyseur de
   tableaux, qui travaille sur le document servi par le serveur. Le connecteur le
   signale au lieu de renvoyer un tableau vide.
@@ -658,6 +727,8 @@ cotations aux frontières, distinction séance sans transaction / cours inchang�
 idempotence et historisation des corrections, ajustement des OST et absence de
 biais d'anticipation, respect du `robots.txt` et des reculs exponentiels, mode
 dégradé sur cache périmé, extraction de tableaux HTML et correspondance de
-colonnes déclarée, chaque contrôle d'anomalie avec sa gravité, les valeurs de
+colonnes déclarée, lecture stricte du référentiel d'univers, appels d'API en
+POST avec un cache distinct par corps de requête, refus d'une date qui ne respecte
+pas le format déclaré, chaque contrôle d'anomalie avec sa gravité, les valeurs de
 référence de chaque indicateur, la causalité de tous les calculs, et
 l'impossibilité d'exécuter un signal sur la barre qui l'a produit.

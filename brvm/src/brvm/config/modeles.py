@@ -215,6 +215,79 @@ class ConfigAnalyseur(_Base):
         return self
 
 
+class ConfigApi(_Base):
+    """Description d'une API JSON, telle que VOUS l'avez observée.
+
+    Comme pour l'analyse de page, le système n'invente aucun schéma : vous
+    déclarez le chemin menant à la liste d'enregistrements, la correspondance
+    entre les champs de la réponse et ceux du système, et le corps de la requête.
+
+    Le corps accepte trois jetons, remplacés à chaque appel :
+    ``{ticker}``, ``{debut}`` et ``{fin}``.
+    """
+
+    #: Chemin pointé menant à la liste d'enregistrements dans la réponse.
+    #: Vide si la réponse est déjà une liste.
+    chemin_liste: str = ""
+    #: Corps JSON de la requête POST. Vide pour un GET.
+    corps: dict[str, str] = Field(default_factory=dict)
+    #: Champ de la réponse → champ du système. Champs acceptés : voir
+    #: CHAMPS_ANALYSABLES.
+    champs: dict[str, str] = Field(default_factory=dict)
+    #: Format des dates **dans la réponse**, au sens de `datetime.strptime`.
+    format_date: str = Field(default="%Y-%m-%d", min_length=2)
+    #: Format des dates **dans la requête**. Souvent différent du précédent :
+    #: une API peut attendre 2026-03-30 et répondre 30/03/2026.
+    format_date_requete: str = Field(default="%Y-%m-%d", min_length=2)
+    #: Gabarit du ticker envoyé à la source. Jetons : ``{ticker}``, ``{pays}``,
+    #: ``{pays_bas}``. Exemple : ``{ticker}.{pays_bas}`` donne « SNTS.sn ».
+    gabarit_ticker: str = "{ticker}"
+    #: Profondeur d'historique demandée en une requête, en jours. Une API qui
+    #: plafonne la fenêtre impose sa valeur : relevez-la, ne la supposez pas.
+    fenetre_jours: int = Field(default=90, gt=0)
+    #: Vrai pour écrire toutes les barres de la fenêtre (rattrapage d'historique),
+    #: faux pour ne retenir que la séance visée. Le rattrapage fait remonter des
+    #: barres anciennes, que le contrôle de fraîcheur signalera comme périmées :
+    #: c'est attendu, et c'est pourquoi ce mode se demande explicitement.
+    historique: bool = False
+    #: En-têtes supplémentaires constatés nécessaires par VOUS (``Referer``,
+    #: ``Origin``…). Jeton accepté : ``{ticker}``. Le ``User-Agent`` n'est pas
+    #: surchargeable ici : l'identité annoncée doit rester vraie.
+    entetes: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _valider(self) -> ConfigApi:
+        if not self.champs:
+            raise ValueError(
+                "Aucune correspondance de champs déclarée : décrivez la réponse que "
+                "vous avez observée."
+            )
+        cibles = set(self.champs.values())
+        if "ticker" not in cibles and "{ticker}" not in self.gabarit_ticker:
+            raise ValueError(
+                "Ni champ `ticker` dans la réponse, ni jeton {ticker} dans le gabarit : "
+                "les enregistrements ne seraient rattachables à aucune valeur."
+            )
+        if "date_seance" not in cibles:
+            raise ValueError(
+                "Aucun champ ne correspond à `date_seance` : une cotation sans séance "
+                "n'est pas exploitable."
+            )
+        if inconnus := cibles - CHAMPS_ANALYSABLES:
+            raise ValueError(
+                "Champs inconnus dans la correspondance : "
+                + ", ".join(sorted(inconnus))
+                + ". Champs acceptés : "
+                + ", ".join(sorted(CHAMPS_ANALYSABLES))
+            )
+        if any(nom.lower() == "user-agent" for nom in self.entetes):
+            raise ValueError(
+                "Le User-Agent est fixé par `ingestion.agent_utilisateur` et ne peut "
+                "pas être redéfini par une source."
+            )
+        return self
+
+
 class ConfigSource(_Base):
     """Paramétrage d'un connecteur d'ingestion."""
 
@@ -239,6 +312,8 @@ class ConfigSource(_Base):
     age_max_minutes: int = Field(gt=0)
     #: Structure de la page, constatée par vous. Absent = source non analysable.
     analyseur: ConfigAnalyseur | None = None
+    #: Schéma de l'API, constaté par vous. Requis pour une source de type api_json.
+    api: ConfigApi | None = None
 
     @model_validator(mode="after")
     def _valider_cible(self) -> ConfigSource:

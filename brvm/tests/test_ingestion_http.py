@@ -250,6 +250,109 @@ class TestCache:
             client(configuration, ouvreur, dormeur, cache=tmp_path).recuperer(PAGE)
 
 
+class TestRequetePost:
+    """Une API interrogée en POST reste une requête adressée à un hôte."""
+
+    def test_corps_json_declenche_un_post_type(
+        self, configuration: Configuration, dormeur: Callable[[float], None]
+    ) -> None:
+        vues: list[tuple[str, bytes | None, str | None]] = []
+
+        class OuvreurEspion(OuvreurSimule):
+            def __call__(self, requete: object, timeout: float) -> ReponseSimulee:
+                vues.append(
+                    (
+                        getattr(requete, "method", "?") or "?",
+                        getattr(requete, "data", None),
+                        getattr(requete, "headers", {}).get("Content-type"),
+                    )
+                )
+                return super().__call__(requete, timeout)
+
+        ouvreur = OuvreurEspion(
+            {ROBOTS: ReponseSimulee(ROBOTS_PERMISSIF), PAGE: ReponseSimulee("{}")}
+        )
+        client(configuration, ouvreur, dormeur).recuperer(PAGE, corps_json={"ticker": "TEST1"})
+
+        methode, corps, type_contenu = vues[-1]
+        assert methode == "POST"
+        assert corps == b'{"ticker": "TEST1"}'
+        assert type_contenu == "application/json"
+
+    def test_le_robots_txt_est_consulte_aussi_pour_un_post(
+        self, configuration: Configuration, dormeur: Callable[[float], None]
+    ) -> None:
+        ouvreur = OuvreurSimule(
+            {ROBOTS: ReponseSimulee(ROBOTS_INTERDIT), PAGE: ReponseSimulee("{}")}
+        )
+        with pytest.raises(ErreurSource, match=r"robots\.txt"):
+            client(configuration, ouvreur, dormeur).recuperer(PAGE, corps_json={"a": "1"})
+        assert ouvreur.nb_appels(PAGE) == 0
+
+    def test_deux_corps_differents_ne_partagent_pas_leur_cache(
+        self, configuration: Configuration, dormeur: Callable[[float], None], tmp_path: Path
+    ) -> None:
+        """Sur une API interrogée valeur par valeur, l'URL est la même pour toutes :
+        confondre leurs caches servirait le cours d'une valeur pour une autre."""
+        ouvreur = OuvreurSimule(
+            {
+                ROBOTS: ReponseSimulee(ROBOTS_PERMISSIF),
+                PAGE: [ReponseSimulee('{"v": 1}'), ReponseSimulee('{"v": 2}')],
+            }
+        )
+        connexion = client(configuration, ouvreur, dormeur, cache=tmp_path, cache_minutes=60)
+        premiere = connexion.recuperer(PAGE, corps_json={"ticker": "TEST1"})
+        seconde = connexion.recuperer(PAGE, corps_json={"ticker": "TEST2"})
+        assert (premiere.texte(), seconde.texte()) == ('{"v": 1}', '{"v": 2}')
+        assert ouvreur.nb_appels(PAGE) == 2
+
+        # Le même corps, lui, retrouve bien son entrée de cache.
+        assert connexion.recuperer(PAGE, corps_json={"ticker": "TEST1"}).depuis_cache is True
+        assert ouvreur.nb_appels(PAGE) == 2
+
+    def test_ordre_des_cles_du_corps_sans_effet_sur_le_cache(
+        self, configuration: Configuration, dormeur: Callable[[float], None], tmp_path: Path
+    ) -> None:
+        ouvreur = OuvreurSimule(
+            {ROBOTS: ReponseSimulee(ROBOTS_PERMISSIF), PAGE: ReponseSimulee("{}")}
+        )
+        connexion = client(configuration, ouvreur, dormeur, cache=tmp_path, cache_minutes=60)
+        connexion.recuperer(PAGE, corps_json={"a": "1", "b": "2"})
+        rejoue = connexion.recuperer(PAGE, corps_json={"b": "2", "a": "1"})
+        assert rejoue.depuis_cache is True
+        assert ouvreur.nb_appels(PAGE) == 1
+
+    def test_entetes_declares_sont_transmis(
+        self, configuration: Configuration, dormeur: Callable[[float], None]
+    ) -> None:
+        vus: list[str | None] = []
+
+        class OuvreurEspion(OuvreurSimule):
+            def __call__(self, requete: object, timeout: float) -> ReponseSimulee:
+                vus.append(getattr(requete, "headers", {}).get("Referer"))
+                return super().__call__(requete, timeout)
+
+        ouvreur = OuvreurEspion(
+            {ROBOTS: ReponseSimulee(ROBOTS_PERMISSIF), PAGE: ReponseSimulee("{}")}
+        )
+        client(configuration, ouvreur, dormeur).recuperer(PAGE, entetes={"Referer": HOTE})
+        assert vus[-1] == HOTE
+
+    def test_identite_non_surchargeable(
+        self, configuration: Configuration, dormeur: Callable[[float], None]
+    ) -> None:
+        """Se faire passer pour un navigateur contredirait l'engagement de respecter
+        les conditions d'utilisation de la source. La requête n'est pas émise."""
+        ouvreur = OuvreurSimule(
+            {ROBOTS: ReponseSimulee(ROBOTS_PERMISSIF), PAGE: ReponseSimulee("{}")}
+        )
+        with pytest.raises(ErreurSource, match="User-Agent"):
+            client(configuration, ouvreur, dormeur).recuperer(
+                PAGE, entetes={"user-agent": "Mozilla/5.0"}
+            )
+        assert ouvreur.nb_appels(PAGE) == 0
+
+
 class TestFraicheur:
     def test_last_modified_devient_l_horodatage_de_donnee(
         self, configuration: Configuration, dormeur: Callable[[float], None]

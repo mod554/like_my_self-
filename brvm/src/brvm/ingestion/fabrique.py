@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from typing import Final
 
 from brvm.config.modeles import ConfigSource, Configuration
+from brvm.ingestion.api import SourceApiJson
 from brvm.ingestion.base import DataSource
 from brvm.ingestion.fichier import SourceFichier
 from brvm.ingestion.sikafinance import construire_analyseur
@@ -20,6 +21,10 @@ from brvm.utils.erreurs import ErreurConfiguration
 TYPES_CONNUS: Final[Mapping[str, str]] = {
     "fichier_csv": "Fichier CSV ou Excel local, alimenté à la main ou par export.",
     "web": "Page interrogée en HTTP, analysée selon la structure que vous décrivez.",
+    "api_json": (
+        "API JSON interrogée valeur par valeur, selon le schéma que vous décrivez "
+        "dans le bloc `api`. Requiert un référentiel d'univers renseigné."
+    ),
 }
 
 
@@ -35,6 +40,8 @@ def construire_source(source: ConfigSource, configuration: Configuration) -> Dat
             return SourceFichier(source, configuration)
         case "web":
             return SourceWeb(source, configuration, construire_analyseur(source, configuration))
+        case "api_json":
+            return SourceApiJson(source, configuration)
         case _:
             raise ErreurConfiguration(
                 f"Type de source inconnu : {source.type!r}. Types acceptés : "

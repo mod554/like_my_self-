@@ -1,1 +1,5 @@
+# Univers FICTIF de test. Aucune valeur réelle de la cote n'y figure.
 ticker,nom,isin,pays,secteur,compartiment,actif
+TEST1,Société de test un,,CI,Industrie,Principal,true
+TEST2,Société de test deux,,SN,Finances,Principal,true
+TEST3,Société de test trois,,BF,Agriculture,Principal,false
