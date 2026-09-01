@@ -66,10 +66,12 @@ async function fetchFaostatPrices(): Promise<FaostatRecord[]> {
   for (const base of FAOSTAT_URLS) {
     try {
       const url = `${base}?${params}`;
-      const response = await fetch(url, {
-        headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(45_000),
-      });
+      // Depuis 2026 l'API FAOSTAT publique renvoie 401 (« Missing Authorization
+      // Header ») : une clé est requise. Si FAOSTAT_KEY est défini on l'envoie ;
+      // sinon l'appel échoue vite (timeout court — les miroirs sont morts aussi).
+      const headers: Record<string, string> = { "Accept": "application/json", "User-Agent": "Mozilla/5.0" };
+      if (process.env.FAOSTAT_KEY) headers["Authorization"] = `Bearer ${process.env.FAOSTAT_KEY}`;
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(12_000) });
       if (!response.ok) continue;
       const json = await response.json() as FaostatResponse;
       const data = json.data ?? [];
@@ -149,11 +151,14 @@ export class FaoFpmaConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
-        : "OK";
-      const messageErreur = resultat.nbImportes === 0
-        ? "0 prix collectés — FAOSTAT API indisponible ou aucune donnée récente"
+      // 0 nouvel import sans erreur = dédup active → OK ; ERREUR seulement
+      // si la source n'a rien renvoyé ET qu'aucune donnée n'existe déjà
+      const dejaEnBase = await prisma.prixReleve.count({ where: { sourceId: source.id } }).catch(() => 0);
+      const statut = resultat.nbErreurs > 0
+        ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
+        : (resultat.nbImportes > 0 || dejaEnBase > 0) ? "OK" : "ERREUR";
+      const messageErreur = statut === "ERREUR"
+        ? "FAOSTAT indisponible : l'API publique exige désormais une authentification (HTTP 401) et les miroirs sont hors ligne — définir FAOSTAT_KEY pour réactiver"
         : resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null;
 
       await prisma.source.update({

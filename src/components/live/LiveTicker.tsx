@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 interface TickerItem {
   code: string;
@@ -45,12 +45,29 @@ function fmt(v: number | null, devise: string | null): string {
 export default function LiveTicker({ initialData, refreshInterval = 5 * 60 * 1000 }: Props) {
   const [data, setData] = useState<TickerData | null>(initialData ?? null);
   const [pulse, setPulse] = useState(false);
+  // Flash vert/rouge sur variation de cotation (style terminal financier)
+  const prevValeurs = useRef<Record<string, number | null>>({});
+  const [flash, setFlash] = useState<Record<string, "up" | "down">>({});
 
   const fetchTicker = useCallback(async () => {
     try {
       const res = await fetch("/api/ticker", { cache: "no-store" });
       if (!res.ok) return;
       const json = await res.json() as TickerData;
+
+      const nouveauxFlash: Record<string, "up" | "down"> = {};
+      for (const it of json.ticker ?? []) {
+        const prev = prevValeurs.current[it.code];
+        if (prev != null && it.valeurUsd != null && it.valeurUsd !== prev) {
+          nouveauxFlash[it.code] = it.valeurUsd > prev ? "up" : "down";
+        }
+        prevValeurs.current[it.code] = it.valeurUsd;
+      }
+      if (Object.keys(nouveauxFlash).length > 0) {
+        setFlash(nouveauxFlash);
+        setTimeout(() => setFlash({}), 1300);
+      }
+
       setData(json);
       setPulse(true);
       setTimeout(() => setPulse(false), 800);
@@ -91,7 +108,11 @@ export default function LiveTicker({ initialData, refreshInterval = 5 * 60 * 100
             const color = item.hausse === true ? "#92BA59" : item.hausse === false ? "#E05252" : "#92BA59";
             const arrow = item.hausse === true ? "▲" : item.hausse === false ? "▼" : "";
             return (
-              <span key={item.code} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span
+                key={item.code}
+                className={flash[item.code] === "up" ? "ag-flash-up" : flash[item.code] === "down" ? "ag-flash-down" : undefined}
+                style={{ display: "flex", alignItems: "center", gap: "4px", padding: "0 4px" }}
+              >
                 <span style={{ color: "rgba(255,255,255,0.5)" }}>
                   {item.filiere} · {item.code}
                 </span>
@@ -112,7 +133,7 @@ export default function LiveTicker({ initialData, refreshInterval = 5 * 60 * 100
       {taux && (
         <span style={{ fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.5)", marginLeft: "auto" }}>
           EUR/XOF · {taux.EUR_XOF.toFixed(3)}
-          {" · "}EUR/USD · {(1 / taux.EUR_USD).toFixed(4)}
+          {" · "}EUR/USD · {taux.EUR_USD.toFixed(4)}
         </span>
       )}
     </div>

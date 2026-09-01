@@ -92,7 +92,9 @@ async function getAnalyseData() {
         orderBy: { code: "asc" },
         include: {
           prixReleves: {
-            where: { fiabilite: { not: "EXEMPLE" } },
+            // Indicateurs calculés sur la série de référence (quotidien & +) —
+            // on exclut les barres intraday (1h/1min) qui écraseraient les MM/RSI.
+            where: { fiabilite: { not: "EXEMPLE" }, typePrix: { notIn: ["SPOT_1H", "SPOT_1MIN"] } },
             orderBy: { dateReleve: "desc" },
             take: 120,
             select: {
@@ -212,8 +214,8 @@ export default async function AnalysePage() {
     console.error("AnalysePage DB error:", e);
   }
 
-  const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
-  const FILIERE_ICON: Record<string, string>  = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰" };
+  const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A", CAFE: "#C4622D", CACAO: "#7B4A2D", PALMIER: "#C99A2E", HEVEA: "#4A6B57" };
+  const FILIERE_ICON: Record<string, string>  = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰", CAFE: "☕", CACAO: "🍫", PALMIER: "🌴", HEVEA: "🌳" };
 
   const analyses = filieres.flatMap((f) =>
     f.produits.map((p) => {
@@ -513,14 +515,32 @@ export default async function AnalysePage() {
                     </div>
                   </div>
 
+                  {/* Conversion temps réel XOF / EUR */}
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "10px", fontSize: 10, fontFamily: "monospace" }}>
+                    <span style={{ color: "var(--ag-forest)", background: "rgba(0,61,46,0.06)", padding: "3px 8px", borderRadius: "4px", border: "1px solid rgba(0,61,46,0.12)" }}>
+                      ≈ {(ind.dernierPrix * xofPerUsd).toLocaleString("fr-FR", { maximumFractionDigits: 0 })} XOF/T
+                    </span>
+                    <span style={{ color: "var(--ag-olive)", background: "rgba(107,118,13,0.06)", padding: "3px 8px", borderRadius: "4px", border: "1px solid rgba(107,118,13,0.12)" }}>
+                      ≈ {(ind.dernierPrix / eurPerUsd).toLocaleString("fr-FR", { maximumFractionDigits: 0 })} EUR/T
+                    </span>
+                    {ind.fiabiliteStat === "FAIBLE" && (
+                      <span style={{ color: "#B89B3A", background: "rgba(184,155,58,0.10)", padding: "3px 8px", borderRadius: "4px", border: "1px solid rgba(184,155,58,0.25)" }}>
+                        ⚠ échantillon court
+                      </span>
+                    )}
+                  </div>
+
                   {/* Metrics grid */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
                     {[
                       { l: "Dernier prix", v: `${ind.dernierPrix.toFixed(0)} $/T` },
                       { l: "Tendance 90j", v: ind.tendancePctMois !== null ? `${ind.tendancePctMois >= 0 ? "+" : ""}${ind.tendancePctMois.toFixed(1)}%/mois` : "—" },
-                      { l: "Volatilité", v: ind.volatilitePct !== null ? `${ind.volatilitePct.toFixed(1)}%` : "—" },
-                      { l: "MM30", v: ind.mm30 !== null ? `${ind.mm30.toFixed(0)} $/T` : ind.mm7 !== null ? `MM7 ${ind.mm7.toFixed(0)} $/T` : "—" },
-                      { l: "Fourchette 52 sem.", v: `${ind.min52.toFixed(0)}–${ind.max52.toFixed(0)} $` },
+                      { l: "RSI 14", v: ind.rsi14 !== null ? `${ind.rsi14}${ind.rsi14 > 70 ? " ⚠ suracheté" : ind.rsi14 < 30 ? " ✦ survendu" : ""}` : "—" },
+                      { l: "Momentum 30", v: ind.momentum30Pct !== null ? `${ind.momentum30Pct >= 0 ? "+" : ""}${ind.momentum30Pct.toFixed(1)}%` : "—" },
+                      { l: "Volatilité", v: ind.volatilitePct !== null ? `${ind.volatilitePct.toFixed(1)}%${ind.fiabiliteStat === "FAIBLE" ? " ⚠" : ""}` : "—" },
+                      { l: "MM7 / MM30", v: ind.mm7 !== null && ind.mm30 !== null ? `${ind.mm7.toFixed(0)} / ${ind.mm30.toFixed(0)}${ind.croisementMM === "GOLDEN" ? " ✦ golden" : ind.croisementMM === "DEATH" ? " ⚠ death" : ""}` : ind.mm7 !== null ? `${ind.mm7.toFixed(0)} / —` : "—" },
+                      { l: "Support · Résistance", v: `${ind.support.toFixed(0)} · ${ind.resistance.toFixed(0)} $` },
+                      { l: "Zone d'achat", v: `≤ ${ind.zoneAchatMax.toFixed(0)} $/T` },
                       { l: "Position / fourchette", v: `${ind.positionPct.toFixed(0)}%` },
                       { l: "Drawdown max", v: ind.drawdownMaxPct !== null ? `−${ind.drawdownMaxPct.toFixed(1)}%` : "—" },
                     ].map(({ l, v }) => (

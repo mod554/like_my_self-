@@ -60,9 +60,13 @@ async function fetchFaostatCashewPrices(): Promise<FaostatRecord[]> {
   for (const base of [FAOSTAT_BASE, FAOSTAT_BASE_V2]) {
     try {
       const url = `${base}?${params}`;
+      // FAOSTAT exige une authentification depuis 2026 (HTTP 401) — clé
+      // optionnelle via FAOSTAT_KEY ; timeout court, les miroirs étant morts.
+      const headers: Record<string, string> = { "Accept": "application/json", "User-Agent": "Mozilla/5.0" };
+      if (process.env.FAOSTAT_KEY) headers["Authorization"] = `Bearer ${process.env.FAOSTAT_KEY}`;
       const response = await fetch(url, {
-        headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(45_000),
+        headers,
+        signal: AbortSignal.timeout(12_000),
       });
       if (!response.ok) continue;
       const json = await response.json() as FaostatResponse;
@@ -153,35 +157,45 @@ export class ConseilAnacardeCiConnector implements Connector {
           const last = ciData[0];
           const filiere = await prisma.filiere.findUnique({ where: { code: "CAJOU" } }).catch(() => null);
           if (filiere) {
-            try {
+            // Pas de contrainte unique sur Actualite → vérifier l'existence
+            // avant d'insérer (sinon chaque run ajoutait un doublon au fil).
+            const titre = `FAOSTAT — Prix cajou Côte d'Ivoire ${last.Year}: ${last.Value?.toFixed(0)} USD/T`;
+            const lien = "https://www.fao.org/faostat/en/#data/PP";
+            const deja = await prisma.actualite.findFirst({ where: { lien, titre }, select: { id: true } }).catch(() => null);
+            if (!deja) {
               await prisma.actualite.create({
                 data: {
                   filiereId: filiere.id,
-                  titre: `FAOSTAT — Prix cajou Côte d'Ivoire ${last.Year}: ${last.Value?.toFixed(0)} USD/T`,
-                  lien: "https://www.fao.org/faostat/en/#data/PP",
+                  titre,
+                  lien,
                   source: "FAO STAT",
                   resume: `Prix producteur anacarde (RCN) Côte d'Ivoire ${last.Year} : ${last.Value?.toFixed(2)} USD/tonne. Source : FAO STAT.`,
                   datePublication: new Date(`${last.Year}-04-01T00:00:00.000Z`),
                 },
-              });
+              }).catch(() => {});
               resultat.nbImportes++;
-            } catch {
-              // doublon ignoré
             }
           }
         }
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
-        : "OK";
+      // 0 nouvel import sans erreur = dédup active, données déjà à jour → OK.
+      // MAIS une réponse FAOSTAT totalement vide = API indisponible (ex. 401
+      // « Missing Authorization Header » depuis 2026) → ERREUR, pas un faux OK.
+      const statut = records.length === 0
+        ? "ERREUR"
+        : resultat.nbErreurs > 0
+          ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
+          : "OK";
 
       await prisma.source.update({
         where: { code: SOURCE_CODE },
         data: {
           statutDernier: statut,
-          messageErreur: resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null,
+          messageErreur: records.length === 0
+            ? "FAOSTAT indisponible (API désormais sous authentification) — aucune donnée reçue"
+            : resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null,
         },
       });
 

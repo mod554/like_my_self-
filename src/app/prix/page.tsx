@@ -13,7 +13,7 @@ export default async function PrixPage() {
       prisma.source.findMany({ where: { actif: true, type: "MANUEL" }, orderBy: { code: "asc" } }),
     ]);
     derniers = await prisma.prixReleve.findMany({
-      where: { fiabilite: { not: "EXEMPLE" } },
+      where: { fiabilite: { not: "EXEMPLE" }, typePrix: { notIn: ["SPOT_1H", "SPOT_1MIN"] } },
       orderBy: { dateCollecte: "desc" },
       take: 20,
       include: {
@@ -26,7 +26,7 @@ export default async function PrixPage() {
     console.error("PrixPage DB error:", e);
   }
 
-  const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
+  const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A", CAFE: "#C4622D", CACAO: "#7B4A2D", PALMIER: "#C99A2E", HEVEA: "#4A6B57" };
 
   return (
     <div style={{ flex: 1, padding: "32px 0 64px" }}>
@@ -34,7 +34,22 @@ export default async function PrixPage() {
 
         {/* Header */}
         <div style={{ marginBottom: "28px" }}>
-          <p className="ag-section-label" style={{ marginBottom: "6px" }}>Phase 2 · Saisie des prix</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+            <p className="ag-section-label" style={{ marginBottom: "6px" }}>Phase 2 · Saisie des prix</p>
+            <a
+              href="/api/export"
+              download
+              style={{
+                display: "inline-flex", alignItems: "center", gap: "6px",
+                padding: "7px 14px", borderRadius: "8px", textDecoration: "none",
+                background: "rgba(0,61,46,0.85)", color: "#FFFFFF",
+                border: "1px solid rgba(90,138,42,0.4)",
+                fontSize: 12, fontWeight: 600,
+              }}
+            >
+              ⬇ Exporter Excel (prix + taux + sources)
+            </a>
+          </div>
           <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
             Saisie manuelle &amp; import CSV
           </h1>

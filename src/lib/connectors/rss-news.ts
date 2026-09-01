@@ -51,23 +51,27 @@ const FLUX_RSS: FluxRSS[] = [
   {
     url: "https://news.google.com/rss/search?q=agriculture%20afrique%20de%20l%27ouest%20march%C3%A9&hl=fr&gl=FR&ceid=FR:fr",
     source: "Google News — Agriculture AOF (fr)",
-    filieres: ["MAIS", "CAJOU", "COLA"], fiabilite: "INDICATIF",
+    filieres: ["MAIS", "CAJOU", "COLA", "CAFE", "CACAO", "PALMIER", "HEVEA"], fiabilite: "INDICATIF",
   },
   // ── Institutions (flux encore actifs) ────────────────────────────────────
   {
-    url: "https://www.fao.org/newsroom/rss/en/",
-    source: "FAO Newsroom",
-    filieres: ["MAIS", "CAJOU", "COLA"], fiabilite: "OFFICIEL",
+    // L'ancien flux FAO (fao.org/newsroom/rss) renvoie 404 — remplacé par
+    // UN News rubrique Food & Agriculture (contenu FAO/PAM inclus)
+    url: "https://news.google.com/rss/search?q=FAO%20OR%20%22food%20prices%22%20agriculture%20africa&hl=en-US&gl=US&ceid=US:en",
+    source: "Google News — FAO & Food Prices Africa (en)",
+    filieres: ["MAIS", "CAJOU", "COLA", "CAFE", "CACAO", "PALMIER", "HEVEA"], fiabilite: "OFFICIEL",
   },
   {
     url: "https://news.mongabay.com/feed/",
     source: "Mongabay — Environmental News",
-    filieres: ["CAJOU", "COLA"], fiabilite: "INDICATIF",
+    filieres: ["CAJOU", "COLA", "PALMIER", "HEVEA"], fiabilite: "INDICATIF",
   },
   {
-    url: "https://agfax.com/feed/",
-    source: "AgFax — Agriculture News",
-    filieres: ["MAIS"], fiabilite: "INDICATIF",
+    // AgFax coupe la connexion (ECONNRESET) depuis les datacenters — remplacé
+    // par AllAfrica Agriculture (agrégateur presse africaine, pertinent AOF)
+    url: "https://allafrica.com/tools/headlines/rdf/agriculture/headlines.rdf",
+    source: "AllAfrica — Agriculture",
+    filieres: ["MAIS", "CAJOU", "COLA", "CAFE", "CACAO", "PALMIER", "HEVEA"], fiabilite: "INDICATIF",
   },
 ];
 
@@ -87,6 +91,18 @@ const KEYWORDS: Record<string, string[]> = {
   COLA: [
     "kola", "kola nut", "cola nut", "noix de cola", "bitter kola",
     "cola nitida",
+  ],
+  CAFE: [
+    "café", "coffee", "arabica", "robusta", "ICO",
+  ],
+  CACAO: [
+    "cacao", "cocoa", "cocoa beans", "fèves de cacao", "ICCO",
+  ],
+  PALMIER: [
+    "palm oil", "huile de palme", "palmier à huile", "crude palm oil", "CPO", "FCPO",
+  ],
+  HEVEA: [
+    "rubber", "caoutchouc", "hévéa", "natural rubber", "TSR20", "RSS3",
   ],
 };
 
@@ -132,10 +148,10 @@ export class RssNewsConnector implements Connector {
         FLUX_RSS.map((flux) => parser.parseURL(flux.url).then((feed) => ({ flux, feed })))
       );
 
-      for (const feedResult of feedResults) {
+      for (const [idx, feedResult] of feedResults.entries()) {
         if (feedResult.status === "rejected") {
           const msg = feedResult.reason instanceof Error ? feedResult.reason.message : String(feedResult.reason);
-          resultat.erreurs.push(`Flux inconnu: ${msg}`);
+          resultat.erreurs.push(`Flux "${FLUX_RSS[idx].source}": ${msg.slice(0, 60)}`);
           resultat.nbErreurs++;
           continue;
         }

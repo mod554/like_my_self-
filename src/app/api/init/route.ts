@@ -5,21 +5,29 @@ export const dynamic = "force-dynamic";
 
 const SOURCES_INIT = [
   { code: "WORLD_BANK_PINK",     nom: "World Bank — Pink Sheet",                        type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "MENSUEL",   description: "Prix mensuels des matières premières — source de référence mondiale" },
-  { code: "FAO_FPMA",            nom: "FAO — FPMA Food Price Monitoring",               type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "HEBDO",     description: "Prix alimentaires en Afrique de l'Ouest — FAO FPMA Tool" },
+  { code: "FAO_FPMA",            nom: "FAO GIEWS FPMA — Prix maïs marchés AOF",         type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "MENSUEL",   description: "Prix mensuels du maïs sur les marchés AOF (XOF/kg) — API GIEWS FPMA via runner GitHub" },
   { code: "USDA_FAS_PSD",        nom: "IMF — Primary Commodity Prices (maïs mondial)",  type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "MENSUEL",   description: "IMF Primary Commodity Prices — maïs mondial" },
   { code: "CONSEIL_ANACARDE_CI", nom: "Conseil Anacarde CI — Prix bord-champ",          type: "HTML", fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Prix bord-champ RCN Côte d'Ivoire via FAOSTAT" },
   { code: "RESIMAO",             nom: "RESIMAO — Systèmes d'Information des Marchés",   type: "HTML", fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "Prix collectés sur les marchés de détail et de gros en Afrique de l'Ouest" },
   { code: "INDEXMUNDI",          nom: "IndexMundi — Commodity Prices",                  type: "HTML", fiabiliteDefaut: "INDICATIF", frequence: "HEBDO",     description: "Prix historiques commodités — maïs, cajou" },
   { code: "RSS_NEWS_AGRI",       nom: "Agrégateur RSS — Actualités agricoles",          type: "RSS",  fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "15 flux RSS — FAO, USDA, World Bank, Africa Report…" },
   { code: "GDELT_NEWS",          nom: "GDELT — Actualités mondiales agricoles",         type: "API",  fiabiliteDefaut: "INDICATIF", frequence: "QUOTIDIEN", description: "GDELT DOC 2.0 — actualités mondiales 65+ langues, maïs/cajou/cola, temps quasi réel" },
-  { code: "COMTRADE_UN",         nom: "UN Comtrade — Export cajou & cola",              type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Valeurs unitaires d'export ONU (FOB implicite) — cajou HS 080131, cola HS 080270, CIV/NGA" },
+  { code: "COMTRADE_UN",         nom: "UN Comtrade — Export cajou & cola",              type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Valeurs unitaires d'export ONU (FOB implicite) — mensuel prioritaire + annuel en repli — cajou HS 080131, cola HS 080270, CIV/NGA" },
+  { code: "YAHOO_FINANCE",       nom: "Yahoo Finance — CBOT ZC=F (parité TradingView)", type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Clôtures quotidiennes des futures maïs CBOT ZC=F via Yahoo Finance — mêmes cotations que TradingView (ZC1!)" },
   { code: "TAUX_CHANGE_LIVE",    nom: "Taux de change live — USD/XOF, EUR/USD",        type: "API",  fiabiliteDefaut: "OFFICIEL",  frequence: "QUOTIDIEN", description: "Taux de change USD/XOF, EUR/USD — ECB via open.er-api.com" },
+  { code: "ICE_SOFTS",           nom: "ICE Softs — Café Arabica (KC=F) & Cacao (CC=F)", type: "API",  fiabiliteDefaut: "OFFICIEL", frequence: "QUOTIDIEN", description: "Futures café Arabica & cacao (ICE) via Yahoo Finance — quotidien + intraday, parité TradingView (KC1!/CC1!)" },
+  { code: "AGMARKNET_INDIA",     nom: "AGMARKNET Inde — Prix cajou quotidiens (mandis)",type: "API", fiabiliteDefaut: "OFFICIEL", frequence: "QUOTIDIEN", description: "Prix quotidiens du cajou sur les marchés (mandis) indiens — data.gov.in / AGMARKNET" },
 ];
 
 const FILIERES_INIT = [
   { code: "MAIS",  nom: "Maïs",         description: "Filière maïs — commodity internationale (CBOT/CME)" },
   { code: "CAJOU", nom: "Cajou",        description: "Filière cajou/anacarde — Côte d'Ivoire & Afrique de l'Ouest" },
   { code: "COLA",  nom: "Noix de Cola", description: "Filière noix de cola — marché régional AOF" },
+  // Cultures de rente — ajout des 5 filières phares (cajou déjà présent ci-dessus)
+  { code: "CAFE",    nom: "Café",            description: "Filière café — Arabica (ICE KC=F), culture de rente" },
+  { code: "CACAO",   nom: "Cacao",           description: "Filière cacao — fèves (ICE CC=F), culture de rente" },
+  { code: "PALMIER", nom: "Palmier à huile", description: "Filière palmier à huile — huile de palme brute (référence World Bank)" },
+  { code: "HEVEA",   nom: "Hévéa",           description: "Filière hévéa — caoutchouc naturel (référence World Bank)" },
 ];
 
 const ZONES_INIT = [
@@ -34,6 +42,7 @@ const ZONES_INIT = [
   { code: "GHANA",         nom: "Ghana",                type: "PAYS" },
   { code: "NIGERIA",       nom: "Nigeria",              type: "PAYS" },
   { code: "NIGER",         nom: "Niger",                type: "PAYS" },
+  { code: "INDE",          nom: "Inde",                 type: "PAYS" },
 ];
 
 const MARCHES_INIT = [
@@ -55,12 +64,23 @@ const MARCHES_INIT = [
   { code: "ACCRA_COLA",        nom: "Accra — Cola",                     zoneCode: "GHANA",       devise: "GHS", type: "GROSSISTE" },
   { code: "COTONOU_COLA",      nom: "Cotonou — Cola",                   zoneCode: "BENIN",       devise: "XOF", type: "GROSSISTE" },
   { code: "DAKAR_COLA",        nom: "Dakar — Cola",                     zoneCode: "SENEGAL",     devise: "XOF", type: "GROSSISTE" },
+  // Cultures de rente — marchés de référence
+  { code: "ICE_CAFE",          nom: "ICE — Café Arabica (KC=F)",        zoneCode: "MONDIAL",     devise: "USD", type: "BOURSE" },
+  { code: "ICE_CACAO",         nom: "ICE — Cacao (CC=F)",               zoneCode: "MONDIAL",     devise: "USD", type: "BOURSE" },
+  { code: "MONDIAL_PALME_WB",  nom: "Marché mondial huile de palme (World Bank)", zoneCode: "MONDIAL", devise: "USD", type: "BOURSE" },
+  { code: "MONDIAL_HEVEA_WB",  nom: "Marché mondial caoutchouc (World Bank)",     zoneCode: "MONDIAL", devise: "USD", type: "BOURSE" },
+  { code: "INDE_CAJOU",        nom: "Inde — Cajou (mandis AGMARKNET)",   zoneCode: "INDE",        devise: "INR", type: "GROSSISTE" },
 ];
 
 const PRODUITS_INIT = [
   { code: "MAIS_GRAIN", nom: "Maïs grain",        filiereCode: "MAIS",  uniteRef: "tonne", estDerive: false, description: "Maïs grain sec — prix CBOT/CME et marchés AOF" },
   { code: "CAJOU_RCN",  nom: "Cajou RCN",          filiereCode: "CAJOU", uniteRef: "tonne", estDerive: false, description: "Noix de cajou brute (Raw Cashew Nut) — bord-champ CI" },
   { code: "COLA_ROUGE", nom: "Noix de cola rouge", filiereCode: "COLA",  uniteRef: "kg",    estDerive: false, description: "Noix de cola rouge (Cola nitida) — marché régional AOF" },
+  // Cultures de rente
+  { code: "CAFE_ARABICA", nom: "Café Arabica",     filiereCode: "CAFE",    uniteRef: "tonne", estDerive: false, description: "Café Arabica — futures ICE KC=F (parité TradingView KC1!)" },
+  { code: "CACAO_FEVE",   nom: "Cacao (fèves)",    filiereCode: "CACAO",   uniteRef: "tonne", estDerive: false, description: "Fèves de cacao — futures ICE CC=F (parité TradingView CC1!)" },
+  { code: "HUILE_PALME",  nom: "Huile de palme",   filiereCode: "PALMIER", uniteRef: "tonne", estDerive: false, description: "Huile de palme brute — référence mensuelle World Bank Pink Sheet" },
+  { code: "CAOUTCHOUC",   nom: "Caoutchouc naturel", filiereCode: "HEVEA", uniteRef: "tonne", estDerive: false, description: "Caoutchouc naturel (TSR20/RSS3) — référence mensuelle World Bank Pink Sheet" },
 ];
 
 async function upsertByCode<T extends { code: string }>(
@@ -118,6 +138,51 @@ export async function POST(_req: NextRequest) {
     const purge = await prisma.prixReleve.deleteMany({ where: { fiabilite: "EXEMPLE" } });
     if (purge.count > 0) created.push(`Purge: ${purge.count} prix EXEMPLE supprimés`);
     await prisma.structureCout.deleteMany({ where: { fiabilite: "EXEMPLE" } }).catch(() => null);
+  } catch { /* table absente au premier run */ }
+
+  // 0bis. Dédoublonnage des actualités — la table n'a pas de contrainte unique
+  // et certains connecteurs inséraient un résumé à chaque run. On garde la plus
+  // ancienne de chaque (lien, filiereId, titre). Idempotent.
+  try {
+    const arts = await prisma.actualite.findMany({
+      select: { id: true, lien: true, titre: true, filiereId: true },
+      orderBy: { dateCollecte: "asc" },
+    });
+    const vus = new Set<string>();
+    const aSupprimer: string[] = [];
+    for (const a of arts) {
+      const cle = `${a.lien}|${a.filiereId ?? ""}|${a.titre}`;
+      if (vus.has(cle)) aSupprimer.push(a.id);
+      else vus.add(cle);
+    }
+    if (aSupprimer.length > 0) {
+      const del = await prisma.actualite.deleteMany({ where: { id: { in: aSupprimer } } });
+      created.push(`Purge: ${del.count} actualités dupliquées supprimées`);
+    }
+  } catch { /* table absente au premier run */ }
+
+  // 0ter. Statuts zombies — un connecteur tué par le budget serverless (60s)
+  // reste bloqué EN_COURS pour toujours. Au-delà de 20 min, c'est une erreur.
+  try {
+    const zombies = await prisma.source.updateMany({
+      where: { statutDernier: "EN_COURS", derniereExecution: { lt: new Date(Date.now() - 20 * 60_000) } },
+      data: { statutDernier: "ERREUR", messageErreur: "Interrompu — budget d'exécution serverless dépassé" },
+    });
+    if (zombies.count > 0) created.push(`Statuts: ${zombies.count} source(s) EN_COURS zombie(s) → ERREUR`);
+    // INDEXMUNDI est retiré du registre des connecteurs — on le désactive.
+    await prisma.source.updateMany({ where: { code: "INDEXMUNDI" }, data: { actif: false } }).catch(() => null);
+    // GDELT rate-limite toutes les IP cloud partagées (Vercel ET GitHub) : la
+    // collecte runner reste en best-effort mais la source sort du tableau de
+    // bord — les actualités sont couvertes par Google News (RSS_NEWS_AGRI).
+    await prisma.source.updateMany({
+      where: { code: "GDELT_NEWS" },
+      data: { actif: false, statutDernier: "ERREUR", messageErreur: "GDELT rate-limite les IP cloud partagées — collecte best-effort via runner, actualités assurées par Google News" },
+    }).catch(() => null);
+    // Alignement des métadonnées FAO_FPMA sur le nouveau pipeline GIEWS
+    await prisma.source.updateMany({
+      where: { code: "FAO_FPMA" },
+      data: { nom: "FAO GIEWS FPMA — Prix maïs marchés AOF", frequence: "MENSUEL", description: "Prix mensuels du maïs sur les marchés AOF (XOF/kg) — API GIEWS FPMA via runner GitHub" },
+    }).catch(() => null);
   } catch { /* table absente au premier run */ }
 
   // 1. Filières

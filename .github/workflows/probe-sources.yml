@@ -1,63 +1,620 @@
-name: Probe external data sources
+name: Collecte horaire des données
+
+# Vercel Hobby limite les crons à 1/jour — GitHub Actions prend le relais
+# pour des cotations quotidiennes/horaires : taux de change, prix CBOT (Stooq),
+# actualités RSS + GDELT toutes les heures ; prix locaux WFP/HDX 2x/jour.
 
 on:
+  schedule:
+    - cron: "15 * * * *"   # toutes les heures à :15
   workflow_dispatch:
+    inputs:
+      fetch_assets:
+        description: "Télécharger les assets Higgsfield vers design/marche-assets"
+        required: false
+        type: boolean
+        default: false
+      debug_page:
+        description: "Capturer la stack d'erreur runtime d'une page (ex: /referentiel)"
+        required: false
+        type: string
+        default: ""
+      run_connector:
+        description: "Déclencher un connecteur précis à la demande (ex: COMTRADE_UN)"
+        required: false
+        type: string
+        default: ""
+      run_init:
+        description: "Ré-initialiser le référentiel (POST /api/init) — seed idempotent"
+        required: false
+        type: boolean
+        default: false
+      probe_url:
+        description: "Inspecter une ou plusieurs URLs (JSON/HTML) depuis le runner"
+        required: false
+        type: string
+        default: ""
+      probe_bytes:
+        description: "Octets de corps à afficher pour les réponses non-JSON (défaut 1500)"
+        required: false
+        type: string
+        default: "1500"
 
 jobs:
-  probe:
+  probe-url:
+    if: inputs.probe_url != ''
     runs-on: ubuntu-latest
     steps:
-      - name: Probe FAOSTAT and commodity sources
+      - name: Inspecter des URLs depuis le runner
+        env:
+          URLS: ${{ inputs.probe_url }}
+          PROBE_BYTES: ${{ inputs.probe_bytes }}
+        run: |
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+          for URL in $URLS; do
+            echo "#### $URL"
+            curl -sL -o /tmp/p.json -w "HTTP %{http_code} → %{url_effective}\n" --max-time 40 -A "$UA" "$URL" || echo "(timeout/erreur réseau)"
+            python3 - <<'PYEOF' || head -c ${PROBE_BYTES:-1500} /tmp/p.json
+          import json
+          d = json.load(open("/tmp/p.json"))
+          if isinstance(d, dict) and "news" in d:
+              print("count:", d.get("count"))
+              for n in d.get("news", [])[:8]:
+                  fc = (n.get("filiere") or {}).get("code")
+                  print("  ", fc, "|", (n.get("titre") or "")[:90], "|", n.get("source"))
+          else:
+              print(json.dumps(d)[:1500])
+          PYEOF
+            echo
+          done
+
+  run-connector:
+    if: inputs.run_connector != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher un connecteur unique
+        run: |
+          echo "Déclenchement du connecteur ${{ inputs.run_connector }}"
+          curl -s --max-time 120 -X POST "https://like-my-self.vercel.app/api/connectors" \
+            -H "Content-Type: application/json" -d "{\"code\": \"${{ inputs.run_connector }}\"}" \
+            | python3 -m json.tool || echo "réponse illisible"
+
+  run-init:
+    if: inputs.run_init == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ré-initialiser le référentiel
+        run: |
+          curl -s --max-time 120 -X POST "https://like-my-self.vercel.app/api/init" \
+            | python3 -m json.tool || echo "réponse illisible"
+
+
+  fetch-assets:
+    if: inputs.fetch_assets == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: design/marche-assets
+      - name: Télécharger et committer les assets Higgsfield
+        run: |
+          mkdir -p public/assets/higgsfield assets/higgsfield
+          BASE="https://d8j0ntlcm91z4.cloudfront.net/user_395PfotE2gbh2HjWDdSmQjr0B44"
+          curl -fsS -o assets/higgsfield/reference-terre-seve.png "$BASE/hf_20260704_213545_c5ec5f4d-a116-4779-a3dc-a70d8be4de88.png"
+          curl -fsS -o public/assets/higgsfield/hero-marche-21x9.png "$BASE/hf_20260704_213809_a729aa2c-fd6d-461d-ab6f-51dd5e0dcd71.png"
+          curl -fsS -o public/assets/higgsfield/texture-organique-overlay.png "$BASE/hf_20260704_213748_81f7e2e7-8c0e-436c-bd5d-d3091b58e84c.png"
+          file assets/higgsfield/*.png public/assets/higgsfield/*.png
+          du -h assets/higgsfield/*.png public/assets/higgsfield/*.png
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add assets/ public/assets/
+          git commit -m "assets: Higgsfield reference + hero 21:9 + texture organique (via runner)"
+          git push origin design/marche-assets
+
+  debug-page:
+    if: inputs.debug_page != ''
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Capturer les logs runtime pendant le crash
+        run: |
+          npm install -g vercel@latest >/dev/null 2>&1
+          (timeout 45 vercel logs https://like-my-self.vercel.app --token="$VERCEL_TOKEN" --scope marius-projects-92b9e651 > /tmp/vlogs.txt 2>&1 || true) &
+          LOGPID=$!
+          sleep 6
+          echo "== Déclenchement de ${{ inputs.debug_page }} =="
+          echo "== CORPS DE RÉPONSE =="
+          curl -s -w "\nHTTP %{http_code}\n" "https://like-my-self.vercel.app${{ inputs.debug_page }}" | head -c 4000
+          echo
+          sleep 20
+          kill $LOGPID 2>/dev/null || true
+          echo "== LOGS RUNTIME =="
+          cat /tmp/vlogs.txt | tail -120
+
+  collecte:
+    if: inputs.fetch_assets != true && inputs.debug_page == '' && inputs.run_connector == ''
+    runs-on: ubuntu-latest
+    steps:
+      # Cotation CBOT collectée sur le runner (IP propre) puis poussée vers
+      # l'app — les IP partagées Vercel épuisent les quotas Stooq/FRED
+      - name: Cotations maïs CBOT depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import csv, io, json, urllib.request
+
+          def get(url, timeout=20):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8", "replace")
+
+          points = []
+          note = ""
+
+          # 1) Yahoo Finance — ZC=F quotidien (3 mois)
+          try:
+              d = json.loads(get("https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range=3mo&interval=1d"))
+              res = d["chart"]["result"][0]
+              ts = res["timestamp"]
+              closes = res["indicators"]["quote"][0]["close"]
+              from datetime import datetime, timezone
+              for t, c in zip(ts, closes):
+                  if c and c > 0:
+                      date = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d")
+                      points.append({"date": date, "usd": round(c / 100 * 39.3683, 2), "cents": round(c, 2)})
+              note = "CBOT ZC=F quotidien via Yahoo Finance (GitHub Actions)"
+          except Exception as e:
+              print("Yahoo indisponible:", str(e)[:80])
+
+          # 2) Stooq (.com puis .pl)
+          if not points:
+              for host in ("stooq.com", "stooq.pl"):
+                  try:
+                      body = get(f"https://{host}/q/d/l/?s=zc.f&i=d")
+                      rows = list(csv.reader(io.StringIO(body)))
+                      for r in rows[1:][-30:]:
+                          if len(r) >= 5:
+                              try:
+                                  c = float(r[4])
+                                  if c > 0:
+                                      points.append({"date": r[0], "usd": round(c / 100 * 39.3683, 2)})
+                              except ValueError:
+                                  pass
+                      if points:
+                          note = f"CBOT ZC quotidien via {host} (GitHub Actions)"
+                          break
+                      print(f"{host}: reponse non exploitable:", body[:60].replace("\n", " "))
+                  except Exception as e:
+                      print(f"{host} indisponible:", str(e)[:80])
+
+          # 3) FRED — mensuel (donnees IMF)
+          if not points:
+              try:
+                  body = get("https://fred.stlouisfed.org/graph/fredgraph.csv?id=PMAIZMTUSDM", timeout=30)
+                  for line in body.strip().split("\n")[1:][-24:]:
+                      d2, v = (line.split(",") + [""])[:2]
+                      try:
+                          val = float(v)
+                          if val > 0:
+                              points.append({"date": d2, "usd": val})
+                      except ValueError:
+                          pass
+                  if points:
+                      note = "Prix mais mondial mensuel via FRED/IMF (GitHub Actions)"
+              except Exception as e:
+                  print("FRED indisponible:", str(e)[:80])
+
+          print(f"Points CBOT collectes: {len(points)} — {note}")
+          json.dump({"points": points, "sourceNote": note or "n/a", "sourceCode": "YAHOO_FINANCE" if "Yahoo" in note else "USDA_FAS_PSD"}, open("/tmp/points.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/points.json'))['points']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/mais" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/points.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Cotations INTRADAY maïs CBOT (ZC=F) — horaire (5 jours) + minute (1 jour)
+      # depuis le runner. Seul le maïs a un marché live ; cajou/cola n'ont aucun
+      # marché intraday. typePrix SPOT_1H / SPOT_1MIN pour ne pas collisionner
+      # avec le point quotidien.
+      - name: Cotations maïs intraday (horaire + minute) depuis le runner
         run: |
           python3 - <<'PYEOF'
           import json, urllib.request
+          from datetime import datetime, timezone
 
-          def get(url, timeout=30):
-              req = urllib.request.Request(url, headers={
-                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-                  "Accept": "application/json",
-              })
+          def get(url, timeout=25):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8", "replace")
+
+          def collecte(rng, interval):
+              url = f"https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range={rng}&interval={interval}"
+              d = json.loads(get(url))
+              res = d["chart"]["result"][0]
+              ts = res["timestamp"]
+              closes = res["indicators"]["quote"][0]["close"]
+              pts = []
+              for t, c in zip(ts, closes):
+                  if c and c > 0:
+                      iso = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                      pts.append({"date": iso, "usd": round(c / 100 * 39.3683, 2), "cents": round(c, 2)})
+              return pts
+
+          for rng, interval, typ, note in (
+              ("5d", "1h", "SPOT_1H",   "CBOT ZC=F horaire via Yahoo (parité TradingView ZC1!)"),
+              ("1d", "1m", "SPOT_1MIN", "CBOT ZC=F minute via Yahoo (parité TradingView ZC1!)"),
+          ):
               try:
-                  with urllib.request.urlopen(req, timeout=timeout) as r:
-                      body = r.read()
-                      return r.status, body[:400].decode("utf8", "replace"), body
+                  pts = collecte(rng, interval)
+                  json.dump({"points": pts, "sourceNote": note, "sourceCode": "YAHOO_FINANCE", "typePrix": typ},
+                            open(f"/tmp/intraday_{typ}.json", "w"))
+                  print(f"{typ}: {len(pts)} barres collectées")
               except Exception as e:
-                  return None, str(e)[:150], b""
-
-          hosts = [
-              "https://faostatservices.fao.org/api/v1/en/data/PP",
-              "https://fenixservices.fao.org/faostat/api/v1/en/data/PP",
-          ]
-          # item 217=cashew in shell, 224=kola nuts, 56=maize
-          # element 5532=Producer Price USD/tonne, 5530=Producer Price LCU/tonne
-          combos = [
-              ("cashew-CI", "area=107&item=217&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
-              ("kola-NGA-CIV-GHA", "area=159,107,81&item=224&element=5532&year=2018,2019,2020,2021,2022,2023,2024"),
-              ("cashew-CI-LCU", "area=107&item=217&element=5530&year=2020,2021,2022,2023"),
-          ]
-          suffixes = ["&output_type=objects", "&output_type=json&type=datasets", ""]
-
-          for host in hosts:
-              for name, q in combos:
-                  for suf in suffixes:
-                      url = f"{host}?{q}{suf}"
-                      status, preview, body = get(url)
-                      n = "?"
-                      try:
-                          d = json.loads(body)
-                          n = len(d.get("data", []))
-                      except Exception:
-                          pass
-                      print(f"[{name}] {status} n={n} {host.split('/')[2]} suf={suf or '(none)'}")
-                      if isinstance(n, int) and n > 0:
-                          print("   EXEMPLE:", json.dumps(json.loads(body)["data"][0])[:300])
-
-          # Alternatives cajou/cola
-          extra = [
-              ("WB-cashew?", "https://api.worldbank.org/v2/en/country/all/indicator/PCASHEW?format=json&mrv=12&source=21"),
-              ("UN-Comtrade-preview", "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=384&period=2023&cmdCode=0801&flowCode=X"),
-          ]
-          for name, url in extra:
-              status, preview, _ = get(url)
-              print(f"[{name}] {status} :: {preview[:200]}")
+                  json.dump({"points": []}, open(f"/tmp/intraday_{typ}.json", "w"))
+                  print(f"{typ} indisponible: {str(e)[:80]}")
           PYEOF
+          for typ in SPOT_1H SPOT_1MIN; do
+            N=$(python3 -c "import json; print(len(json.load(open('/tmp/intraday_'+'$typ'+'.json'))['points']))")
+            if [ "$N" -gt 0 ]; then
+              echo "POST $typ ($N points)"
+              curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/mais" \
+                -H "Content-Type: application/json" \
+                ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+                --data-binary @/tmp/intraday_$typ.json | head -c 200
+              echo
+            fi
+          done
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Prix maïs locaux ivoiriens (SIMAGRI-CI) — le bouclier anti-bot Anubis
+      # du site bloque le proxy/Vercel ; le runner (IP propre + UA navigateur)
+      # passe. Prix physiques FCFA/kg (détail & gros) par marché.
+      - name: Prix maïs locaux SIMAGRI-CI depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, re, urllib.request
+          from datetime import datetime, timezone
+
+          url = "https://www.simagri-ci.info/prices-entries-grids"
+          req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+          try:
+              html = urllib.request.urlopen(req, timeout=40).read().decode("utf-8", "replace")
+          except Exception as e:
+              print("SIMAGRI indisponible:", str(e)[:80]); html = ""
+
+          html = re.sub(r"\s+", " ", html)
+          # <span class="price-item"> <strong>PRODUIT</strong> - Détail: D / Gros: G FCFA/KG à MARCHE (DATE)
+          pat = re.compile(
+              r'price-item">\s*<strong>(.*?)</strong>\s*-\s*'
+              r'<span class="price-detail">D[ée]tail:\s*([\d.]+)</span>\s*/\s*'
+              r'<span class="price-gros">Gros:\s*([\d.]+)</span>[^<]*?à\s+([A-ZÀ-Ÿ\' -]+?)\s*\(([^)]*)\)'
+          )
+          rows, seen = [], set()
+          for m in pat.finditer(html):
+              prod, detail, gros, marche, datetxt = (x.strip() for x in m.groups())
+              if "MAÏS" not in prod.upper() and "MAIS" not in prod.upper():
+                  continue  # on ne suit que le maïs ici
+              dm = re.search(r"(\d{2})/(\d{2})/(\d{4})", datetxt)
+              iso = f"{dm.group(3)}-{dm.group(2)}-{dm.group(1)}" if dm else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+              for typ, val in (("DETAIL", detail), ("GROS", gros)):
+                  try:
+                      v = float(val)
+                  except ValueError:
+                      continue
+                  if v <= 0:
+                      continue
+                  key = (marche, typ, iso)
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  rows.append({"produitCode": "MAIS_GRAIN", "marche": marche, "typePrix": typ, "valeur": v, "date": iso})
+          print(f"Prix maïs locaux collectés: {len(rows)}")
+          json.dump({"rows": rows}, open("/tmp/simagri.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/simagri.json'))['rows']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/local" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/simagri.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Prix de référence cajou & cola (Selina Wamucii) — aucune bourse ne cote
+      # ces produits physiques ; Selina publie un prix indicatif export USD/kg
+      # par pays, MAJ mensuelle. Le site bloque le proxy/Vercel → runner.
+      - name: Prix de référence cajou & cola (Selina Wamucii) depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, re, urllib.request
+
+          BASE = "https://www.selinawamucii.com/insights/prices"
+          CIBLES = [
+              # (filière, pays, slug-pays, slug-produit)
+              ("CAJOU", "India",    "india",    "cashew-nuts"),
+              ("CAJOU", "Benin",    "benin",    "cashew-nuts"),
+              ("CAJOU", "Tanzania", "tanzania", "cashew-nuts"),
+              ("CAJOU", "Ghana",    "ghana",    "cashew-nuts"),
+              ("CAJOU", "Nigeria",  "nigeria",  "cashew-nuts"),
+              ("COLA",  "Nigeria",  "nigeria",  "kola-nuts"),
+              ("COLA",  "Ghana",    "ghana",    "kola-nuts"),
+              ("COLA",  "Cameroon", "cameroon", "kola-nuts"),
+          ]
+          MOIS = {m: i+1 for i, m in enumerate(
+              ["January","February","March","April","May","June","July",
+               "August","September","October","November","December"])}
+
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              return urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+
+          rows = []
+          for filiere, pays, sp, sprod in CIBLES:
+              try:
+                  html = re.sub(r"\s+", " ", get(f"{BASE}/{sp}/{sprod}/"))
+                  # og:description : "<Produit> price in <Pays> is $8.23/kg ($3.73/lb) as of July 2026"
+                  desc = re.search(r'og:description" content="([^"]+)"', html)
+                  txt = desc.group(1) if desc else html
+                  pk = re.search(r'is \$([\d.]+)\s*/?\s*kg', txt) or re.search(r'\$([\d.]+)/kg', txt)
+                  if not pk:
+                      print(f"{filiere}/{pays}: prix introuvable"); continue
+                  usd = float(pk.group(1))
+                  mo = re.search(r'as of (\w+)\s+(\d{4})', txt)
+                  asof = f"{mo.group(2)}-{MOIS.get(mo.group(1), 1):02d}" if mo else None
+                  rows.append({"filiere": filiere, "pays": pays, "usdParKg": usd, "asOf": asof})
+                  print(f"{filiere}/{pays}: {usd} USD/kg (as of {asof})")
+              except Exception as e:
+                  print(f"{filiere}/{pays}: {str(e)[:70]}")
+          json.dump({"rows": rows}, open("/tmp/refprices.json", "w"))
+          print(f"Total lignes: {len(rows)}")
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/refprices.json'))['rows']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/refprices" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/refprices.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Actualités Google News collectées sur le runner (IP propre) — les IP
+      # partagées Vercel sont bloquées par Google News RSS (réponse vide).
+      - name: Actualités Google News depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, urllib.request, xml.etree.ElementTree as ET
+
+          def get(url, timeout=20):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8", "replace")
+
+          def gnews(q, lang):
+              base = "https://news.google.com/rss/search?q=" + urllib.parse.quote(q)
+              return base + ("&hl=fr&gl=FR&ceid=FR:fr" if lang == "fr" else "&hl=en-US&gl=US&ceid=US:en")
+
+          import urllib.parse
+          REQUETES = [
+              ("MAIS",    gnews("maize OR corn price Africa", "en")),
+              ("MAIS",    gnews("maïs prix Afrique de l'Ouest", "fr")),
+              ("CAJOU",   gnews("cashew OR anacarde price", "en")),
+              ("CAJOU",   gnews("anacarde cajou Côte d'Ivoire prix", "fr")),
+              ("COLA",    gnews('"kola nut" OR "cola nut" price', "en")),
+              ("COLA",    gnews("noix de cola Afrique de l'Ouest", "fr")),
+              ("CAFE",    gnews("coffee arabica price market", "en")),
+              ("CAFE",    gnews("café prix marché Afrique", "fr")),
+              ("CACAO",   gnews("cocoa price market Côte d'Ivoire Ghana", "en")),
+              ("CACAO",   gnews("cacao prix marché Côte d'Ivoire", "fr")),
+              ("PALMIER", gnews('"palm oil" price market', "en")),
+              ("PALMIER", gnews("huile de palme prix marché", "fr")),
+              ("HEVEA",   gnews('"natural rubber" price market', "en")),
+              ("HEVEA",   gnews("caoutchouc naturel hévéa prix", "fr")),
+          ]
+          arts = []
+          # Plafond par requête : avec 14 requêtes (7 filières × 2 langues), on
+          # limite chacune pour que TOUTES les filières tiennent dans le payload
+          # (café/cacao/palme/hévéa ne sont plus tronquées par le cap serveur).
+          PAR_REQUETE = 18
+          for filiere, url in REQUETES:
+              try:
+                  xml = get(url)
+                  root = ET.fromstring(xml)
+                  n = 0
+                  for item in root.iter("item"):
+                      if n >= PAR_REQUETE:
+                          break
+                      titre = (item.findtext("title") or "").strip()
+                      lien = (item.findtext("link") or "").strip()
+                      pub = (item.findtext("pubDate") or "").strip()
+                      src_el = item.find("source")
+                      src = (src_el.text if src_el is not None else "Google News") or "Google News"
+                      if titre and lien:
+                          arts.append({"titre": titre, "lien": lien, "source": f"Google News · {src}",
+                                       "filiere": filiere, "datePublication": pub})
+                          n += 1
+              except Exception as e:
+                  print(f"{filiere}: {str(e)[:70]}")
+          print(f"Articles collectés: {len(arts)}")
+          json.dump({"articles": arts}, open("/tmp/news.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/news.json'))['articles']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/news" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/news.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Prix maïs mensuels des marchés AOF — API FAO GIEWS FPMA (publique, JSON,
+      # remplace FAOSTAT mort). 2×/jour + déclenchement manuel : les données
+      # sont mensuelles, inutile de marteler la FAO toutes les heures.
+      - name: Prix maïs FPMA/GIEWS (marchés AOF) depuis le runner
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        run: |
+          HEURE=$(date -u +%H)
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$HEURE" != "07" ] && [ "$HEURE" != "19" ]; then
+            echo "FPMA : collecte 2×/jour (07h/19h UTC) — sauté à ${HEURE}h"; exit 0
+          fi
+          python3 - <<'PYEOF'
+          import json, time, urllib.request
+
+          BASE = "https://fpma.fao.org/giews/v4/global/price_module/api/v1"
+          # Pays AOF en zone franc (XOF) — les devises GHS/NGN sont écartées tant
+          # que la conversion n'est pas branchée côté app.
+          PAYS = ["CIV", "BFA", "MLI", "SEN", "BEN", "TGO", "NER"]
+
+          def get(url, timeout=25):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return json.loads(r.read().decode("utf-8", "replace"))
+
+          rows = []
+          for iso3 in PAYS:
+              try:
+                  series = get(f"{BASE}/FpmaSerieDomestic/?format=json&iso3_country_code={iso3}").get("results", [])
+              except Exception as e:
+                  print(f"{iso3}: liste indisponible — {str(e)[:60]}"); continue
+              mais = [s for s in series
+                      if "maize" in (s.get("commodity_name") or "").lower()
+                      and (s.get("currency") or "") == "XOF"][:4]
+              print(f"{iso3}: {len(series)} séries, {len(mais)} maïs retenues")
+              for s in mais:
+                  time.sleep(0.4)
+                  try:
+                      pts = get(f"{BASE}/FpmaSeriePrice/{s['uuid']}/?format=json").get("datapoints", [])
+                  except Exception as e:
+                      print(f"  {s.get('market_name')}: {str(e)[:50]}"); continue
+                  typ = "GROS" if "wholesale" in (s.get("price_type") or "").lower() else "DETAIL"
+                  n = 0
+                  for p in pts:
+                      if p.get("periodicity") != "monthly":
+                          continue
+                      v = p.get("price_value")
+                      d = (p.get("date") or "")[:10]
+                      if not v or v <= 0 or len(d) != 10 or d < "2023-01-01":
+                          continue
+                      rows.append({"produitCode": "MAIS_GRAIN", "marcheNom": s.get("market_name", "?"),
+                                   "iso3": iso3, "devise": "XOF", "typePrix": typ,
+                                   "date": d, "valeur": round(v, 2)})
+                      n += 1
+                  print(f"  {s.get('market_name')} ({typ}): {n} points mensuels")
+          print(f"Total lignes FPMA: {len(rows)}")
+          json.dump({"rows": rows}, open("/tmp/fpma.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/fpma.json'))['rows']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/fpma" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/fpma.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Actualités GDELT collectées sur le runner (IP propre) — GDELT rate-limite
+      # sévèrement les IP partagées Vercel ; depuis le runner les 7 filières
+      # passent en un seul run avec un pacing léger.
+      - name: Actualités GDELT depuis le runner
+        run: |
+          python3 - <<'PYEOF'
+          import json, time, urllib.parse, urllib.request
+
+          REQUETES = [
+              ("MAIS",    '(maize OR corn) (price OR market OR harvest OR export OR africa)'),
+              ("CAJOU",   '(cashew OR anacarde OR "noix de cajou" OR "raw cashew nut")'),
+              ("COLA",    '("kola nut" OR "cola nut" OR "noix de cola" OR "bitter kola")'),
+              ("CAFE",    '(coffee OR arabica OR robusta) (price OR market OR export OR harvest)'),
+              ("CACAO",   '(cocoa OR cacao OR "cocoa beans") (price OR market OR export)'),
+              ("PALMIER", '("palm oil" OR "huile de palme" OR "crude palm oil") (price OR market OR export)'),
+              ("HEVEA",   '("natural rubber" OR "caoutchouc naturel" OR "rubber price") (price OR market OR export)'),
+          ]
+
+          def iso(seendate):
+              # "20260713T090000Z" → "2026-07-13T09:00:00Z"
+              s = (seendate or "").strip()
+              if len(s) >= 15:
+                  return f"{s[0:4]}-{s[4:6]}-{s[6:8]}T{s[9:11]}:{s[11:13]}:{s[13:15]}Z"
+              return None
+
+          arts = []
+          for i, (filiere, q) in enumerate(REQUETES):
+              if i:
+                  time.sleep(6)
+              url = ("https://api.gdeltproject.org/api/v2/doc/doc?query=" + urllib.parse.quote(q)
+                     + "&mode=ArtList&format=json&maxrecords=25&timespan=3d&sort=DateDesc")
+              try:
+                  req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+                  d = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace"))
+                  n = 0
+                  for a in d.get("articles", []):
+                      titre = (a.get("title") or "").strip()
+                      lien = (a.get("url") or "").strip()
+                      if not titre or not lien:
+                          continue
+                      src = f"GDELT · {a.get('domain', 'web')}" + (f" ({a.get('sourcecountry')})" if a.get("sourcecountry") else "")
+                      arts.append({"titre": titre, "lien": lien, "source": src,
+                                   "filiere": filiere, "datePublication": iso(a.get("seendate"))})
+                      n += 1
+                  print(f"{filiere}: {n} articles")
+              except Exception as e:
+                  print(f"{filiere}: {str(e)[:70]}")
+          print(f"Articles GDELT collectés: {len(arts)}")
+          json.dump({"articles": arts, "sourceCode": "GDELT_NEWS"}, open("/tmp/gdelt.json", "w"))
+          PYEOF
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/gdelt.json'))['articles']))")
+          if [ "$N" -gt 0 ]; then
+            curl -s --max-time 60 -X POST "https://like-my-self.vercel.app/api/import/news" \
+              -H "Content-Type: application/json" \
+              ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
+              --data-binary @/tmp/gdelt.json | head -c 300
+            echo
+          fi
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Déclencher les connecteurs temps réel
+        run: |
+          URL="https://like-my-self.vercel.app"
+          HEURE=$(date -u +%H)
+
+          # Toutes les heures : taux de change + prix CBOT + café/cacao + cajou Inde + actualités
+          CODES="TAUX_CHANGE_LIVE USDA_FAS_PSD ICE_SOFTS AGMARKNET_INDIA RSS_NEWS_AGRI"
+
+          # 2x/jour (07h et 19h UTC) : prix locaux WFP/HDX + sources officielles
+          if [ "$HEURE" = "07" ] || [ "$HEURE" = "19" ]; then
+            CODES="$CODES RESIMAO WORLD_BANK_PINK FAO_FPMA CONSEIL_ANACARDE_CI COMTRADE_UN"
+          fi
+
+          for code in $CODES; do
+            RESP=$(curl -s --max-time 90 -X POST "$URL/api/connectors" \
+              -H "Content-Type: application/json" -d "{\"code\": \"$code\"}")
+            echo "$RESP" | python3 -c "
+          import json, sys
+          code = '$code'
+          try:
+              d = json.load(sys.stdin)
+              if d.get('erreur') or d.get('error'):
+                  print(f'  ERREUR {code}:', str(d.get('erreur') or d.get('error'))[:90])
+              else:
+                  print(f'  OK {code}: {d.get(\"nbImportes\", 0)} importes, {d.get(\"nbErreurs\", 0)} erreurs')
+          except Exception:
+              print(f'  {code}: reponse illisible')
+          " || true
+          done

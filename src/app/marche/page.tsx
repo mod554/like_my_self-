@@ -2,10 +2,12 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import PrixChartWrapper from "@/components/charts/PrixChartWrapper";
+import CountUp from "@/components/ui/CountUp";
+import AfricaMarketMap from "@/components/brand/AfricaMarketMap";
 import LiveNewsFeed from "@/components/live/LiveNewsFeed";
 
-const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A" };
-const FILIERE_ICON: Record<string, string> = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰" };
+const FILIERE_COLOR: Record<string, string> = { MAIS: "#92BA59", CAJOU: "#B89B3A", COLA: "#8A9E1A", CAFE: "#C4622D", CACAO: "#7B4A2D", PALMIER: "#C99A2E", HEVEA: "#4A6B57" };
+const FILIERE_ICON: Record<string, string> = { MAIS: "🌽", CAJOU: "🥜", COLA: "🌰", CAFE: "☕", CACAO: "🍫", PALMIER: "🌴", HEVEA: "🌳" };
 
 async function getMarketData() {
   const filieres = await prisma.filiere.findMany({
@@ -43,7 +45,22 @@ async function getMarketData() {
     },
   });
 
-  return { filieres, news };
+  // Taux réels pour conversions XOF/EUR affichées sous chaque prix
+  const [xofRate, eurRate] = await Promise.all([
+    prisma.tauxChange.findFirst({ where: { deviseSrc: "USD", deviseDest: "XOF" }, orderBy: { dateReleve: "desc" } }).catch(() => null),
+    prisma.tauxChange.findFirst({ where: { deviseSrc: "EUR", deviseDest: "USD" }, orderBy: { dateReleve: "desc" } }).catch(() => null),
+  ]);
+  const xofPerUsd = xofRate ? Number(xofRate.taux) : 655.957;
+  const eurToUsd = eurRate ? Number(eurRate.taux) : 1.09;
+
+  return { filieres, news, xofPerUsd, eurToUsd };
+}
+
+// Conversion d'un prix (devise d'origine) vers USD puis XOF/EUR pour affichage
+function convertir(valeur: number, devise: string, xofPerUsd: number, eurToUsd: number) {
+  const d = devise.toUpperCase();
+  const usd = d === "XOF" ? valeur / xofPerUsd : d === "EUR" ? valeur * eurToUsd : valeur;
+  return { usd, xof: usd * xofPerUsd, eur: usd / eurToUsd };
 }
 
 function formatPrix(v: unknown, devise: string) {
@@ -65,30 +82,52 @@ function calcVariation(releves: Array<{ valeur: unknown }>) {
 export default async function MarchePage() {
   let filieres: Awaited<ReturnType<typeof getMarketData>>["filieres"] = [];
   let news: Awaited<ReturnType<typeof getMarketData>>["news"] = [];
+  let xofPerUsd = 655.957;
+  let eurToUsd = 1.09;
   try {
-    ({ filieres, news } = await getMarketData());
+    ({ filieres, news, xofPerUsd, eurToUsd } = await getMarketData());
   } catch (e) {
     console.error("MarchePage getMarketData error:", e);
   }
 
   return (
-    <div style={{ flex: 1, padding: "32px 0 64px" }}>
-      <div className="ag-container">
+    <div className="ag-page-marche" style={{ flex: 1, padding: "32px 0 64px", position: "relative" }}>
+      <div className="ag-aurora"><span /></div>
+      <div className="ag-texture" />
+      <div className="ag-container" style={{ position: "relative" }}>
 
-        {/* Header */}
-        <div style={{ marginBottom: "28px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
-          <div>
-            <p className="ag-section-label" style={{ marginBottom: "6px" }}>Terminal de marché · Africa Agro Partners</p>
-            <h1 className="font-display" style={{ fontSize: 24, color: "var(--text-primary)", margin: 0 }}>
-              Tableau de bord des prix
-            </h1>
-            <p style={{ marginTop: "6px", fontSize: 12, color: "var(--text-muted)", fontFamily: "monospace" }}>
-              Prix en temps réel · Taux de change mis à jour chaque heure · Actualités toutes les 5 minutes
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <span className="ag-status-dot" />
-            <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)" }}>DONNÉES EN TEMPS RÉEL</span>
+        {/* Hero photographique Higgsfield — overlay dégradé pour lisibilité */}
+        <div className="ag-hero-photo">
+          <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+            <div>
+              <p className="ag-section-label" style={{ marginBottom: "6px" }}>Terminal de marché · Africa Agro Partners</p>
+              <h1 className="font-display" style={{ fontSize: 28, color: "var(--text-primary)", margin: 0 }}>
+                Tableau de bord des prix
+              </h1>
+              <p style={{ marginTop: "6px", fontSize: 12, color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                Prix en temps réel · Taux de change mis à jour chaque heure · Actualités toutes les 5 minutes
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap" }}>
+              <a
+                href="/api/export"
+                download
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  padding: "8px 16px", borderRadius: "8px", textDecoration: "none",
+                  background: "rgba(0,61,46,0.85)", color: "#FFFFFF",
+                  border: "1px solid rgba(90,138,42,0.4)",
+                  fontSize: 12, fontWeight: 600,
+                  boxShadow: "0 4px 14px -4px rgba(0,61,46,0.4)",
+                }}
+              >
+                ⬇ Exporter Excel
+              </a>
+              <span style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <span className="ag-status-dot" />
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--ag-lime)", fontWeight: 700 }}>DONNÉES EN TEMPS RÉEL</span>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -122,11 +161,27 @@ export default async function MarchePage() {
                     {last ? (
                       <>
                         <div style={{ fontSize: 26, fontWeight: 700, color: accent, fontFamily: "monospace", lineHeight: 1 }}>
-                          {formatPrix(last.valeur, last.devise)}
+                          <CountUp value={Number(last.valeur)} devise={last.devise} />
                         </div>
                         <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", marginTop: "4px" }}>
                           {last.unite} · {new Date(last.dateReleve).toLocaleDateString("fr-FR")} · {last.typePrix}
                         </div>
+                        {(() => {
+                          const c = convertir(Number(last.valeur), last.devise, xofPerUsd, eurToUsd);
+                          return (
+                            <div style={{ display: "flex", gap: "6px", marginTop: "6px", fontSize: 9, fontFamily: "monospace", flexWrap: "wrap" }}>
+                              <span style={{ color: "var(--ag-forest)", background: "rgba(0,61,46,0.06)", padding: "2px 6px", borderRadius: "4px" }}>
+                                {c.xof.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} XOF
+                              </span>
+                              <span style={{ color: "var(--ag-olive)", background: "rgba(107,118,13,0.06)", padding: "2px 6px", borderRadius: "4px" }}>
+                                {c.eur.toLocaleString("fr-FR", { maximumFractionDigits: c.eur >= 100 ? 0 : 2 })} EUR
+                              </span>
+                              <span style={{ color: "var(--text-muted)" }}>
+                                / {last.unite}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </>
                     ) : (
                       <div style={{ fontSize: 14, color: "var(--text-muted)", fontFamily: "monospace" }}>— Aucune donnée</div>
@@ -232,7 +287,16 @@ export default async function MarchePage() {
           </div>
 
           {/* Fil d'actualité live — auto-refresh 5 minutes */}
-          <div style={{ position: "sticky", top: "80px" }}>
+          <div style={{ position: "sticky", top: "80px", display: "flex", flexDirection: "column", gap: "16px" }}>
+            {/* Réseau des marchés AOF — nœuds pulsants + particules vers CBOT */}
+            <div className="ag-glass" style={{ borderRadius: "12px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 18px 4px" }}>
+                <p className="ag-section-label">Réseau des marchés · flux temps réel</p>
+              </div>
+              <div style={{ padding: "0 10px 8px" }}>
+                <AfricaMarketMap />
+              </div>
+            </div>
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "10px", overflow: "hidden" }}>
               <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-subtle)" }}>
                 <p className="ag-section-label">Fil d&apos;actualité en direct</p>

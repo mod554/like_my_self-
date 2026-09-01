@@ -13,6 +13,10 @@ export async function GET() {
       DATABASE_URL: process.env.DATABASE_URL ? "SET" : "MISSING",
       CRON_SECRET: process.env.CRON_SECRET ? "SET" : "NOT_SET",
       ADMIN_SECRET: process.env.ADMIN_SECRET ? "SET" : "NOT_SET",
+      // Scraping Firecrawl : sans clé, SIMAGRI/Selina restent collectés par le
+      // runner GitHub (aucune régression), mais l'extraction structurée dort.
+      FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY ? "SET" : "NOT_SET",
+      FIRECRAWL_API_URL: process.env.FIRECRAWL_API_URL ? "SET" : "NOT_SET",
       NODE_ENV: process.env.NODE_ENV,
     },
   };

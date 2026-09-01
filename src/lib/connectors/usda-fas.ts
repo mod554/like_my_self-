@@ -45,6 +45,60 @@ async function fetchImfCommodityPrices(indicator: string): Promise<Record<string
   return series;
 }
 
+// Source primaire : Yahoo Finance — futures maïs CBOT ZC=F (parité TradingView
+// ZC1!). API JSON publique sans clé. Prix en cents USD/boisseau → USD/tonne.
+async function fetchYahooCorn(): Promise<{ date: string; usdParTonne: number }[]> {
+  const res = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range=3mo&interval=1d", {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
+  const json = await res.json() as {
+    chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
+  };
+  const r = json.chart?.result?.[0];
+  const ts = r?.timestamp ?? [];
+  const closes = r?.indicators?.quote?.[0]?.close ?? [];
+  const sorties: { date: string; usdParTonne: number }[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const c = closes[i];
+    if (c == null || c <= 0) continue;
+    const date = new Date(ts[i] * 1000).toISOString().slice(0, 10);
+    sorties.push({ date, usdParTonne: Math.round((c / 100) * 39.3683 * 100) / 100 });
+  }
+  if (sorties.length === 0) throw new Error("Yahoo série vide");
+  return sorties;
+}
+
+// Intraday maïs CBOT ZC=F — Yahoo est joignable depuis les IP Vercel, donc la
+// granularité horaire (range=5d&interval=1h) et minute (range=1d&interval=1m)
+// est collectée directement par le cron Vercel, sans runner externe. Renvoie
+// des timestamps ISO complets (≠ point quotidien de minuit).
+async function fetchYahooIntraday(range: string, interval: string): Promise<{ iso: string; usdParTonne: number; cents: number }[]> {
+  const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/ZC=F?range=${range}&interval=${interval}`, {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Yahoo intraday HTTP ${res.status}`);
+  const json = await res.json() as {
+    chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
+  };
+  const r = json.chart?.result?.[0];
+  const ts = r?.timestamp ?? [];
+  const closes = r?.indicators?.quote?.[0]?.close ?? [];
+  const out: { iso: string; usdParTonne: number; cents: number }[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const c = closes[i];
+    if (c == null || c <= 0) continue;
+    out.push({
+      iso: new Date(ts[i] * 1000).toISOString(),
+      usdParTonne: Math.round((c / 100) * 39.3683 * 100) / 100,
+      cents: Math.round(c * 100) / 100,
+    });
+  }
+  return out;
+}
+
 // Fallback 1 : FRED (Federal Reserve) — serie PMAIZMTUSDM = "Global price of Maize"
 // (donnees IMF redistribuees), CSV public sans cle : USD/tonne, mensuel.
 async function fetchFredMaize(): Promise<{ date: string; usdParTonne: number }[]> {
@@ -113,27 +167,69 @@ export class UsdaFasConnector implements Connector {
 
       if (!marche) throw new Error("Aucun marché MAIS trouvé en BD");
 
-      // Prix mais : IMF d'abord, sinon Stooq (l'IMF bloque certaines IP cloud)
+      // Prix mais — Yahoo Finance (ZC=F, parité TradingView) en primaire ;
+      // fonctionne depuis les IP Vercel contrairement à Stooq/FRED. Repli
+      // Stooq → FRED → IMF. Les echecs de repli sont des notes, pas des erreurs.
       let entries: [string, number][] = [];
-      let sourceNote = "IMF Primary Commodity Prices — PMAIZE";
+      let sourceNote = "";
+      const notesFallback: string[] = [];
+
       try {
-        const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
-        const currentYear = new Date().getFullYear();
-        entries = Object.entries(prixAnnuels).filter(
-          ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
-        );
-      } catch (imfErr) {
-        resultat.erreurs.push(`IMF indisponible: ${imfErr instanceof Error ? imfErr.message.slice(0, 60) : imfErr}`);
+        const yahoo = await fetchYahooCorn();
+        sourceNote = "Yahoo Finance — CBOT ZC=F quotidien (parité TradingView ZC1!)";
+        entries = yahoo.map((s) => [s.date, s.usdParTonne] as [string, number]);
+      } catch (yahooErr) {
+        notesFallback.push(`Yahoo: ${yahooErr instanceof Error ? yahooErr.message.slice(0, 60) : yahooErr}`);
+        try {
+        const stooq = await fetchStooqCorn();
+        sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
+        entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
+      } catch (stooqErr) {
+        notesFallback.push(`Stooq: ${stooqErr instanceof Error ? stooqErr.message.slice(0, 60) : stooqErr}`);
         try {
           const fred = await fetchFredMaize();
           sourceNote = "FRED — Global price of Maize (PMAIZMTUSDM, donnees IMF)";
           entries = fred.map((f) => [f.date, f.usdParTonne] as [string, number]);
         } catch (fredErr) {
-          resultat.erreurs.push(`FRED indisponible: ${fredErr instanceof Error ? fredErr.message.slice(0, 60) : fredErr}`);
-          const stooq = await fetchStooqCorn();
-          sourceNote = "Stooq — CBOT corn futures ZC (converti USD/tonne)";
-          entries = stooq.map((s) => [s.date, s.usdParTonne] as [string, number]);
+          notesFallback.push(`FRED: ${fredErr instanceof Error ? fredErr.message.slice(0, 60) : fredErr}`);
+          try {
+            const prixAnnuels = await fetchImfCommodityPrices("PMAIZE");
+            sourceNote = "IMF Primary Commodity Prices — PMAIZE";
+            const currentYear = new Date().getFullYear();
+            entries = Object.entries(prixAnnuels).filter(
+              ([year, val]) => parseInt(year) >= currentYear - 6 && val > 0
+            );
+          } catch (imfErr) {
+            notesFallback.push(`IMF: ${imfErr instanceof Error ? imfErr.message.slice(0, 60) : imfErr}`);
+          }
         }
+      }
+      }
+      if (entries.length === 0) {
+        // Les IP partagées Vercel épuisent les quotas Stooq/FRED/IMF — mais les
+        // cotations arrivent via GitHub Actions (/api/import/mais). Si des
+        // données récentes (< 48h) existent, la source est opérationnelle.
+        const recent = await prisma.prixReleve.findFirst({
+          where: { sourceId: source.id, dateCollecte: { gte: new Date(Date.now() - 48 * 3600_000) } },
+          orderBy: { dateCollecte: "desc" },
+        }).catch(() => null);
+        if (recent) {
+          const fin = new Date();
+          await prisma.source.update({
+            where: { code: SOURCE_CODE },
+            data: { statutDernier: "OK", messageErreur: "Cotations CBOT alimentées via GitHub Actions (IP Vercel limitées par Stooq/FRED)" },
+          });
+          await prisma.connectorLog.create({
+            data: {
+              sourceId: source.id, debut, fin, statut: "OK",
+              nbImportes: 0, nbErreurs: 0,
+              message: "Sources directes limitées — données récentes déjà présentes (import GitHub Actions)",
+            },
+          }).catch(() => {});
+          return { ...resultat, fin };
+        }
+        resultat.erreurs.push(...notesFallback);
+        throw new Error("Aucune source maïs disponible (Stooq, FRED, IMF)");
       }
 
       for (const [dateStr, valeur] of entries) {
@@ -166,33 +262,67 @@ export class UsdaFasConnector implements Connector {
         }
       }
 
-      // Créer une actualité résumé pour les données IMF
+      // Intraday maïs (horaire + minute) — collecté directement depuis Vercel
+      // via Yahoo (le seul produit avec un marché live). Échec = note, pas erreur.
+      for (const { range, interval, typePrix, note } of [
+        { range: "5d", interval: "1h", typePrix: "SPOT_1H",   note: "CBOT ZC=F horaire via Yahoo (parité TradingView ZC1!)" },
+        { range: "1d", interval: "1m", typePrix: "SPOT_1MIN", note: "CBOT ZC=F minute via Yahoo (parité TradingView ZC1!)" },
+      ]) {
+        try {
+          const barres = await fetchYahooIntraday(range, interval);
+          if (barres.length === 0) continue;
+          const res = await prisma.prixReleve.createMany({
+            data: barres.map((b) => ({
+              produitId: produit.id,
+              marcheId: marche.id,
+              sourceId: source.id,
+              typePrix,
+              valeur: b.usdParTonne,
+              devise: "USD",
+              unite: "tonne",
+              dateReleve: new Date(b.iso),
+              fiabilite: "OFFICIEL" as const,
+              notes: `${note} — ${b.cents.toFixed(2)} ¢/bu`,
+            })),
+            skipDuplicates: true,
+          });
+          resultat.nbImportes += res.count;
+        } catch (e) {
+          resultat.erreurs.push(`Intraday ${interval}: ${e instanceof Error ? e.message.slice(0, 50) : e}`);
+        }
+      }
+
+      // Créer une actualité résumé pour les données IMF — la table Actualite
+      // n'a PAS de contrainte unique : il faut vérifier l'existence avant
+      // d'insérer, sinon chaque run (horaire) ajoute un doublon au fil.
       if (entries.length > 0) {
         const filiere = await prisma.filiere.findUnique({ where: { code: "MAIS" } }).catch(() => null);
         if (filiere) {
           const dernierEntry = [...entries].sort(([a], [b]) => b.localeCompare(a))[0];
           const [annee, prix] = dernierEntry;
-          try {
+          const titre = `Maïs mondial ${annee.slice(0, 10)}: ${prix.toFixed(0)} USD/T`;
+          const lien = "https://stooq.com/q/?s=zc.f";
+          const deja = await prisma.actualite.findFirst({ where: { lien, titre }, select: { id: true } }).catch(() => null);
+          if (!deja) {
             await prisma.actualite.create({
               data: {
                 filiereId: filiere.id,
-                titre: `IMF Commodity Prices — Maïs ${annee}: ${prix.toFixed(0)} USD/T`,
-                lien: "https://www.imf.org/en/Research/commodity-prices",
-                source: "IMF Primary Commodity Prices",
-                resume: `Prix mondial du maïs (PMAIZE) en ${annee} : ${prix.toFixed(2)} USD/tonne. Source : FMI.`,
-                datePublication: new Date(`${annee}-07-01T00:00:00.000Z`),
+                titre,
+                lien,
+                source: sourceNote,
+                resume: `Prix mondial du maïs au ${annee.slice(0, 10)} : ${prix.toFixed(2)} USD/tonne. Source : ${sourceNote}.`,
+                datePublication: dernierEntry[0].length === 4 ? new Date(`${annee}-07-01T00:00:00.000Z`) : new Date(`${annee}T00:00:00.000Z`),
               },
-            });
+            }).catch(() => {});
             resultat.nbImportes++;
-          } catch {
-            // doublon ignoré
           }
         }
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
+      // 0 nouvel import sans erreur = dédup active, données déjà à jour → OK
+      const statut = resultat.nbErreurs > 0
+        ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
         : "OK";
 
       await prisma.source.update({

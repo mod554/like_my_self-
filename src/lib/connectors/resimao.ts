@@ -47,6 +47,7 @@ interface WfpPricesResponse {
 }
 
 interface MarcheReleve {
+  origine?: string; // "WFP/HDX" | "WFP API" | "RESIMAO"
   pays: string;
   marche: string;
   produit: string;
@@ -184,6 +185,86 @@ async function fetchWfpPrices(alpha2: string): Promise<WfpPrice[]> {
   }
 }
 
+// Strategy 1bis : HDX (Humanitarian Data Exchange) — CSV publics des prix
+// alimentaires WFP, sans clé API. L'URL du CSV est résolue dynamiquement via
+// l'API CKAN. Rotation de 2 pays par run pour tenir le budget 60s serverless.
+const HDX_DATASETS: { slug: string; pays: string; devise: string }[] = [
+  { slug: "wfp-food-prices-for-burkina-faso",  pays: "Burkina Faso",  devise: "XOF" },
+  { slug: "wfp-food-prices-for-mali",          pays: "Mali",          devise: "XOF" },
+  { slug: "wfp-food-prices-for-senegal",       pays: "Sénégal",       devise: "XOF" },
+  { slug: "wfp-food-prices-for-benin",         pays: "Bénin",         devise: "XOF" },
+  { slug: "wfp-food-prices-for-niger",         pays: "Niger",         devise: "XOF" },
+  { slug: "wfp-food-prices-for-cote-d-ivoire", pays: "Côte d'Ivoire", devise: "XOF" },
+  { slug: "wfp-food-prices-for-togo",          pays: "Togo",          devise: "XOF" },
+  { slug: "wfp-food-prices-for-ghana",         pays: "Ghana",         devise: "GHS" },
+];
+
+async function fetchHdxCsvUrl(slug: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://data.humdata.org/api/3/action/package_show?id=${slug}`, {
+      headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as { result?: { resources?: { url?: string; format?: string }[] } };
+    const csv = (json.result?.resources ?? []).find((r) => (r.format ?? "").toUpperCase() === "CSV");
+    return csv?.url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchHdxPrices(dataset: { slug: string; pays: string; devise: string }): Promise<MarcheReleve[]> {
+  const csvUrl = await fetchHdxCsvUrl(dataset.slug);
+  if (!csvUrl) return [];
+  try {
+    const res = await fetch(csvUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return [];
+    const csv = await res.text();
+    const lignes = csv.split("\n");
+    // En-tête HDX : date,admin1,admin2,market,latitude,longitude,category,commodity,unit,priceflag,pricetype,currency,price,usdprice
+    const header = (lignes[0] ?? "").toLowerCase().split(",");
+    const iDate = header.indexOf("date");
+    const iMarket = header.indexOf("market");
+    const iCommodity = header.indexOf("commodity");
+    const iUnit = header.indexOf("unit");
+    const iCurrency = header.indexOf("currency");
+    const iPrice = header.indexOf("price");
+    if (iDate < 0 || iCommodity < 0 || iPrice < 0) return [];
+
+    const seuil = new Date();
+    seuil.setMonth(seuil.getMonth() - 18); // 18 derniers mois seulement
+    const sorties: MarcheReleve[] = [];
+    // Les CSV HDX sont triés chronologiquement — on lit depuis la fin
+    for (let i = lignes.length - 1; i > 1 && sorties.length < 400; i--) {
+      const cells = lignes[i].split(",");
+      if (cells.length <= iPrice) continue;
+      const commodity = (cells[iCommodity] ?? "").toLowerCase();
+      if (!commodity.includes("maize") && !commodity.includes("maïs") && !commodity.includes("cashew")) continue;
+      const date = new Date(cells[iDate]);
+      if (isNaN(date.getTime()) || date < seuil) continue;
+      const prix = parseFloat(cells[iPrice]);
+      if (!isFinite(prix) || prix <= 0) continue;
+      sorties.push({
+        origine: "WFP/HDX",
+        pays: dataset.pays,
+        marche: (cells[iMarket] ?? "").toLowerCase(),
+        produit: commodity,
+        prix,
+        devise: (cells[iCurrency] ?? dataset.devise).toUpperCase() || dataset.devise,
+        unite: (cells[iUnit] ?? "").toLowerCase().includes("kg") ? "kg" : "tonne",
+        date,
+      });
+    }
+    return sorties;
+  } catch {
+    return [];
+  }
+}
+
 async function fetchResimaoHtml(): Promise<MarcheReleve[]> {
   const urlsEssai = [
     `${BASE_URL}/prix`,
@@ -224,6 +305,7 @@ function wfpPriceToReleve(p: WfpPrice, country: { name: string }): MarcheReleve 
     : "XOF";
   const unite = (p.unit ?? "").toLowerCase().includes("kg") ? "kg" : "tonne";
   return {
+    origine: "WFP API",
     pays: country.name,
     marche: marcheRaw,
     produit: produitRaw,
@@ -251,14 +333,27 @@ export class ResimaoConnector implements Connector {
       const source = await prisma.source.findUnique({ where: { code: SOURCE_CODE } });
       if (!source) throw new Error(`Source ${SOURCE_CODE} introuvable en BD`);
 
-      // Strategy 1: WFP VAM API v2
+      // Strategy 1 : HDX (CSV publics WFP, sans clé) — rotation de 2 pays
+      // par run (jour de l'année) pour tenir le budget serverless 60s
       let releves: MarcheReleve[] = [];
-      for (const country of WFP_COUNTRIES) {
-        const wfpPrices = await fetchWfpPrices(country.alpha2);
-        releves.push(...wfpPrices.filter((p) => p.price > 0).map((p) => wfpPriceToReleve(p, country)));
+      const jour = Math.floor(Date.now() / 86_400_000);
+      const paires = [
+        HDX_DATASETS[(jour * 2) % HDX_DATASETS.length],
+        HDX_DATASETS[(jour * 2 + 1) % HDX_DATASETS.length],
+      ];
+      for (const dataset of paires) {
+        releves.push(...await fetchHdxPrices(dataset));
       }
 
-      // Strategy 2: RESIMAO HTML fallback
+      // Strategy 2 : WFP VAM API v2 (nécessite désormais une clé — souvent vide)
+      if (releves.length === 0) {
+        for (const country of WFP_COUNTRIES.slice(0, 3)) {
+          const wfpPrices = await fetchWfpPrices(country.alpha2);
+          releves.push(...wfpPrices.filter((p) => p.price > 0).map((p) => wfpPriceToReleve(p, country)));
+        }
+      }
+
+      // Strategy 3: RESIMAO HTML fallback
       if (releves.length === 0) {
         releves = await fetchResimaoHtml();
       }
@@ -275,6 +370,20 @@ export class ResimaoConnector implements Connector {
         for (const [key, val] of Object.entries(produitMap)) {
           if (releve.marche.includes(key) || releve.pays.toLowerCase().includes(key)) {
             marcheCode = val; break;
+          }
+        }
+        // Fallback : marchés secondaires (Bobo-Dioulasso, Sikasso…) rattachés
+        // au marché national — les CSV WFP couvrent bien plus que les capitales
+        if (!marcheCode && produitCode === "MAIS_GRAIN") {
+          const paysL = releve.pays.toLowerCase();
+          const PAYS_MARCHE: Record<string, string> = {
+            "burkina": "OUAGA_MAIS", "mali": "BAMAKO_MAIS", "sénégal": "DAKAR_MAIS",
+            "senegal": "DAKAR_MAIS", "bénin": "COTONOU_MAIS", "benin": "COTONOU_MAIS",
+            "niger": "NIAMEY_MAIS", "ivoire": "ABIDJAN_MAIS", "togo": "LOME_MAIS",
+            "ghana": "ACCRA_MAIS", "nigeria": "LAGOS_MAIS",
+          };
+          for (const [key, val] of Object.entries(PAYS_MARCHE)) {
+            if (paysL.includes(key)) { marcheCode = val; break; }
           }
         }
         if (!marcheCode) continue;
@@ -298,7 +407,7 @@ export class ResimaoConnector implements Connector {
               unite: releve.unite,
               dateReleve: releve.date,
               fiabilite: "INDICATIF",
-              notes: `RESIMAO — ${releve.pays} — ${releve.marche}`,
+              notes: `${releve.origine ?? "RESIMAO"} — ${releve.pays} — ${releve.marche}`,
             },
           });
           resultat.nbImportes++;
@@ -312,11 +421,13 @@ export class ResimaoConnector implements Connector {
       }
 
       const fin = new Date();
-      const statut = resultat.nbImportes === 0 ? "ERREUR"
-        : resultat.nbErreurs > 0 ? "PARTIEL"
-        : "OK";
-      const messageErreur = resultat.nbImportes === 0
-        ? "0 relevés collectés — WFP API et RESIMAO HTML indisponibles"
+      // 0 nouvel import : ERREUR seulement si on n'a rien pu télécharger ;
+      // si des relevés ont été lus mais tous dédupliqués, c'est OK
+      const statut = resultat.nbErreurs > 0
+        ? (resultat.nbImportes > 0 ? "PARTIEL" : "ERREUR")
+        : releves.length === 0 ? "ERREUR" : "OK";
+      const messageErreur = statut === "ERREUR" && releves.length === 0
+        ? "0 relevés téléchargés — HDX, WFP API et RESIMAO indisponibles"
         : resultat.erreurs.length > 0 ? resultat.erreurs.slice(0, 3).join(" | ") : null;
 
       await prisma.source.update({

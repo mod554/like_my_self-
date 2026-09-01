@@ -124,6 +124,12 @@ export class IndexMundiConnector implements Connector {
       if (!source) throw new Error(`Source ${SOURCE_CODE} introuvable en BD`);
 
       for (const page of PAGES) {
+        // Garde-fou budget : la route serverless est tuée à 60s
+        if (Date.now() - debut.getTime() > 35_000) {
+          resultat.erreurs.push(`${page.produitCode}: budget temps épuisé`);
+          resultat.nbErreurs++;
+          continue;
+        }
         try {
           const [produit, marche] = await Promise.all([
             prisma.produit.findUnique({ where: { code: page.produitCode } }),
@@ -141,8 +147,11 @@ export class IndexMundiConnector implements Connector {
             continue;
           }
 
+          // Timeout court + 1 seul retry : IndexMundi est une source de secours
+          // (INDICATIF) — 3 retries x 30s dépassaient le budget serverless 60s
           const html = await fetchHtml(page.url, {
-            retries: 3,
+            retries: 0,
+            timeoutMs: 12_000,
             headers: { "Referer": "https://www.indexmundi.com/" },
           });
           // Try embedded JSON first (faster), fall back to table HTML
