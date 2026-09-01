@@ -231,6 +231,40 @@ class TestLigneDeCommande:
         produits = list((tmp_path / "rapports").glob("portefeuille_*.xlsx"))
         assert len(produits) == 1
 
+    def test_cribler_sur_base_vide_rend_un_code_degrade(
+        self, dossier_config: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Une cote dont rien n'est analysable n'est pas un succès : c'est une
+        base à alimenter, et un cron doit pouvoir s'en apercevoir."""
+        code = principal(["--config", str(self._config(dossier_config)), "cribler"])
+        sortie = capsys.readouterr().out
+        assert code == DEGRADE
+        assert "CRIBLAGE DE LA COTE" in sortie
+        assert "aucune promesse de rendement" in sortie
+
+    def test_cribler_sans_capital_ne_chiffre_aucune_repartition(
+        self, dossier_config: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        principal(["--config", str(self._config(dossier_config)), "cribler"])
+        assert "RÉPARTITION POSSIBLE" not in capsys.readouterr().out
+
+    def test_cribler_refuse_un_profil_inconnu(
+        self, dossier_config: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = principal(
+            [
+                "--config",
+                str(self._config(dossier_config)),
+                "cribler",
+                "--capital",
+                "5000000",
+                "--horizon",
+                "moyen_terme",
+            ]
+        )
+        assert code == ECHEC
+        assert "Profils déclarés" in capsys.readouterr().err
+
     def test_configuration_invalide_donne_un_code_dechec(self, tmp_path: Path) -> None:
         manquante = tmp_path / "absente.yaml"
         assert principal(["--config", str(manquante), "verifier"]) == ECHEC

@@ -6,85 +6,16 @@ vérifient surtout qu'aucune ne disparaît silencieusement d'un tableau.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import date
 
-import pytest
+from conftest import FIN_MARCHE, INSTANT_MARCHE
 
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
-from brvm.domain.enums import StatutSeance
-from brvm.domain.modeles import Cotation
 from brvm.ingestion.univers import charger_univers
 from brvm.market.criblage import cribler
 from brvm.storage.base import BaseDonnees
-from brvm.storage.depots import DepotCotations, DepotInstruments
-
-INSTANT = datetime(2026, 9, 1, 16, 0, tzinfo=UTC)
-DEBUT = date(2026, 1, 5)
-FIN = date(2026, 8, 31)
-
-
-def peupler(
-    base: BaseDonnees,
-    calendrier: CalendrierSeances,
-    fabrique_cotation: Callable[..., Cotation],
-    ticker: str,
-    *,
-    une_seance_sur: int = 1,
-    depart: int = 1000,
-    pas: int = 2,
-    debut: date = DEBUT,
-    fin: date = FIN,
-) -> None:
-    """Écrit une série en base, cotée une séance sur ``une_seance_sur``."""
-    cotations: list[Cotation] = []
-    jour = debut
-    rang = 0
-    while jour <= fin:
-        if calendrier.est_jour_de_seance(jour):
-            horodatage = datetime(jour.year, jour.month, jour.day, 15, 0, tzinfo=UTC)
-            cote = rang % une_seance_sur == 0
-            cours = depart + rang * pas
-            cotations.append(
-                fabrique_cotation(
-                    jour=jour,
-                    ticker=ticker,
-                    source="fichier_manuel",
-                    cloture=cours if cote else None,
-                    statut=StatutSeance.COTEE if cote else StatutSeance.SANS_TRANSACTION,
-                    volume=5000 if cote else 0,
-                    horodatage_donnee=horodatage,
-                    horodatage_collecte=horodatage,
-                    **(
-                        {
-                            "ouverture": cours,
-                            "plus_haut": cours + 10,
-                            "plus_bas": cours - 10,
-                            "volume_xof": cours * 5000,
-                        }
-                        if cote
-                        else {}
-                    ),
-                )
-            )
-            rang += 1
-        jour += timedelta(days=1)
-    DepotCotations(base).enregistrer_lot(cotations)
-
-
-@pytest.fixture
-def cote(
-    base: BaseDonnees,
-    configuration: Configuration,
-    calendrier: CalendrierSeances,
-    fabrique_cotation: Callable[..., Cotation],
-) -> BaseDonnees:
-    """Trois valeurs à l'univers, dont une inactive et une jamais cotée."""
-    DepotInstruments(base).enregistrer_lot(charger_univers(configuration.marche.fichier_univers))
-    peupler(base, calendrier, fabrique_cotation, "TEST1")
-    peupler(base, calendrier, fabrique_cotation, "TEST2", une_seance_sur=6, pas=-1)
-    return base
+from brvm.storage.depots import DepotInstruments
 
 
 class TestUnivers:
@@ -94,7 +25,7 @@ class TestUnivers:
         configuration: Configuration,
         calendrier: CalendrierSeances,
     ) -> None:
-        criblage = cribler(base, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(base, configuration, calendrier, instant=INSTANT_MARCHE)
         assert criblage.analyses == ()
         assert any("référentiel des valeurs est vide" in a for a in criblage.avertissements)
 
@@ -103,7 +34,7 @@ class TestUnivers:
     ) -> None:
         """TEST3 est déclarée inactive dans l'univers : elle ne fait plus partie
         de la cote à cribler."""
-        criblage = cribler(cote, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
         vus = {a.ticker for a in criblage.analyses} | {e.ticker for e in criblage.ecartees}
         assert "TEST3" not in vus
 
@@ -111,7 +42,7 @@ class TestUnivers:
         self, cote: BaseDonnees, configuration: Configuration, calendrier: CalendrierSeances
     ) -> None:
         criblage = cribler(
-            cote, configuration, calendrier, instant=INSTANT, tickers=["TEST1", "JAMAIS"]
+            cote, configuration, calendrier, instant=INSTANT_MARCHE, tickers=["TEST1", "JAMAIS"]
         )
         ecartees = {e.ticker: e.motif for e in criblage.ecartees}
         assert "JAMAIS" in ecartees
@@ -121,7 +52,9 @@ class TestUnivers:
     def test_restriction_par_tickers_est_respectee(
         self, cote: BaseDonnees, configuration: Configuration, calendrier: CalendrierSeances
     ) -> None:
-        criblage = cribler(cote, configuration, calendrier, instant=INSTANT, tickers=["TEST1"])
+        criblage = cribler(
+            cote, configuration, calendrier, instant=INSTANT_MARCHE, tickers=["TEST1"]
+        )
         assert [a.ticker for a in criblage.analyses] == ["TEST1"]
 
 
@@ -133,7 +66,12 @@ class TestBorneDeConnaissance:
         qui n'existait pas encore."""
         borne = date(2026, 4, 30)
         criblage = cribler(
-            cote, configuration, calendrier, instant=INSTANT, jusqu_a=borne, tickers=["TEST1"]
+            cote,
+            configuration,
+            calendrier,
+            instant=INSTANT_MARCHE,
+            jusqu_a=borne,
+            tickers=["TEST1"],
         )
         analyse = criblage.analyses[0]
         assert analyse.date_cours is not None
@@ -146,12 +84,17 @@ class TestBorneDeConnaissance:
             cote,
             configuration,
             calendrier,
-            instant=INSTANT,
+            instant=INSTANT_MARCHE,
             jusqu_a=date(2026, 4, 30),
             tickers=["TEST1"],
         )
         tard = cribler(
-            cote, configuration, calendrier, instant=INSTANT, jusqu_a=FIN, tickers=["TEST1"]
+            cote,
+            configuration,
+            calendrier,
+            instant=INSTANT_MARCHE,
+            jusqu_a=FIN_MARCHE,
+            tickers=["TEST1"],
         )
         assert tot.analyses[0].cours is not None
         assert tard.analyses[0].cours is not None
@@ -162,7 +105,7 @@ class TestFraicheur:
     def test_horodatage_le_plus_ancien_est_rapporte(
         self, cote: BaseDonnees, configuration: Configuration, calendrier: CalendrierSeances
     ) -> None:
-        criblage = cribler(cote, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
         assert criblage.horodatage_le_plus_ancien is not None
         assert criblage.age_minutes() is not None
         assert "Donnée la plus ancienne" in criblage.entete_fraicheur()
@@ -176,7 +119,7 @@ class TestFraicheur:
         DepotInstruments(base).enregistrer_lot(
             charger_univers(configuration.marche.fichier_univers)
         )
-        criblage = cribler(base, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(base, configuration, calendrier, instant=INSTANT_MARCHE)
         assert criblage.age_minutes() is None
         assert "n'est pas analysable" in criblage.entete_fraicheur()
 
@@ -185,7 +128,7 @@ class TestClassements:
     def test_tous_les_profils_declares_sont_produits(
         self, cote: BaseDonnees, configuration: Configuration, calendrier: CalendrierSeances
     ) -> None:
-        criblage = cribler(cote, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
         assert set(criblage.classements) == set(configuration.analyse.horizons)
 
     def test_valeur_tres_illiquide_est_ecartee_du_court_terme_avec_sa_raison(
@@ -193,7 +136,7 @@ class TestClassements:
     ) -> None:
         """TEST2 ne cote qu'une séance sur six : sa confiance tombe sous le
         seuil, et elle sort du classement plutôt que d'y figurer mal notée."""
-        criblage = cribler(cote, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
         court = criblage.classements["court_terme"]
         ecartes = {rang.ticker for rang in court.ecartes}
         assert "TEST2" in ecartes
@@ -203,7 +146,7 @@ class TestClassements:
     def test_couverture_par_critere_est_disponible(
         self, cote: BaseDonnees, configuration: Configuration, calendrier: CalendrierSeances
     ) -> None:
-        criblage = cribler(cote, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
         couverture = criblage.couverture_criteres()
         assert couverture["momentum"] >= 1
         assert "rendement_dividende" in couverture
@@ -215,7 +158,7 @@ class TestFondamentaux:
     ) -> None:
         """Le fichier de test renseigne TEST1 et TEST2 : les deux valeurs
         criblées le sont, et le criblage l'annonce."""
-        criblage = cribler(cote, configuration, calendrier, instant=INSTANT)
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
         assert criblage.fondamentaux_renseignes == len(criblage.analyses)
 
     def test_sans_referentiel_le_long_terme_s_abstient_et_le_dit(
@@ -231,7 +174,7 @@ class TestFondamentaux:
                 "analyse": configuration.analyse.model_copy(update={"fichier_fondamentaux": vide})
             }
         )
-        criblage = cribler(cote, sans, calendrier, instant=INSTANT)
+        criblage = cribler(cote, sans, calendrier, instant=INSTANT_MARCHE)
         assert criblage.fondamentaux_renseignes == 0
         assert any("Aucune donnée fondamentale saisie" in a for a in criblage.avertissements)
         long_terme = criblage.classements["long_terme"]
@@ -249,7 +192,7 @@ class TestFondamentaux:
                 "analyse": configuration.analyse.model_copy(update={"fichier_fondamentaux": vide})
             }
         )
-        criblage = cribler(sans_base := cote, sans, calendrier, instant=INSTANT)
+        criblage = cribler(sans_base := cote, sans, calendrier, instant=INSTANT_MARCHE)
         assert sans_base is cote
         assert criblage.analyses
         assert criblage.classements["court_terme"].classes

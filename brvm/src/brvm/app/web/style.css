@@ -721,6 +721,194 @@
     margin-inline-start: var(--e2);
     font-family: var(--interface);
   }
+
+  /* ------------------------------------------------------------- marché */
+  /* La cote entière. Deux partis pris tenus ici :
+     — le score se lit d'abord comme une LONGUEUR, le chiffre ne fait que
+       confirmer. Un nombre entre 0 et 1 ne se compare pas d'un coup d'œil ;
+     — un critère non mesuré occupe une ligne complète, pas une case vide.
+       Une case vide se lit comme un zéro ; une phrase se lit comme une absence. */
+
+  .commande {
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon-large);
+    padding: var(--e4) var(--e5);
+    background: var(--papier-leve);
+    margin-block-start: var(--e4);
+  }
+  .commande-corps {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--e3);
+    flex-wrap: wrap;
+    margin-block-start: var(--e2);
+  }
+  .champ { display: grid; gap: var(--e1); }
+  .champ > span {
+    font-size: var(--t-micro);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--encre-tertiaire);
+  }
+  .champ input {
+    font-family: var(--chiffres);
+    font-size: var(--t-moyen);
+    color: var(--encre);
+    background: var(--papier);
+    border: 1px solid var(--trait-fort);
+    border-radius: var(--rayon);
+    padding: var(--e2) var(--e3);
+    inline-size: 15ch;
+  }
+  .champ input:focus-visible {
+    outline: 2px solid var(--indigo);
+    outline-offset: 1px;
+  }
+  .champ-unite {
+    font-size: var(--t-petit);
+    color: var(--encre-tertiaire);
+    padding-block-end: var(--e2);
+  }
+  .commande button {
+    font-family: var(--interface);
+    font-size: var(--t-base);
+    font-weight: 500;
+    color: var(--papier-leve);
+    background: var(--indigo);
+    border: 1px solid var(--indigo);
+    border-radius: var(--rayon);
+    padding: var(--e2) var(--e4);
+    cursor: pointer;
+  }
+  .commande button:hover { background: var(--encre); border-color: var(--encre); }
+  .commande button:disabled {
+    background: var(--papier-creux);
+    border-color: var(--trait);
+    color: var(--encre-muette);
+    cursor: progress;
+  }
+  .commande button:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+  .onglets {
+    display: flex;
+    gap: var(--e1);
+    margin-block-start: var(--e6);
+    border-block-end: 1px solid var(--trait);
+  }
+  .onglet {
+    font-family: var(--interface);
+    font-size: var(--t-base);
+    color: var(--encre-tertiaire);
+    background: none;
+    border: none;
+    border-block-end: 2px solid transparent;
+    padding: var(--e2) var(--e3);
+    margin-block-end: -1px;
+    cursor: pointer;
+  }
+  .onglet[aria-selected="true"] {
+    color: var(--encre);
+    border-block-end-color: var(--laiton-marque);
+    font-weight: 500;
+  }
+  .onglet:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+
+  .horizon-description {
+    max-width: 76ch;
+    margin-block: var(--e4) var(--e1);
+    color: var(--encre-secondaire);
+  }
+
+  .score {
+    display: block;
+    inline-size: 84px;
+    block-size: 6px;
+    background: var(--papier-creux);
+    border-radius: var(--rayon-plein);
+    overflow: hidden;
+  }
+  .score-remplissage {
+    block-size: 100%;
+    inline-size: var(--part);
+    background: var(--indigo);
+  }
+  .rang-score { display: flex; align-items: center; gap: var(--e2); }
+  .rang-chiffre { font-family: var(--chiffres); font-size: var(--t-petit); }
+  .rang-place { color: var(--encre-tertiaire); font-family: var(--chiffres); }
+  .rang-nom {
+    display: block;
+    font-size: var(--t-micro);
+    color: var(--encre-tertiaire);
+  }
+  .rang-cliquable { cursor: pointer; }
+  .rang-cliquable:hover { background: var(--papier-survol); }
+  .rang-cliquable:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+  .rang-cliquable[aria-expanded="true"] { background: var(--papier-creux); }
+  .rang-detail > td { background: var(--papier-creux); }
+
+  .criteres { display: grid; gap: var(--e2); padding-block: var(--e2); }
+  .critere {
+    display: grid;
+    /* La piste est bornée : sur un grand écran, une barre de 900 px ne se
+       compare pas mieux qu'une barre de 220 px, elle se compare moins bien. */
+    grid-template-columns: minmax(14ch, 22ch) minmax(8ch, 12ch) minmax(0, 220px) 4ch;
+    justify-content: start;
+    align-items: center;
+    gap: var(--e3);
+  }
+  .critere-nom { font-size: var(--t-petit); }
+  .critere-valeur,
+  .critere-chiffre {
+    font-family: var(--chiffres);
+    font-size: var(--t-petit);
+    color: var(--encre-secondaire);
+    text-align: end;
+  }
+  .critere-piste {
+    block-size: 4px;
+    background: var(--papier);
+    border: 1px solid var(--trait-discret);
+    border-radius: var(--rayon-plein);
+    overflow: hidden;
+  }
+  .critere-note {
+    block-size: 100%;
+    inline-size: var(--part);
+    background: var(--laiton-marque);
+  }
+  .critere-absent {
+    font-size: var(--t-petit);
+    color: var(--encre-secondaire);
+    margin: 0;
+    padding-inline-start: var(--e3);
+    border-inline-start: 2px solid var(--trait-fort);
+  }
+  .critere-absent strong { color: var(--encre); font-weight: 600; }
+
+  .contrainte { font-size: var(--t-petit); color: var(--encre-secondaire); }
+
+  /* Un nombre glissé dans une phrase. La police d'interface est sous-ensemblée
+     et ne porte pas l'espace fine insécable des séparateurs de milliers : sans
+     cette bascule, « 5 000 000 » se lit « 5000000 ». */
+  .nombre { font-family: var(--chiffres); }
+
+  .chiffres--compacts {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-block: var(--e3) var(--e4);
+  }
+
+  .repli {
+    margin-block-start: var(--e6);
+    border-block-start: 1px solid var(--trait-discret);
+    padding-block-start: var(--e3);
+  }
+  .repli summary {
+    font-size: var(--t-petit);
+    color: var(--encre-tertiaire);
+    cursor: pointer;
+  }
+  .repli summary:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+  .repli > p { margin-block-start: var(--e2); }
 }
 
 @layer utilitaires {

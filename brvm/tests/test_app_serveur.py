@@ -163,3 +163,51 @@ class TestInterfaceLivree:
 
         for chemin in re.findall(r'url\("([^"]+)"\)', css):
             assert (RACINE_WEB / chemin).is_file(), chemin
+
+
+class TestRouteMarche:
+    """Le criblage de la cote, servi en JSON.
+
+    Le point le plus important n'est pas le contenu — les tests de
+    ``brvm.market`` s'en chargent — mais que le capital demandé soit lu
+    strictement : une saisie fautive réinterprétée en zéro produirait une page
+    annonçant qu'aucune valeur n'est finançable, ce qui serait faux.
+    """
+
+    def test_repond_meme_sur_une_base_vide(self, serveur: str) -> None:
+        code, contenu, _ = demander(serveur + "/api/marche")
+        assert code == 200
+        charge = json.loads(contenu)
+        assert charge["univers"] == 0
+        assert charge["propositions"] == {}
+        assert "mention" in charge
+
+    def test_sans_capital_aucune_repartition_n_est_supposee(self, serveur: str) -> None:
+        charge = json.loads(demander(serveur + "/api/marche")[1])
+        assert charge["propositions"] == {}
+
+    @pytest.mark.parametrize(
+        ("requete", "extrait"),
+        [
+            ("capital=abc", "Capital illisible"),
+            ("capital=1,5", "Capital illisible"),
+            ("capital=-1", "négatif"),
+            ("capital=999999999999999", "au-delà du maximum"),
+        ],
+    )
+    def test_capital_fautif_est_refuse_et_non_reinterprete(
+        self, serveur: str, requete: str, extrait: str
+    ) -> None:
+        code, contenu, _ = demander(f"{serveur}/api/marche?{requete}")
+        assert code == 400
+        assert extrait in json.loads(contenu)["erreur"]
+
+    def test_capital_vide_vaut_absence_pas_erreur(self, serveur: str) -> None:
+        code, contenu, _ = demander(serveur + "/api/marche?capital=")
+        assert code == 200
+        assert json.loads(contenu)["propositions"] == {}
+
+    def test_les_entetes_de_prudence_couvrent_aussi_cette_route(self, serveur: str) -> None:
+        _, _, entetes = demander(serveur + "/api/marche")
+        assert "default-src 'self'" in entetes["Content-Security-Policy"]
+        assert entetes["Cache-Control"] == "no-store"

@@ -28,14 +28,17 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Final
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
-from brvm.app.api import serialiser
+from brvm.app.api import serialiser, serialiser_criblage
 from brvm.app.etat import assembler
 from brvm.config.chargement import construire_calendrier_depuis_config
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
+from brvm.market.allocation import Proposition, proposer
+from brvm.market.criblage import cribler
 from brvm.storage.base import BaseDonnees
+from brvm.storage.depots import DepotInstruments
 from brvm.utils.erreurs import ErreurBrvm
 from brvm.utils.journalisation import obtenir_journal
 
@@ -61,6 +64,34 @@ TYPES: Final[dict[str, str]] = {
 }
 
 
+#: Capital maximal accepté par l'interface. Au-delà, c'est une faute de frappe
+#: plus probablement qu'un ordre : le criblage est refusé plutôt que de chiffrer
+#: une répartition absurde.
+CAPITAL_MAXIMUM: Final[int] = 100_000_000_000
+
+
+def _capital_demande(parametres: dict[str, list[str]]) -> tuple[int, str | None]:
+    """Lit le capital de la requête. Une saisie fautive est refusée, jamais
+    réinterprétée en zéro — un zéro silencieux ferait croire à une cote sans
+    aucune valeur finançable."""
+    valeurs = parametres.get("capital")
+    if not valeurs or not valeurs[0].strip():
+        return 0, None
+    brut = valeurs[0].strip().replace(" ", "").replace("\u202f", "")
+    try:
+        capital = int(brut)
+    except ValueError:
+        return 0, (
+            f"Capital illisible : {valeurs[0]!r}. Attendu un entier de XOF, "
+            "sans décimale ni symbole."
+        )
+    if capital < 0:
+        return 0, "Le capital ne peut pas être négatif."
+    if capital > CAPITAL_MAXIMUM:
+        return 0, (f"Capital de {capital} XOF au-delà du maximum accepté ({CAPITAL_MAXIMUM} XOF).")
+    return capital, None
+
+
 class _Gestionnaire(BaseHTTPRequestHandler):
     """Routage minimal : l'état en JSON, les fichiers de l'interface, sinon 404."""
 
@@ -83,9 +114,12 @@ class _Gestionnaire(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------ routes
 
     def do_GET(self) -> None:
-        chemin = urlparse(self.path).path
+        adresse = urlparse(self.path)
+        chemin = adresse.path
         if chemin in {"/api/etat", "/api/etat/"}:
             self._servir_etat()
+        elif chemin in {"/api/marche", "/api/marche/"}:
+            self._servir_marche(parse_qs(adresse.query))
         elif chemin in {"/", ""}:
             self._servir_fichier("index.html")
         else:
@@ -111,6 +145,48 @@ class _Gestionnaire(BaseHTTPRequestHandler):
             self._json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 {"erreur": f"État du portefeuille non composable : {exc}"},
+            )
+            return
+        self._json(HTTPStatus.OK, charge)
+
+    def _servir_marche(self, parametres: dict[str, list[str]]) -> None:
+        """Crible la cote entière, et chiffre une répartition si un capital est
+        donné. Sans capital, aucune proposition n'est produite : proposer une
+        répartition sur un montant supposé serait inventer la seule donnée que
+        le système ne peut pas connaître."""
+        capital, erreur = _capital_demande(parametres)
+        if erreur is not None:
+            self._json(HTTPStatus.BAD_REQUEST, {"erreur": erreur})
+            return
+        try:
+            with (
+                self.verrou,
+                BaseDonnees(self.configuration.general.base_donnees) as base,
+            ):
+                criblage = cribler(
+                    base, self.configuration, self.calendrier, instant=datetime.now(UTC)
+                )
+                propositions: dict[str, Proposition] = {}
+                if capital:
+                    instruments = {
+                        instrument.ticker: instrument
+                        for instrument in DepotInstruments(base).lister(actifs_seulement=True)
+                    }
+                    propositions = {
+                        nom: proposer(
+                            classement, capital, self.configuration, instruments=instruments
+                        )
+                        for nom, classement in criblage.classements.items()
+                    }
+                charge = serialiser_criblage(criblage, propositions)
+        except ErreurBrvm as exc:
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"erreur": str(exc)})
+            return
+        except Exception as exc:  # un criblage en échec ne doit pas tuer le serveur
+            _journal.exception("Criblage non composable")
+            self._json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"erreur": f"Criblage de la cote non composable : {exc}"},
             )
             return
         self._json(HTTPStatus.OK, charge)

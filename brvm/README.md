@@ -27,6 +27,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 | 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ✅ livrée |
 | 7 — Exploitation | Ordonnanceur bridé par le calendrier, alertes fichier/courriel/webhook, tableau de bord, export tableur, ligne de commande | ✅ livrée |
 | 8 — Interface | Système de design « Cote & Papier », serveur local sans dépendance, interface web hors ligne | ✅ livrée |
+| 9 — Analyse de marché | Criblage de toute la cote, classements par horizon déclaré, référentiel fondamental, proposition de répartition et rééquilibrage | ✅ livrée |
 
 ---
 
@@ -770,6 +771,113 @@ La politique de contenu interdit toute ressource distante. Si quelqu'un ajoute u
 jour un script de CDN, la page cassera visiblement plutôt que d'exfiltrer
 discrètement la composition d'un portefeuille.
 
+---
+
+## Analyse de marché
+
+Les couches précédentes regardent **ce que vous détenez**. Celle-ci regarde
+**ce qui existe** : elle lit tout l'univers, mesure chaque valeur, la classe
+selon des profils que vous déclarez, et chiffre une répartition possible.
+
+```bash
+python -m brvm.app.cli --config config/config.yaml cribler
+python -m brvm.app.cli --config config/config.yaml cribler --capital 5000000
+python -m brvm.app.cli --config config/config.yaml cribler --capital 5000000 --horizon court_terme
+```
+
+L'interface web expose la même chose sous l'onglet **Marché**, avec le détail
+critère par critère de chaque valeur.
+
+### Ce que le système ne fait pas
+
+Il ne dit pas quelle action va monter. Rien ici ne le sait, et votre propre
+règle — *ne jamais promettre un rendement* — s'applique d'abord à cette couche.
+
+Ce qu'il produit est un **classement mécanique de critères déclarés, sur données
+passées**. Le vocabulaire s'y tient partout : on classe, on ne conseille pas.
+« Meilleure opportunité » n'apparaît nulle part, ni dans le code ni dans les
+sorties.
+
+### La mesure et la pondération sont séparées
+
+`brvm.market.analyse` **mesure** — les mêmes critères pour toutes les valeurs.
+`brvm.market.horizons` **pondère** — selon les poids de votre configuration.
+
+La séparation n'est pas cosmétique : sans elle, il serait impossible de savoir
+si une valeur monte dans un classement parce qu'elle a changé ou parce que vous
+avez changé les poids.
+
+### Un critère non mesurable n'est jamais noté zéro
+
+Zéro veut dire « mauvais ». L'absence veut dire « on ne sait pas ». Les deux ne
+se traitent pas pareil : une note nulle pèse dans la moyenne, une absence en
+sort le critère et **réduit la couverture**, qui est rapportée avec le score.
+
+Sous la couverture minimale que vous déclarez, le score n'est pas rendu du tout.
+Une moyenne sur deux critères parmi huit ne mesure pas la même chose qu'une
+moyenne sur huit, et les présenter côte à côte dans un classement serait
+trompeur.
+
+### La confiance et la liquidité sont des portes, pas des critères
+
+Elles **multiplient** le score au lieu d'y entrer. Une valeur au momentum
+superbe qui cote trois fois par mois n'est pas une demi-occasion : elle n'est
+pas jouable, et son score est annulé plutôt que pondéré.
+
+Quand une confiance est jugée insuffisante, le motif nomme la composante qui
+borne réellement — assiduité, profondeur ou étroitesse. La confiance est le
+**produit** de ces trois facteurs : attribuer d'office une confiance faible à
+des trous dans la série enverrait chercher au mauvais endroit une valeur qui
+cote toutes les séances mais n'échange presque rien.
+
+### Le long terme exige des fondamentaux, et ne retombe pas sur le prix
+
+Aucun ratio fondamental ne se déduit d'une série de cours. Le référentiel
+`config/fondamentaux.csv` est donc **rempli par vous**, depuis les rapports
+annuels, avec la source de chaque chiffre — un montant sans provenance n'est pas
+auditable.
+
+Tant qu'il est vide, un profil marqué `exige_fondamentaux: true` ne classe rien
+et le dit. Il ne se rabat pas sur la tendance des cours : classer un horizon de
+plusieurs années sur la seule dynamique des prix serait une fabrication déguisée
+en analyse.
+
+Partez de `config/fondamentaux.exemple.csv`, qui documente chaque colonne.
+
+### Les valeurs écartées ne disparaissent pas
+
+Sur cette place, elles sont souvent la majorité. Chacune ressort avec sa raison :
+série absente, trop courte, confiance sous le seuil, couverture insuffisante,
+comptes non saisis. Un tableau qui les ferait disparaître donnerait de la cote
+une image fausse, et laisserait croire à une couverture que le système n'a pas.
+
+### La répartition proposée applique vos limites, et nomme celle qui a mordu
+
+L'allocateur ne choisit rien. Il descend le classement et s'arrête à la première
+limite qui mord — liquidité, concentration par ligne, par secteur, par pays,
+montant minimal d'une ligne, nombre de lignes. Pour chaque ligne il indique
+**laquelle** : c'est cette phrase, plus que le montant, qui rend la proposition
+discutable, puisqu'elle montre ce qu'il faudrait changer pour obtenir autre
+chose.
+
+Deux natures de limites, qui ne se mesurent pas dans la même unité :
+
+* la **liquidité** borne un nombre de titres. Le marché absorbe une quantité, et
+  les frais n'en consomment aucune ;
+* la **concentration** et le capital restant bornent un montant, et c'est le
+  décaissement réel — frais compris — qui doit tenir dessous. Une limite de 20 %
+  appliquée au montant brut rendrait une ligne à 20,3 %.
+
+Quand l'enveloppe investissable n'a pas pu être remplie, les lignes retenues
+pèsent plus lourd dans le portefeuille réel que dans l'enveloppe. L'allocateur
+le dit, avec la cause et les remèdes : sans cela, il proposerait un portefeuille
+que les contrôles de risque signaleraient aussitôt.
+
+### Sans capital, aucune répartition n'est chiffrée
+
+Ni la commande ni l'interface ne supposent votre capital. C'est la seule donnée
+de cette couche que le système ne peut pas connaître, et la supposer produirait
+une proposition d'apparence exacte et entièrement fausse.
 
 ## Choix de conception
 

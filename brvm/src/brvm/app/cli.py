@@ -1,8 +1,9 @@
 """Ligne de commande d'exploitation.
 
-Cinq commandes, une seule mécanique dessous :
+Six commandes, une seule mécanique dessous :
 
 * ``etat`` — recompose l'état et l'affiche, sans toucher au réseau ;
+* ``cribler`` — analyse et classe toute la cote, et chiffre une répartition ;
 * ``collecter`` — un cycle complet : collecte, constats, alertes ;
 * ``exporter`` — écrit le classeur du jour ;
 * ``ordonnancer`` — laisse tourner la collecte aux heures déclarées ;
@@ -31,7 +32,7 @@ from pathlib import Path
 from brvm.app.alertes import Diffuseur, construire_canaux
 from brvm.app.cycle import Cycle, ResultatCycle
 from brvm.app.etat import assembler
-from brvm.app.export import exporter, horodater, restituer
+from brvm.app.export import exporter, horodater, restituer, restituer_criblage
 from brvm.app.ordonnanceur import Ordonnanceur, PolitiqueOrdonnancement, seances_a_venir
 from brvm.app.serveur import HOTE_DEFAUT, PORT_DEFAUT, servir
 from brvm.config.chargement import (
@@ -40,7 +41,10 @@ from brvm.config.chargement import (
     resume_configuration,
 )
 from brvm.config.modeles import Configuration
+from brvm.market.allocation import Proposition, proposer
+from brvm.market.criblage import cribler
 from brvm.storage.base import BaseDonnees
+from brvm.storage.depots import DepotInstruments
 from brvm.utils.erreurs import ErreurBrvm
 from brvm.utils.journalisation import configurer_journalisation
 
@@ -68,6 +72,20 @@ def construire_analyseur_arguments() -> argparse.ArgumentParser:
     sous.add_parser("verifier", help="Contrôle la configuration et annonce les prochaines séances.")
     sous.add_parser("etat", help="Recompose et affiche l'état, sans réseau.")
     sous.add_parser("collecter", help="Cycle complet : collecte, constats, alertes.")
+
+    criblage = sous.add_parser("cribler", help="Analyse et classe toute la cote, sans réseau.")
+    criblage.add_argument(
+        "--capital",
+        type=int,
+        help=(
+            "Capital à répartir, en XOF. Sans ce montant, aucune répartition "
+            "n'est chiffrée : le système ne le suppose pas."
+        ),
+    )
+    criblage.add_argument(
+        "--horizon",
+        help="Ne chiffrer la répartition que pour ce profil (court_terme, long_terme…).",
+    )
 
     export = sous.add_parser("exporter", help="Écrit le classeur de l'état courant.")
     export.add_argument("--sortie", type=Path, help="Dossier ou fichier de destination.")
@@ -141,6 +159,48 @@ def commande_etat(configuration: Configuration, base: BaseDonnees, seance: date 
     etat = assembler(base, configuration, calendrier, jusqu_a=seance)
     print(restituer(etat))
     return DEGRADE if etat.donnee_perimee() else SUCCES
+
+
+def commande_cribler(
+    configuration: Configuration,
+    base: BaseDonnees,
+    seance: date | None,
+    capital: int | None,
+    horizon: str | None,
+) -> int:
+    """Crible la cote et, si un capital est donné, chiffre une répartition."""
+    calendrier = construire_calendrier_depuis_config(configuration)
+    criblage = cribler(base, configuration, calendrier, jusqu_a=seance)
+
+    if horizon is not None and horizon not in criblage.classements:
+        connus = ", ".join(sorted(criblage.classements)) or "aucun"
+        print(
+            f"Profil {horizon!r} inconnu. Profils déclarés dans la configuration : {connus}.",
+            file=sys.stderr,
+        )
+        return ECHEC
+
+    propositions: dict[str, Proposition] = {}
+    if capital:
+        instruments = {
+            instrument.ticker: instrument
+            for instrument in DepotInstruments(base).lister(actifs_seulement=True)
+        }
+        vises = [horizon] if horizon else list(criblage.classements)
+        propositions = {
+            nom: proposer(
+                criblage.classements[nom], capital, configuration, instruments=instruments
+            )
+            for nom in vises
+        }
+
+    print(restituer_criblage(criblage, propositions))
+
+    # Une cote dont aucune valeur n'est analysable n'est pas un succès : c'est
+    # une base à alimenter, et un cron doit pouvoir s'en apercevoir.
+    if not criblage.analyses:
+        return DEGRADE
+    return DEGRADE if criblage.avertissements else SUCCES
 
 
 def _cycle(configuration: Configuration, base: BaseDonnees) -> Cycle:
@@ -247,6 +307,10 @@ def principal(arguments: list[str] | None = None) -> int:
                 return commande_verifier(configuration)
             case "etat":
                 return commande_etat(configuration, base, options.seance)
+            case "cribler":
+                return commande_cribler(
+                    configuration, base, options.seance, options.capital, options.horizon
+                )
             case "collecter":
                 return commande_collecter(configuration, base, options.seance)
             case "exporter":

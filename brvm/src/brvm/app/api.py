@@ -16,18 +16,32 @@ Trois traits guident la mise en forme :
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any, Final
 
 from brvm.app.etat import EtatSysteme
 from brvm.domain.enums import MethodeValorisation
 from brvm.indicators.serie import BarreTechnique, OrigineValeur, SerieTechnique
+from brvm.market.allocation import LigneProposee, Proposition
+from brvm.market.analyse import AnalyseValeur
+from brvm.market.criblage import Criblage
+from brvm.market.criteres import Critere
+from brvm.market.horizons import Classement, Rang
 
 #: Profondeur de la trame de séances affichée, en séances.
 TRAME_SEANCES: Final[int] = 30
 
 #: Profondeur de la courbe de cours, en séances.
 COURBE_SEANCES: Final[int] = 120
+
+#: Mention accompagnant toute sortie de la couche marché. Elle voyage avec la
+#: donnée plutôt que d'être posée une fois dans un coin de la page : un tableau
+#: recopié ailleurs doit rester lisible pour ce qu'il est.
+MENTION_MARCHE: Final[str] = (
+    "Classement mécanique de critères déclarés, sur données passées. Aucune "
+    "prévision, aucune recommandation, aucune promesse de rendement."
+)
 
 
 def _nombre(valeur: Decimal | None, decimales: int = 4) -> float | None:
@@ -246,6 +260,151 @@ def serialiser(etat: EtatSysteme) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------- marché
+
+
+def _critere_json(critere: Critere) -> dict[str, Any]:
+    """Un critère, mesuré ou non — et jamais un zéro à la place d'une absence."""
+    return {
+        "nom": critere.nom,
+        "libelle": critere.libelle,
+        "valeur": _nombre(critere.valeur),
+        "unite": critere.unite,
+        "note": _nombre(critere.note),
+        "mesurable": critere.mesurable,
+        "motif_absent": critere.motif_absent,
+    }
+
+
+def _analyse_json(analyse: AnalyseValeur) -> dict[str, Any]:
+    return {
+        "ticker": analyse.ticker,
+        "nom": analyse.instrument.nom if analyse.instrument else None,
+        "secteur": analyse.instrument.secteur if analyse.instrument else None,
+        "pays": analyse.instrument.pays.value if analyse.instrument else None,
+        "cours": analyse.cours,
+        "date_cours": analyse.date_cours.isoformat() if analyse.date_cours else None,
+        "confiance": _nombre(analyse.confiance),
+        "niveau_confiance": analyse.niveau_confiance,
+        "assiduite": _nombre(analyse.assiduite),
+        "profondeur": _nombre(analyse.profondeur),
+        "etroitesse": _nombre(analyse.etroitesse),
+        "seances_cotees": analyse.seances_cotees,
+        "seances_attendues": analyse.seances_attendues,
+        "taille_tenable": analyse.taille_tenable,
+        "motif_taille": analyse.motif_taille,
+        "exercice": analyse.exercice.exercice if analyse.exercice else None,
+        "source_fondamentaux": analyse.exercice.source if analyse.exercice else None,
+        "criteres": [_critere_json(c) for c in analyse.criteres.values()],
+        "avertissements": list(analyse.avertissements),
+    }
+
+
+def _rang_json(rang: Rang) -> dict[str, Any]:
+    """Une place dans un classement, avec de quoi la contester."""
+    return {
+        "ticker": rang.ticker,
+        "nom": rang.analyse.instrument.nom if rang.analyse.instrument else None,
+        "score": _nombre(rang.valeur),
+        "couverture": _nombre(rang.score.couverture),
+        "motif_absent": rang.score.motif_absent,
+        "cours": rang.analyse.cours,
+        "date_cours": rang.analyse.date_cours.isoformat() if rang.analyse.date_cours else None,
+        "confiance": _nombre(rang.analyse.confiance),
+        "criteres": [_critere_json(c) for c in rang.score.criteres],
+        "portes": [_critere_json(c) for c in rang.score.portes],
+        "avertissements": list(rang.score.avertissements),
+    }
+
+
+def _classement_json(classement: Classement) -> dict[str, Any]:
+    return {
+        "horizon": classement.horizon,
+        "libelle": classement.libelle,
+        "description": classement.description,
+        "couverture_cote": classement.couverture_cote,
+        "classes": [_rang_json(rang) for rang in classement.classes],
+        "ecartes": [_rang_json(rang) for rang in classement.ecartes],
+        "avertissements": list(classement.avertissements),
+    }
+
+
+def _ligne_proposee_json(ligne: LigneProposee) -> dict[str, Any]:
+    return {
+        "ticker": ligne.ticker,
+        "quantite": ligne.quantite,
+        "cours": ligne.cours,
+        "montant_brut": ligne.montant_brut,
+        "frais": ligne.frais,
+        "montant_net": ligne.montant_net,
+        "part_frais": _nombre(ligne.part_frais),
+        "poids_vise": _nombre(ligne.poids_vise),
+        "poids_obtenu": _nombre(ligne.poids_obtenu),
+        "score": _nombre(ligne.score),
+        "contrainte": ligne.contrainte,
+        "secteur": ligne.secteur,
+        "pays": ligne.pays,
+        "avertissements": list(ligne.avertissements),
+    }
+
+
+def proposition_json(proposition: Proposition) -> dict[str, Any]:
+    """Une répartition proposée. La contrainte qui a borné chaque ligne voyage
+    avec elle : c'est elle qui rend la proposition discutable."""
+    return {
+        "horizon": proposition.horizon,
+        "capital": proposition.capital,
+        "investi": proposition.investi,
+        "part_investie": _nombre(proposition.part_investie),
+        "liquidites": proposition.liquidites,
+        "frais_totaux": proposition.frais_totaux,
+        "lignes": [_ligne_proposee_json(ligne) for ligne in proposition.lignes],
+        "ecartes": [
+            {"ticker": e.ticker, "score": _nombre(e.score), "motif": e.motif}
+            for e in proposition.ecartes
+        ],
+        "avertissements": list(proposition.avertissements),
+    }
+
+
+def serialiser_criblage(
+    criblage: Criblage, propositions: Mapping[str, Proposition] | None = None
+) -> dict[str, Any]:
+    """La cote entière, telle que l'interface la reçoit.
+
+    Les valeurs écartées partent avec leur raison, au même titre que les
+    analysées : sur cette place elles sont souvent la majorité, et les faire
+    disparaître d'un tableau donnerait de la cote une image fausse.
+    """
+    return {
+        "instant": criblage.instant.isoformat(),
+        "jusqu_a": criblage.jusqu_a.isoformat(),
+        "fraicheur": {
+            "entete": criblage.entete_fraicheur(),
+            "horodatage_le_plus_ancien": (
+                criblage.horodatage_le_plus_ancien.isoformat()
+                if criblage.horodatage_le_plus_ancien
+                else None
+            ),
+            "age_minutes": _nombre(criblage.age_minutes(), 1),
+        },
+        "univers": criblage.univers,
+        "analysees": len(criblage.analyses),
+        "fondamentaux_renseignes": criblage.fondamentaux_renseignes,
+        "valeurs": [_analyse_json(analyse) for analyse in criblage.analyses],
+        "classements": {
+            nom: _classement_json(classement) for nom, classement in criblage.classements.items()
+        },
+        "ecartees": [{"ticker": e.ticker, "motif": e.motif} for e in criblage.ecartees],
+        "couverture_criteres": dict(criblage.couverture_criteres()),
+        "propositions": {
+            nom: proposition_json(proposition) for nom, proposition in (propositions or {}).items()
+        },
+        "avertissements": list(criblage.avertissements),
+        "mention": MENTION_MARCHE,
+    }
+
+
 def resume_json(etat: EtatSysteme) -> dict[str, Any]:
     """Alias explicite, pour les appelants qui ne veulent que la charge."""
     return serialiser(etat)
@@ -253,9 +412,12 @@ def resume_json(etat: EtatSysteme) -> dict[str, Any]:
 
 __all__ = [
     "COURBE_SEANCES",
+    "MENTION_MARCHE",
     "TRAME_SEANCES",
     "courbe",
+    "proposition_json",
     "resume_json",
     "serialiser",
+    "serialiser_criblage",
     "trame",
 ]

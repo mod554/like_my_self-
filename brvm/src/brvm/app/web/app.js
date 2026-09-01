@@ -553,6 +553,407 @@ function rendreDonnees(donnees) {
   }
 }
 
+// ---------------------------------------------------------------- marché
+
+/** Le score, en barre. Un chiffre entre 0 et 1 ne se lit pas ; une longueur si. */
+function barreScore(valeur) {
+  const piste = el("div", {
+    class: "score",
+    role: "img",
+    "aria-label": valeur === null ? "score non établi" : `score ${valeur.toFixed(3)} sur 1`,
+  });
+  piste.appendChild(
+    el("div", { class: "score-remplissage", vars: { "--part": `${(valeur || 0) * 100}%` } }),
+  );
+  return piste;
+}
+
+/**
+ * Le détail des critères d'une valeur.
+ *
+ * Les critères non mesurés y figurent AVEC leur raison, à côté des mesurés.
+ * C'est le point de l'écran : un score de 0,65 sur quatre critères mesurés sur
+ * six ne dit pas la même chose que le même score sur six sur six, et la
+ * différence doit se voir sans avoir à la chercher.
+ */
+function detailCriteres(rang) {
+  const bloc = el("div", { class: "criteres" });
+  const mesures = rang.criteres.filter((c) => c.mesurable);
+  const absents = rang.criteres.filter((c) => !c.mesurable);
+
+  for (const critere of mesures) {
+    const ligne = el("div", { class: "critere" });
+    ligne.appendChild(el("span", { class: "critere-nom", text: critere.libelle }));
+    ligne.appendChild(
+      el("span", {
+        class: "critere-valeur",
+        text: critere.valeur === null ? "—" : critere.valeur.toFixed(3) + " " + critere.unite,
+      }),
+    );
+    const piste = el("div", { class: "critere-piste" });
+    piste.appendChild(
+      el("div", { class: "critere-note", vars: { "--part": `${critere.note * 100}%` } }),
+    );
+    ligne.appendChild(piste);
+    ligne.appendChild(el("span", { class: "critere-chiffre", text: critere.note.toFixed(2) }));
+    bloc.appendChild(ligne);
+  }
+
+  for (const critere of absents) {
+    bloc.appendChild(
+      el("p", { class: "critere-absent" }, [
+        el("strong", { text: critere.libelle }),
+        document.createTextNode(" — non mesuré : " + (critere.motif_absent || "raison inconnue")),
+      ]),
+    );
+  }
+
+  for (const porte of rang.portes || []) {
+    bloc.appendChild(
+      el("p", {
+        class: porte.mesurable ? "note" : "note note--attention",
+        text: porte.mesurable
+          ? `${porte.libelle} : ${(porte.note * 100).toFixed(0)} % — multiplie le score.`
+          : `${porte.libelle} — ${porte.motif_absent}`,
+      }),
+    );
+  }
+  for (const message of rang.avertissements || []) {
+    bloc.appendChild(el("p", { class: "note note--attention", text: message }));
+  }
+  return bloc;
+}
+
+/** Une place du classement : la ligne, et son détail dépliable. */
+function rangeeRang(rang, place) {
+  const rangee = el("tr");
+  rangee.appendChild(el("td", { class: "num rang-place", text: String(place) }));
+  rangee.appendChild(
+    el("td", {}, [
+      el("span", { class: "valeur-titre", text: rang.ticker }),
+      rang.nom ? el("span", { class: "rang-nom", text: rang.nom }) : null,
+    ]),
+  );
+  rangee.appendChild(
+    el("td", {}, [
+      // Un conteneur DANS la cellule : `display:flex` posé sur un `td` lui
+      // retire son comportement de cellule, et la colonne se désaligne.
+      el("div", { class: "rang-score" }, [
+        barreScore(rang.score),
+        el("span", {
+          class: "rang-chiffre",
+          text: rang.score === null ? "—" : rang.score.toFixed(3),
+        }),
+      ]),
+    ]),
+  );
+  rangee.appendChild(el("td", { class: "num", text: xof(rang.cours) }));
+  rangee.appendChild(el("td", { class: "num", text: jour(rang.date_cours) }));
+  rangee.appendChild(
+    el("td", { class: "num" }, [
+      el("span", {
+        class: rang.couverture < 1 ? "etiq etiq--attention" : "etiq etiq--neutre",
+        text: pourcent(rang.couverture, 0),
+      }),
+    ]),
+  );
+  rangee.appendChild(el("td", { class: "num", text: pourcent(rang.confiance, 0) }));
+
+  const detail = el("tr", { class: "rang-detail" });
+  const cellule = el("td", { colspan: "7" });
+  cellule.appendChild(detailCriteres(rang));
+  detail.appendChild(cellule);
+  detail.hidden = true;
+
+  rangee.classList.add("rang-cliquable");
+  rangee.tabIndex = 0;
+  rangee.setAttribute("role", "button");
+  rangee.setAttribute("aria-expanded", "false");
+  const basculer = () => {
+    detail.hidden = !detail.hidden;
+    rangee.setAttribute("aria-expanded", String(!detail.hidden));
+  };
+  rangee.addEventListener("click", basculer);
+  rangee.addEventListener("keydown", (evenement) => {
+    if (evenement.key === "Enter" || evenement.key === " ") {
+      evenement.preventDefault();
+      basculer();
+    }
+  });
+  return [rangee, detail];
+}
+
+/** La répartition proposée pour un horizon. */
+function blocProposition(proposition) {
+  const bloc = el("div", { class: "cadre cadre--rembourre cadre--espace" });
+  bloc.appendChild(el("h3", { class: "sous-titre", text: "Répartition possible" }));
+
+  // Des chiffres présentés comme des chiffres. Rendus dans une phrase, ils
+  // perdaient leurs séparateurs de milliers : l'espace fine insécable que
+  // produit Intl n'existe pas dans le sous-ensemble de la police d'interface,
+  // et « 4 492 897 » se lisait « 4492897 ». La police à chasse fixe la porte.
+  const chiffres = el("dl", { class: "chiffres chiffres--compacts" });
+  for (const [titre, valeur, precision] of [
+    ["Lignes", proposition.lignes.length, null],
+    ["Investi", proposition.investi, ["sur ", xof(proposition.capital), " XOF de capital"]],
+    ["Liquidités", proposition.liquidites, "non investies"],
+    ["Frais d'entrée", proposition.frais_totaux, "prélevés à l'achat"],
+  ]) {
+    chiffres.appendChild(
+      el("div", { class: "chiffre" }, [
+        el("dt", { text: titre }),
+        el("dd", {}, [
+          el("span", { text: xof(valeur) }),
+          precision === null ? null : el("span", { class: "unite", text: "XOF" }),
+        ]),
+        precision === null
+          ? null
+          : el(
+              "small",
+              {},
+              Array.isArray(precision)
+                ? [
+                    document.createTextNode(precision[0]),
+                    el("span", { class: "nombre", text: precision[1] }),
+                    document.createTextNode(precision[2]),
+                  ]
+                : [document.createTextNode(precision)],
+            ),
+      ]),
+    );
+  }
+  bloc.appendChild(chiffres);
+
+  if (proposition.lignes.length) {
+    const cadre = el("div", { class: "defilant" });
+    const table = el("table");
+    table.appendChild(
+      el("caption", {
+        class: "invisible",
+        text:
+          "Lignes de la répartition proposée, avec la limite qui a borné " +
+          "la taille de chacune",
+      }),
+    );
+    const entete = el("thead");
+    const rangeeEntete = el("tr");
+    for (const [titre, num] of [
+      ["Valeur", false],
+      ["Quantité", true],
+      ["Cours", true],
+      ["Frais", true],
+      ["Décaissement", true],
+      ["Poids", true],
+      ["Limite qui a borné la ligne", false],
+    ]) {
+      rangeeEntete.appendChild(
+        el("th", { scope: "col", class: num ? "num" : null, text: titre }),
+      );
+    }
+    entete.appendChild(rangeeEntete);
+    table.appendChild(entete);
+
+    const corps = el("tbody");
+    for (const ligne of proposition.lignes) {
+      const rangee = el("tr");
+      rangee.appendChild(el("td", { class: "valeur-titre", text: ligne.ticker }));
+      rangee.appendChild(el("td", { class: "num", text: xof(ligne.quantite) }));
+      rangee.appendChild(el("td", { class: "num", text: xof(ligne.cours) }));
+      rangee.appendChild(
+        el("td", { class: "num", text: `${xof(ligne.frais)} (${pourcent(ligne.part_frais)})` }),
+      );
+      rangee.appendChild(el("td", { class: "num", text: xof(ligne.montant_net) }));
+      rangee.appendChild(el("td", { class: "num", text: pourcent(ligne.poids_obtenu, 1) }));
+      rangee.appendChild(el("td", { class: "contrainte", text: ligne.contrainte }));
+      corps.appendChild(rangee);
+    }
+    table.appendChild(corps);
+    cadre.appendChild(table);
+    bloc.appendChild(cadre);
+  }
+
+  for (const ecarte of proposition.ecartes) {
+    bloc.appendChild(
+      el("p", { class: "critere-absent" }, [
+        el("strong", { text: ecarte.ticker }),
+        document.createTextNode(" — non retenue : " + ecarte.motif),
+      ]),
+    );
+  }
+  for (const message of proposition.avertissements) {
+    bloc.appendChild(el("p", { class: "note note--attention", text: message }));
+  }
+  return bloc;
+}
+
+/** Un horizon complet : son classement, ses écartés, sa répartition. */
+function blocHorizon(classement, proposition) {
+  const bloc = el("section", {
+    class: "horizon",
+    id: `horizon-${classement.horizon}`,
+    role: "tabpanel",
+    "aria-labelledby": `onglet-${classement.horizon}`,
+  });
+
+  bloc.appendChild(el("p", { class: "horizon-description", text: classement.description }));
+  bloc.appendChild(
+    el("p", {
+      class: "sourdine",
+      text: `${classement.couverture_cote} valeur(s) de la cote classée(s) par ce profil.`,
+    }),
+  );
+
+  for (const message of classement.avertissements) {
+    bloc.appendChild(el("p", { class: "note note--attention", text: message }));
+  }
+
+  if (classement.classes.length) {
+    const cadre = el("div", { class: "cadre defilant cadre--espace" });
+    const table = el("table", { class: "table-rangs" });
+    table.appendChild(
+      el("caption", {
+        class: "invisible",
+        text: `Valeurs classées par le profil ${classement.libelle}, de la mieux notée à la moins bien`,
+      }),
+    );
+    const entete = el("thead");
+    const rangeeEntete = el("tr");
+    for (const [titre, num] of [
+      ["#", true],
+      ["Valeur", false],
+      ["Score", false],
+      ["Cours", true],
+      ["Coté le", true],
+      ["Couverture", true],
+      ["Confiance", true],
+    ]) {
+      rangeeEntete.appendChild(
+        el("th", { scope: "col", class: num ? "num" : null, text: titre }),
+      );
+    }
+    entete.appendChild(rangeeEntete);
+    table.appendChild(entete);
+    const corps = el("tbody");
+    classement.classes.forEach((rang, index) => {
+      const [rangee, detail] = rangeeRang(rang, index + 1);
+      corps.appendChild(rangee);
+      corps.appendChild(detail);
+    });
+    table.appendChild(corps);
+    cadre.appendChild(table);
+    bloc.appendChild(cadre);
+    bloc.appendChild(
+      el("p", { class: "sourdine", text: "Cliquez une ligne pour voir le détail de ses critères." }),
+    );
+  } else {
+    bloc.appendChild(
+      el("p", { class: "note note--grave", text: "Aucune valeur classée par ce profil." }),
+    );
+  }
+
+  if (classement.ecartes.length) {
+    const repli = el("details", { class: "repli" });
+    repli.appendChild(
+      el("summary", {
+        text: `${classement.ecartes.length} valeur(s) non classée(s) par ce profil, et pourquoi`,
+      }),
+    );
+    for (const rang of classement.ecartes) {
+      repli.appendChild(
+        el("p", { class: "critere-absent" }, [
+          el("strong", { text: rang.ticker }),
+          document.createTextNode(" — " + (rang.motif_absent || "raison inconnue")),
+        ]),
+      );
+    }
+    bloc.appendChild(repli);
+  }
+
+  if (proposition) bloc.appendChild(blocProposition(proposition));
+  return bloc;
+}
+
+function rendreMarche(donnees) {
+  $("marche-portee").textContent =
+    `${donnees.fraicheur.entete} — univers de ${donnees.univers} valeur(s), ` +
+    `${donnees.analysees} analysée(s), ${donnees.fondamentaux_renseignes} avec ` +
+    `fondamentaux saisis. ${donnees.mention}`;
+
+  const onglets = $("onglets-horizon");
+  const panneaux = $("horizons");
+  vider(onglets);
+  vider(panneaux);
+
+  const noms = Object.keys(donnees.classements);
+  noms.forEach((nom, index) => {
+    const classement = donnees.classements[nom];
+    const onglet = el("button", {
+      type: "button",
+      class: "onglet",
+      id: `onglet-${nom}`,
+      role: "tab",
+      "aria-controls": `horizon-${nom}`,
+      "aria-selected": String(index === 0),
+      text: classement.libelle,
+    });
+    onglets.appendChild(onglet);
+
+    const panneau = blocHorizon(classement, donnees.propositions[nom]);
+    panneau.hidden = index !== 0;
+    panneaux.appendChild(panneau);
+
+    onglet.addEventListener("click", () => {
+      for (const autre of onglets.children) autre.setAttribute("aria-selected", "false");
+      onglet.setAttribute("aria-selected", "true");
+      for (const autre of panneaux.children) autre.hidden = true;
+      panneau.hidden = false;
+    });
+  });
+
+  const corps = $("marche-ecartees");
+  vider(corps);
+  if (!donnees.ecartees.length) {
+    corps.appendChild(
+      el("tr", {}, [el("td", { colspan: "2", class: "vide", text: "Aucune." })]),
+    );
+  }
+  for (const ecartee of donnees.ecartees) {
+    corps.appendChild(
+      el("tr", {}, [
+        el("td", { class: "valeur-titre", text: ecartee.ticker }),
+        el("td", { text: ecartee.motif }),
+      ]),
+    );
+  }
+
+  const bloc = $("marche-avertissements");
+  vider(bloc);
+  for (const message of donnees.avertissements) {
+    bloc.appendChild(el("p", { class: "note note--attention", text: message }));
+  }
+}
+
+async function chargerMarche() {
+  const capital = $("capital").value.trim();
+  const bouton = $("cribler");
+  bouton.disabled = true;
+  $("marche-portee").textContent = "Criblage de la cote en cours…";
+  try {
+    const adresse = capital ? `/api/marche?capital=${encodeURIComponent(capital)}` : "/api/marche";
+    const reponse = await fetch(adresse, { headers: { Accept: "application/json" } });
+    const charge = await reponse.json();
+    if (!reponse.ok) throw new Error(charge.erreur || `HTTP ${reponse.status}`);
+    rendreMarche(charge);
+    $("marche-erreur").hidden = true;
+  } catch (exception) {
+    $("marche-erreur").hidden = false;
+    $("marche-erreur-detail").textContent = String(exception.message || exception);
+    $("marche-portee").textContent = "";
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
 // ------------------------------------------------------------- navigation
 
 /** Marque la section visible dans le rail. Recognition over recall. */
@@ -601,4 +1002,11 @@ async function charger() {
 }
 
 charger();
+// Le criblage lit toute la cote : il part séparément, pour qu'une cote lente ne
+// retarde pas l'affichage du portefeuille.
+chargerMarche();
+$("cribler").addEventListener("click", chargerMarche);
+$("capital").addEventListener("keydown", (evenement) => {
+  if (evenement.key === "Enter") chargerMarche();
+});
 suivreSections();

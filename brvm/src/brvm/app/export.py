@@ -11,15 +11,18 @@ restitution texte donne la même information, et le message dit quoi installer.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final
 
+from brvm.app.api import MENTION_MARCHE
 from brvm.app.etat import MOTIF_PERFORMANCE_ABSENTE, EtatSysteme
 from brvm.domain.enums import MethodeValorisation
 from brvm.domain.monnaie import format_xof
+from brvm.market.allocation import Proposition
+from brvm.market.criblage import Criblage
 from brvm.utils.erreurs import ErreurConfiguration
 from brvm.utils.journalisation import obtenir_journal
 
@@ -105,6 +108,71 @@ def restituer(etat: EtatSysteme) -> str:
         lignes += [f"  • {message}" for message in etat.avertissements]
 
     lignes += ["", MENTION]
+    return "\n".join(lignes)
+
+
+def restituer_criblage(
+    criblage: Criblage, propositions: Mapping[str, Proposition] | None = None
+) -> str:
+    """Restitution texte du criblage de la cote.
+
+    Les valeurs écartées figurent au même titre que les classées, avec leur
+    raison. Sur cette place elles sont souvent la majorité : les omettre
+    donnerait de la cote une image fausse, et ferait croire à une couverture
+    que le système n'a pas.
+    """
+    lignes: list[str] = [
+        "=" * 78,
+        f"CRIBLAGE DE LA COTE — {criblage.instant.isoformat()}",
+        criblage.entete_fraicheur(),
+        f"Univers : {criblage.univers} valeur(s), {len(criblage.analyses)} analysée(s), "
+        f"{criblage.fondamentaux_renseignes} avec fondamentaux saisis",
+        "=" * 78,
+    ]
+
+    for classement in criblage.classements.values():
+        lignes += [
+            "",
+            "-" * 78,
+            f"{classement.libelle.upper()} — {classement.couverture_cote} classée(s)",
+            "-" * 78,
+            f"  {classement.description.strip()}",
+            "",
+        ]
+        for place, rang in enumerate(classement.classes, start=1):
+            cours = format_xof(rang.analyse.cours) if rang.analyse.cours else "cours absent"
+            lignes.append(
+                f"  {place:>2}. {rang.valeur:.3f}  {rang.ticker:<8} {cours:>16}"
+                f"   couverture {rang.score.couverture:.0%}"
+            )
+        for rang in classement.ecartes:
+            lignes.append(f"   ——      {rang.ticker:<8} {rang.score.motif_absent}")
+        for message in classement.avertissements:
+            lignes.append(f"  ⚠ {message}")
+
+    for nom, proposition in (propositions or {}).items():
+        libelle = criblage.classements[nom].libelle if nom in criblage.classements else nom
+        lignes += [
+            "",
+            "-" * 78,
+            f"RÉPARTITION POSSIBLE — {libelle.upper()}",
+            "-" * 78,
+            proposition.resume(),
+        ]
+        for ecarte in proposition.ecartes:
+            lignes.append(f"   ——      {ecarte.ticker:<8} {ecarte.motif}")
+        for message in proposition.avertissements:
+            lignes.append(f"  ⚠ {message}")
+
+    if criblage.ecartees:
+        lignes += ["", "-" * 78, "VALEURS NON ANALYSABLES", "-" * 78]
+        lignes += [f"  {e.ticker:<8} {e.motif}" for e in criblage.ecartees]
+
+    if criblage.avertissements:
+        lignes += ["", "-" * 78, "AVERTISSEMENTS", "-" * 78]
+        lignes += [f"  • {message}" for message in criblage.avertissements]
+
+    lignes += ["", MENTION_MARCHE, MENTION]
     return "\n".join(lignes)
 
 

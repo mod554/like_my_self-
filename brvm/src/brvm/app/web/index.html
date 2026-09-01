@@ -38,6 +38,12 @@
         </svg>
         Signaux
       </a>
+      <a href="#marche">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M2 12V6.5M5.33 12V2.5M8.67 12V8M12 12V4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        Marché
+      </a>
       <a href="#risque">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
           <path d="M7 1.5 12.5 4v4c0 2.5-2.4 4.3-5.5 5.5C3.9 12.3 1.5 10.5 1.5 8V4L7 1.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
@@ -164,6 +170,63 @@
         </div>
       </header>
       <div class="signaux" id="liste-signaux"></div>
+    </section>
+
+    <!-- ------------------------------------------------------ marché -->
+    <section class="section" id="marche" aria-labelledby="t-marche">
+      <header>
+        <div>
+          <h2 id="t-marche">Toute la cote</h2>
+          <p>Chaque valeur est mesurée sur des critères déclarés, puis classée
+             selon les poids que <strong>vous</strong> avez fixés dans la
+             configuration. Un classement n'est pas une recommandation : il
+             ordonne du passé, il ne prédit rien.</p>
+        </div>
+      </header>
+
+      <div class="commande" role="group" aria-labelledby="t-commande">
+        <p class="etiquette" id="t-commande">Répartition à chiffrer</p>
+        <div class="commande-corps">
+          <label class="champ">
+            <span>Capital disponible</span>
+            <input type="number" id="capital" min="0" step="1000" inputmode="numeric"
+                   placeholder="ex. 5000000" aria-describedby="capital-note">
+          </label>
+          <span class="champ-unite">XOF</span>
+          <button type="button" id="cribler">Cribler la cote</button>
+        </div>
+        <p class="note" id="capital-note">
+          Sans montant, la cote est classée mais aucune répartition n'est
+          chiffrée : le système ne suppose pas votre capital.
+        </p>
+      </div>
+
+      <div id="marche-erreur" class="erreur" hidden>
+        <h3>La cote n'a pas pu être criblée</h3>
+        <p id="marche-erreur-detail"></p>
+      </div>
+
+      <p class="note note--espacee" id="marche-portee">Chargement du criblage…</p>
+
+      <div class="onglets" id="onglets-horizon" role="tablist"
+           aria-label="Profils de classement"></div>
+
+      <div id="horizons"></div>
+
+      <details class="repli">
+        <summary>Valeurs de l'univers non analysables</summary>
+        <div class="cadre defilant cadre--espace">
+          <table>
+            <caption class="invisible">Valeurs sans analyse possible, et pourquoi</caption>
+            <thead>
+              <tr><th scope="col">Valeur</th><th scope="col">Raison</th></tr>
+            </thead>
+            <tbody id="marche-ecartees"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <div class="pile pile--espacee" id="marche-avertissements"></div>
     </section>
 
     <!-- ------------------------------------------------------- risque -->

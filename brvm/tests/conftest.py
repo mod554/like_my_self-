@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable, Iterator, Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -21,9 +21,11 @@ from brvm.domain.calendrier import CalendrierSeances
 from brvm.domain.enums import SensOperation, StatutSeance
 from brvm.domain.modeles import Cotation, LigneFrais, OperationSurTitre, Transaction
 from brvm.indicators.serie import SerieTechnique, construire_serie
+from brvm.ingestion.univers import charger_univers
 from brvm.portfolio.fiscalite import MoteurFiscal
 from brvm.portfolio.frais import MoteurFrais
 from brvm.storage.base import BaseDonnees
+from brvm.storage.depots import DepotCotations, DepotInstruments
 
 DOSSIER_DONNEES = Path(__file__).parent / "donnees"
 
@@ -202,3 +204,85 @@ def fabrique_transaction() -> Callable[..., Transaction]:
         )
 
     return fabriquer
+
+
+# ------------------------------------------------------------------- marché
+
+#: Repères du banc d'essai « cote » ci-dessous. Une année fictive complète, pour
+#: que les fenêtres longues des indicateurs aient de quoi se calculer.
+INSTANT_MARCHE = datetime(2026, 9, 1, 16, 0, tzinfo=UTC)
+DEBUT_MARCHE = date(2026, 1, 5)
+FIN_MARCHE = date(2026, 8, 31)
+
+
+def peupler_cote(
+    base: BaseDonnees,
+    calendrier: CalendrierSeances,
+    fabrique_cotation: Callable[..., Cotation],
+    ticker: str,
+    *,
+    une_seance_sur: int = 1,
+    depart: int = 1000,
+    pas: int = 2,
+    debut: date = DEBUT_MARCHE,
+    fin: date = FIN_MARCHE,
+) -> None:
+    """Écrit une série en base, cotée une séance sur ``une_seance_sur``.
+
+    Le volume est calibré pour que le montant échangé approche le volume de
+    référence de la configuration de test : en dessous, la profondeur — et donc
+    la confiance — s'effondre pour une raison propre au banc et non au code.
+    """
+    cotations: list[Cotation] = []
+    jour = debut
+    rang = 0
+    while jour <= fin:
+        if calendrier.est_jour_de_seance(jour):
+            horodatage = datetime(jour.year, jour.month, jour.day, 15, 0, tzinfo=UTC)
+            cote = rang % une_seance_sur == 0
+            cours = depart + rang * pas
+            extras: dict[str, object] = (
+                {
+                    "ouverture": cours,
+                    "plus_haut": cours + 10,
+                    "plus_bas": cours - 10,
+                    "volume_xof": cours * 5000,
+                }
+                if cote
+                else {}
+            )
+            cotations.append(
+                fabrique_cotation(
+                    jour=jour,
+                    ticker=ticker,
+                    source="fichier_manuel",
+                    cloture=cours if cote else None,
+                    statut=StatutSeance.COTEE if cote else StatutSeance.SANS_TRANSACTION,
+                    volume=5000 if cote else 0,
+                    horodatage_donnee=horodatage,
+                    horodatage_collecte=horodatage,
+                    **extras,
+                )
+            )
+            rang += 1
+        jour += timedelta(days=1)
+    DepotCotations(base).enregistrer_lot(cotations)
+
+
+@pytest.fixture
+def cote(
+    base: BaseDonnees,
+    configuration: Configuration,
+    calendrier: CalendrierSeances,
+    fabrique_cotation: Callable[..., Cotation],
+) -> BaseDonnees:
+    """Une cote de test : trois valeurs à l'univers, deux avec un historique.
+
+    TEST3 est déclarée inactive, TEST2 ne cote qu'une séance sur six. Les deux
+    cas comptent : sur cette place, une valeur peu assidue est la norme, pas
+    l'exception.
+    """
+    DepotInstruments(base).enregistrer_lot(charger_univers(configuration.marche.fichier_univers))
+    peupler_cote(base, calendrier, fabrique_cotation, "TEST1")
+    peupler_cote(base, calendrier, fabrique_cotation, "TEST2", une_seance_sur=6, pas=-1)
+    return base

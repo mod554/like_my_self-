@@ -10,18 +10,28 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
+from conftest import INSTANT_MARCHE
 
-from brvm.app.api import TRAME_SEANCES, courbe, serialiser, trame
+from brvm.app.api import (
+    TRAME_SEANCES,
+    courbe,
+    serialiser,
+    serialiser_criblage,
+    trame,
+)
 from brvm.app.etat import EtatSysteme, assembler
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
 from brvm.domain.enums import SensOperation, StatutSeance
 from brvm.domain.modeles import Cotation, Transaction
 from brvm.indicators.serie import OrigineValeur
+from brvm.market.allocation import proposer
+from brvm.market.criblage import cribler
 from brvm.storage.base import BaseDonnees
-from brvm.storage.depots import DepotCotations, DepotTransactions
+from brvm.storage.depots import DepotCotations, DepotInstruments, DepotTransactions
 
 INSTANT = datetime(2026, 3, 20, 16, 0, tzinfo=UTC)
 
@@ -187,3 +197,94 @@ class TestRisque:
             if not constat["mesurable"]:
                 assert constat["motif_indisponible"]
                 assert constat["seances_pour_deboucler"] is None
+
+
+class TestSerialisationMarche:
+    """La cote sérialisée. Ce qui est vérifié ici, c'est que rien ne disparaît
+    en route : une valeur écartée, un critère non mesuré et une contrainte
+    d'allocation doivent tous arriver au navigateur avec leur explication."""
+
+    @pytest.fixture
+    def charge(
+        self,
+        cote: BaseDonnees,
+        configuration: Configuration,
+        calendrier: CalendrierSeances,
+    ) -> dict[str, Any]:
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
+        instruments = {
+            instrument.ticker: instrument
+            for instrument in DepotInstruments(cote).lister(actifs_seulement=True)
+        }
+        propositions = {
+            nom: proposer(classement, 5_000_000, configuration, instruments=instruments)
+            for nom, classement in criblage.classements.items()
+        }
+        return serialiser_criblage(criblage, propositions)
+
+    def test_la_mention_voyage_avec_la_donnee(self, charge: dict[str, Any]) -> None:
+        """Elle n'est pas posée une fois dans un coin de la page : un tableau
+        recopié ailleurs doit rester lisible pour ce qu'il est."""
+        assert "aucune promesse de rendement" in charge["mention"]
+
+    def test_la_fraicheur_accompagne_le_criblage(self, charge: dict[str, Any]) -> None:
+        assert charge["fraicheur"]["horodatage_le_plus_ancien"]
+        assert charge["fraicheur"]["age_minutes"] is not None
+
+    def test_les_valeurs_ecartees_partent_avec_leur_raison(
+        self,
+        cote: BaseDonnees,
+        configuration: Configuration,
+        calendrier: CalendrierSeances,
+    ) -> None:
+        criblage = cribler(
+            cote,
+            configuration,
+            calendrier,
+            instant=INSTANT_MARCHE,
+            tickers=["TEST1", "ABSENTE"],
+        )
+        charge = serialiser_criblage(criblage)
+        ecartees = {e["ticker"]: e["motif"] for e in charge["ecartees"]}
+        assert "ABSENTE" in ecartees
+        assert ecartees["ABSENTE"]
+
+    def test_un_critere_non_mesure_arrive_avec_son_motif_et_sans_note(
+        self, charge: dict[str, Any]
+    ) -> None:
+        absents = [
+            critere
+            for valeur in charge["valeurs"]
+            for critere in valeur["criteres"]
+            if not critere["mesurable"]
+        ]
+        assert absents, "le jeu de test comporte des critères non mesurables"
+        for critere in absents:
+            assert critere["note"] is None, "une absence ne doit jamais devenir un zéro"
+            assert critere["motif_absent"]
+
+    def test_chaque_rang_porte_de_quoi_etre_contesté(self, charge: dict[str, Any]) -> None:
+        for classement in charge["classements"].values():
+            for rang in classement["classes"]:
+                assert rang["score"] is not None
+                assert rang["couverture"] is not None
+                assert rang["criteres"]
+            for rang in classement["ecartes"]:
+                assert rang["score"] is None
+                assert rang["motif_absent"], "un écarté sans raison serait une disparition"
+
+    def test_chaque_ligne_proposee_nomme_la_limite_qui_l_a_bornee(
+        self, charge: dict[str, Any]
+    ) -> None:
+        for proposition in charge["propositions"].values():
+            for ligne in proposition["lignes"]:
+                assert ligne["contrainte"]
+                assert ligne["montant_net"] == ligne["montant_brut"] + ligne["frais"]
+
+    def test_les_composantes_de_la_confiance_sont_servies(self, charge: dict[str, Any]) -> None:
+        """Sans elles, l'interface ne pourrait pas dire POURQUOI une confiance
+        est basse, et retomberait sur une explication inventée."""
+        for valeur in charge["valeurs"]:
+            assert valeur["assiduite"] is not None
+            assert valeur["profondeur"] is not None
+            assert valeur["etroitesse"] is not None

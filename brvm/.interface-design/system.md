@@ -154,3 +154,22 @@ Micro-libellés : 11px, majuscules, interlettrage `0.08em`, encre tertiaire.
   fond donne un contrôle qui passe et une page qui échoue.
 - **2026-09-01** — Un `h1` invisible nomme la page : le titre visible vit dans le
   rail, et un document sans `h1` n'annonce pas ce qu'il est.
+- **2026-09-01** — Écran **Marché**. Le score se lit d'abord comme une longueur,
+  le chiffre ne fait que confirmer : un nombre entre 0 et 1 ne se compare pas
+  d'un coup d'œil, une barre si. La barre est bornée à 220 px — sur un grand
+  écran, une barre de 900 px se compare moins bien, pas mieux.
+- **2026-09-01** — Un critère non mesuré occupe une **ligne de phrase**, pas une
+  case vide. Une case vide se lit comme un zéro ; une phrase se lit comme une
+  absence. C'est la traduction visuelle de la règle du domaine : zéro veut dire
+  « mauvais », l'absence veut dire « on ne sait pas ».
+- **2026-09-01** — Les valeurs écartées d'un classement sont dans un `details`
+  replié, pas supprimées. Sur cette place elles sont souvent la majorité ; les
+  faire disparaître donnerait de la cote une image fausse.
+- **2026-09-01** — Le résumé d'une répartition est un bloc de chiffres, pas une
+  phrase. Rendus dans une phrase, les montants perdaient leurs séparateurs de
+  milliers : l'espace fine insécable produite par `Intl.NumberFormat` n'existe
+  pas dans le sous-ensemble de la police d'interface, et « 4 492 897 » se lisait
+  « 4492897 ». D'où aussi l'utilitaire `.nombre`, qui bascule en chasse fixe tout
+  nombre glissé dans une phrase.
+- **2026-09-01** — `display:flex` posé sur un `td` lui retire son comportement de
+  cellule et désaligne la colonne. Le conteneur flex vit **dans** la cellule.
