@@ -61,6 +61,13 @@ class PointAjuste:
     facteur_titres: Decimal
     cloture_ajustee: Decimal | None
     volume_ajuste: int
+    #: Ouverture, plus haut et plus bas ajustés du même facteur que la clôture.
+    #: L'ATR et les bandes de Bollinger en ont besoin : les calculer sur un haut
+    #: brut et une clôture ajustée produirait des amplitudes fantaisistes autour
+    #: de chaque détachement.
+    ouverture_ajustee: Decimal | None = None
+    plus_haut_ajuste: Decimal | None = None
+    plus_bas_ajuste: Decimal | None = None
 
     @property
     def cotee(self) -> bool:
@@ -90,6 +97,11 @@ class SerieAjustee:
 
 def _quantifier(valeur: Decimal) -> Decimal:
     return valeur.quantize(_QUANTUM)
+
+
+def _ajuster(cours: int | None, facteur: Decimal) -> Decimal | None:
+    """Applique le facteur cumulé à un cours brut, en préservant l'absence."""
+    return None if cours is None else _quantifier(Decimal(cours) * facteur)
 
 
 def _derniere_cloture_traitee_avant(cotations: Sequence[Cotation], jour: date) -> int | None:
@@ -221,11 +233,10 @@ def ajuster_serie(
                     volume_brut=cotation.volume_titres,
                     facteur_cours=_quantifier(cumul_cours),
                     facteur_titres=_quantifier(cumul_titres),
-                    cloture_ajustee=(
-                        _quantifier(Decimal(cotation.cloture) * cumul_cours)
-                        if cotation.cloture is not None
-                        else None
-                    ),
+                    cloture_ajustee=_ajuster(cotation.cloture, cumul_cours),
+                    ouverture_ajustee=_ajuster(cotation.ouverture, cumul_cours),
+                    plus_haut_ajuste=_ajuster(cotation.plus_haut, cumul_cours),
+                    plus_bas_ajuste=_ajuster(cotation.plus_bas, cumul_cours),
                     volume_ajuste=int(
                         (Decimal(cotation.volume_titres) * cumul_titres).to_integral_value()
                     ),

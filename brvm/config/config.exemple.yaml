@@ -305,6 +305,25 @@ indicateurs:
   # Au-delà de ce taux de données reportées, le résultat est marqué peu fiable.
   taux_remplissage_alerte: 0.25
 
+  # Fenêtres de calcul. Les valeurs usuelles viennent des marchés liquides :
+  # validez-les par backtest avant de vous y fier sur une valeur peu échangée.
+  fenetre_mm_courte: 20
+  fenetre_mm_longue: 50
+  fenetre_mm_fond: 200
+  fenetre_rsi: 14
+  macd_rapide: 12
+  macd_lente: 26
+  macd_signal: 9
+  fenetre_bollinger: 20
+  ecarts_bollinger: 2
+  fenetre_atr: 14
+  fenetre_momentum: 20
+  fenetre_extremes: 60
+  rsi_survente: 30
+  rsi_surachat: 70
+  fourchette_reference: 0.05
+  volume_reference_xof: 5000000
+
 # ------------------------------------------------------------------------------
 #  Risque — [PRÉFÉRENCE]
 # ------------------------------------------------------------------------------
@@ -317,7 +336,6 @@ risque:
   part_max_volume_moyen: 0.25
   fenetre_volume_moyen: 20
   multiple_atr_stop: 2.5
-  fenetre_atr: 14
   drawdown_alerte: 0.15
   fenetre_volatilite: 60
 

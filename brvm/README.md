@@ -22,7 +22,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 | 1 — Socle | Configuration unique, erreurs, journal structuré, arithmétique XOF, calendrier de séances | ✅ livrée |
 | 2 — Modèle de données | Modèles pydantic, schéma SQLite, écriture idempotente, historisation des corrections, ajustement des OST | ✅ livrée |
 | 3 — Ingestion | Interface `DataSource`, connecteur fichier opérationnel, connecteur web à analyse déclarée, politique réseau, anomalies et quarantaine | ✅ livrée |
-| 4 — Analyse technique | SMA, EMA, RSI, MACD, Bollinger, ATR, OBV, momentum, extrêmes glissants, score de confiance liquidité | ⏳ à venir |
+| 4 — Analyse technique | SMA, EMA, RSI, MACD, Bollinger, ATR, OBV, momentum, extrêmes glissants, score de confiance liquidité, signaux | ✅ livrée |
 | 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, IRR, simulateur d'ordre | ⏳ à venir |
 | 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ⏳ à venir |
 | 7 — Exploitation | Ordonnanceur, alertes, tableau de bord Streamlit, export Excel | ⏳ à venir |
@@ -221,6 +221,79 @@ multiplie pas.
 
 ---
 
+## Analyse technique
+
+Les indicateurs usuels ne sont pas transposables tels quels à un marché où une
+valeur peut ne pas coter pendant une semaine. Quatre décisions gouvernent cette
+couche, et chacune est visible dans la sortie.
+
+### Une séance sans transaction n'est pas une séance à cours inchangé
+
+Chaque barre porte son origine :
+
+| Origine | Signification |
+|---|---|
+| `COTEE` | une transaction a eu lieu |
+| `REPORTEE` | aucune transaction ; le dernier cours traité est reporté, dans la limite configurée |
+| `ABSENTE` | aucune transaction et limite de report dépassée — le trou reste un trou |
+
+Une barre reportée n'a **ni ouverture, ni amplitude, ni volume**. Les inventer
+égaux à la clôture affirmerait une volatilité nulle, ce qui est une affirmation,
+pas une absence d'information.
+
+### Le système refuse de calculer plutôt que de produire un chiffre creux
+
+Si la part de séances réellement cotées dans la fenêtre tombe sous
+`indicateurs.ratio_minimum_seances_cotees`, la valeur est remplacée par un refus
+motivé :
+
+```
+MM20 (SNTS) : non calculé — seulement 7 séance(s) réellement cotée(s)
+sur 20 dans la fenêtre, sous le seuil configuré de 60 %
+```
+
+Chaque point publié porte, avec sa valeur, le nombre de séances cotées de sa
+fenêtre, le taux de report, et l'ancienneté de la dernière transaction.
+
+### Les indicateurs d'amplitude et de volume ne voient que les séances cotées
+
+L'ATR et l'OBV ne consomment que les barres `COTEE`, puis leur résultat est
+reporté avec son ancienneté. La raison est concrète : alimenter l'ATR avec des
+séances sans transaction ferait tendre la volatilité mesurée vers zéro, et donc
+placer des stops **d'autant plus serrés que la valeur est illiquide** — exactement
+l'inverse du bon sens. Un test le vérifie.
+
+### Aucun signal n'est exécutable sur la barre qui l'a fait naître
+
+La clôture d'une séance n'est connue qu'une fois la séance terminée. Chaque
+`Signal` porte donc deux dates : `date_constat` et `date_execution`, cette
+dernière étant la séance suivante du calendrier. Le modèle refuse d'être
+construit autrement.
+
+Les calculs eux-mêmes sont testés pour leur **causalité** : tronquer la série
+juste après l'indice *i* ne change aucune valeur jusqu'à *i*. C'est cette
+propriété qui rend un backtest honnête.
+
+### Score de confiance
+
+Chaque résultat porte un score de liquidité, produit de trois composantes
+rapportées séparément :
+
+- **assiduité** — part de séances réellement cotées ;
+- **profondeur** — montant quotidien moyen échangé, rapporté à la référence configurée ;
+- **étroitesse** — largeur de fourchette achat/vente, rapportée à la référence configurée.
+
+C'est un **produit**, pas une moyenne : une valeur qui cote tous les jours mais
+qu'on ne peut acheter qu'avec 20 % d'écart au carnet n'est pas « moyennement
+liquide ». Quand la source ne publie pas de fourchette, le score le dit et se
+déclare optimiste.
+
+Ces signaux sont des franchissements mécaniques. Leur valeur prédictive n'est
+établie par rien, et le score de confiance dit surtout à quel point la donnée
+sous-jacente est mince.
+
+---
+
 ## Choix de conception
 
 ### Aucune donnée inventée
@@ -316,13 +389,13 @@ brvm/
 │   ├── domain/      enums, arithmétique XOF, calendrier, modèles, ajustement OST
 │   ├── storage/     schéma SQL, connexion/migration, dépôts idempotents
 │   ├── ingestion/   DataSource, politique réseau, connecteurs, anomalies, orchestrateur
-│   ├── indicators/  couche 4 — à venir
+│   ├── indicators/  série illiquidité-consciente, calculs, confiance, signaux
 │   ├── portfolio/   couche 5 — à venir
 │   ├── risk/        couche 6 — à venir
 │   ├── backtest/    couche 6 — à venir
 │   ├── app/         couche 7 — à venir
 │   └── utils/       erreurs, journalisation structurée
-└── tests/           312 tests, 94 % de couverture
+└── tests/           425 tests, 94 % de couverture
 ```
 
 Le stockage passe entièrement par `storage/base.py` et `storage/depots.py` : un
@@ -372,4 +445,6 @@ cotations aux frontières, distinction séance sans transaction / cours inchang�
 idempotence et historisation des corrections, ajustement des OST et absence de
 biais d'anticipation, respect du `robots.txt` et des reculs exponentiels, mode
 dégradé sur cache périmé, extraction de tableaux HTML et correspondance de
-colonnes déclarée, et chaque contrôle d'anomalie avec sa gravité.
+colonnes déclarée, chaque contrôle d'anomalie avec sa gravité, les valeurs de
+référence de chaque indicateur, la causalité de tous les calculs, et
+l'impossibilité d'exécuter un signal sur la barre qui l'a produit.

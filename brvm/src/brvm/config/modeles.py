@@ -422,7 +422,13 @@ class ConfigFiscalite(_Base):
 
 
 class ConfigIndicateurs(_Base):
-    """Garde-fous imposés aux calculs techniques sur un marché peu liquide."""
+    """Fenêtres de calcul et garde-fous imposés par l'illiquidité.
+
+    Les fenêtres sont des paramètres, pas des constantes du code : les valeurs
+    usuelles (20/50/200, RSI 14, MACD 12/26/9) viennent des marchés liquides et
+    n'ont aucune raison d'être optimales sur une valeur qui cote trois fois par
+    semaine. Elles se règlent ici et se valident par backtest.
+    """
 
     #: Part minimale de séances **réellement cotées** dans la fenêtre pour qu'un
     #: indicateur soit calculé. En deçà, le système refuse de répondre.
@@ -434,6 +440,48 @@ class ConfigIndicateurs(_Base):
     fenetre_volume_moyen: int = Field(gt=0)
     #: Taux de remplissage au-delà duquel un résultat est marqué peu fiable.
     taux_remplissage_alerte: Fraction
+
+    # ---------------------------------------------------------------- fenêtres
+    fenetre_mm_courte: int = Field(gt=1)
+    fenetre_mm_longue: int = Field(gt=1)
+    #: Moyenne de fond, dite « ligne de vie ». Rarement calculable sur une valeur
+    #: peu liquide : le système le dira plutôt que de l'approximer.
+    fenetre_mm_fond: int = Field(gt=1)
+    fenetre_rsi: int = Field(gt=1)
+    macd_rapide: int = Field(gt=1)
+    macd_lente: int = Field(gt=1)
+    macd_signal: int = Field(gt=1)
+    fenetre_bollinger: int = Field(gt=1)
+    #: Nombre d'écarts-types de part et d'autre de la moyenne.
+    ecarts_bollinger: Decimal = Field(gt=0)
+    fenetre_atr: int = Field(gt=1)
+    fenetre_momentum: int = Field(gt=0)
+    fenetre_extremes: int = Field(gt=1)
+
+    # -------------------------------------------------------------- seuils RSI
+    rsi_survente: Decimal = Field(gt=0, lt=100)
+    rsi_surachat: Decimal = Field(gt=0, lt=100)
+
+    # ------------------------------------------------- références de liquidité
+    #: Largeur de fourchette achat/vente au-delà de laquelle la liquidité est
+    #: jugée mauvaise, en fraction du milieu de fourchette.
+    fourchette_reference: Fraction
+    #: Montant échangé quotidien à partir duquel la liquidité est jugée
+    #: suffisante, en XOF. Sert à normaliser le score de confiance.
+    volume_reference_xof: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _valider(self) -> ConfigIndicateurs:
+        if self.fenetre_mm_courte >= self.fenetre_mm_longue:
+            raise ValueError(
+                "fenetre_mm_courte doit être strictement inférieure à fenetre_mm_longue : "
+                "un croisement de moyennes n'a autrement aucun sens."
+            )
+        if self.macd_rapide >= self.macd_lente:
+            raise ValueError("macd_rapide doit être strictement inférieure à macd_lente.")
+        if self.rsi_survente >= self.rsi_surachat:
+            raise ValueError("rsi_survente doit être strictement inférieur à rsi_surachat.")
+        return self
 
 
 class ConfigIngestion(_Base):
@@ -473,8 +521,9 @@ class ConfigRisque(_Base):
     part_max_volume_moyen: Fraction
     fenetre_volume_moyen: int = Field(gt=0)
     #: Multiple d'ATR pour le calcul d'un stop.
+    #: Multiple d'ATR pour le calcul d'un stop. La fenêtre de l'ATR est celle
+    #: déclarée dans `indicateurs.fenetre_atr` : un seul ATR dans le système.
     multiple_atr_stop: Decimal = Field(gt=0)
-    fenetre_atr: int = Field(gt=0)
     #: Drawdown déclenchant une alerte, en fraction.
     drawdown_alerte: Fraction
     fenetre_volatilite: int = Field(gt=0)

@@ -237,6 +237,25 @@ indicateurs:
   fenetre_volume_moyen: 20
   taux_remplissage_alerte: 0.25
 
+  # Fenêtres de calcul. Les valeurs usuelles viennent des marchés liquides :
+  # validez-les par backtest avant de vous y fier sur une valeur peu échangée.
+  fenetre_mm_courte: 20
+  fenetre_mm_longue: 50
+  fenetre_mm_fond: 200
+  fenetre_rsi: 14
+  macd_rapide: 12
+  macd_lente: 26
+  macd_signal: 9
+  fenetre_bollinger: 20
+  ecarts_bollinger: 2
+  fenetre_atr: 14
+  fenetre_momentum: 20
+  fenetre_extremes: 60
+  rsi_survente: 30
+  rsi_surachat: 70
+  fourchette_reference: 0.05
+  volume_reference_xof: 5000000
+
 risque:
   # Le portefeuille cible du dossier fourni est concentré sur 3 lignes
   # (40 / 35 / 25 %). Ces plafonds sont plus larges que cette cible : ajustez-les
@@ -250,7 +269,6 @@ risque:
   # débutant. Ici le stop est adossé à la volatilité réelle (ATR) plutôt qu'à un
   # pourcentage fixe ; ajustez le multiple après avoir comparé les deux.
   multiple_atr_stop: 2.5
-  fenetre_atr: 14
   drawdown_alerte: 0.15
   fenetre_volatilite: 60
 

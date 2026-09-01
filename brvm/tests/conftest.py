@@ -9,7 +9,7 @@ une donnée de marché.
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -19,7 +19,8 @@ from brvm.config.chargement import charger_configuration, construire_calendrier_
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
 from brvm.domain.enums import StatutSeance
-from brvm.domain.modeles import Cotation
+from brvm.domain.modeles import Cotation, OperationSurTitre
+from brvm.indicators.serie import SerieTechnique, construire_serie
 from brvm.storage.base import BaseDonnees
 
 DOSSIER_DONNEES = Path(__file__).parent / "donnees"
@@ -101,3 +102,60 @@ def dormeur() -> Callable[[float], None]:
     attentes: list[float] = []
     dormir.attentes = attentes  # type: ignore[attr-defined]
     return dormir
+
+
+# -------------------------------------------------------------------- technique
+
+
+@pytest.fixture
+def fabrique_serie(
+    configuration: Configuration,
+    calendrier: CalendrierSeances,
+    fabrique_cotation: Callable[..., Cotation],
+) -> Callable[..., SerieTechnique]:
+    """Construit une série technique à partir d'une suite de clôtures.
+
+    ``None`` dans la suite signifie « séance sans transaction » : c'est ainsi que
+    l'on reproduit l'illiquidité dans les tests.
+    """
+
+    def construire(
+        clotures: Sequence[int | None],
+        debut: date = date(2026, 3, 2),
+        ticker: str = "TEST1",
+        amplitude: int = 10,
+        volume: int = 100,
+        operations: Sequence[OperationSurTitre] = (),
+        jusqu_a: date | None = None,
+        **extras: object,
+    ) -> SerieTechnique:
+        seances = calendrier.seances(debut, date(2026, 12, 31))[: len(clotures)]
+        cotations: list[Cotation] = []
+        for jour, cloture in zip(seances, clotures, strict=False):
+            if cloture is None:
+                cotations.append(
+                    fabrique_cotation(
+                        jour=jour,
+                        ticker=ticker,
+                        cloture=None,
+                        statut=StatutSeance.SANS_TRANSACTION,
+                        volume=0,
+                    )
+                )
+            else:
+                cotations.append(
+                    fabrique_cotation(
+                        jour=jour,
+                        ticker=ticker,
+                        cloture=cloture,
+                        volume=volume,
+                        ouverture=cloture,
+                        plus_haut=cloture + amplitude,
+                        plus_bas=max(1, cloture - amplitude),
+                        volume_xof=cloture * volume,
+                        **extras,
+                    )
+                )
+        return construire_serie(cotations, calendrier, configuration, operations, jusqu_a=jusqu_a)
+
+    return construire
