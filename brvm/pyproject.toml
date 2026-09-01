@@ -29,7 +29,9 @@ dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAM
 where = ["src"]
 
 [tool.setuptools.package-data]
-brvm = ["storage/*.sql"]
+# Les fichiers de l'interface web voyagent avec le paquet : elle doit
+# fonctionner hors ligne, sans build et sans CDN.
+brvm = ["storage/*.sql", "app/web/*", "app/web/polices/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

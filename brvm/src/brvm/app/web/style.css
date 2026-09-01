@@ -1,0 +1,769 @@
+/* Cote & Papier — feuille de style du suivi BRVM.
+   Direction, tokens et raisons : voir .interface-design/system.md
+   Stratégie de profondeur : BORDURES SEULES. Aucune ombre portée nulle part. */
+
+@layer tokens, base, composants, utilitaires;
+
+/* ------------------------------------------------------------------ polices */
+/* Auto-hébergées, sous-ensemble latin. Aucun appel réseau à l'exécution :
+   l'interface fonctionne hors ligne, et la page ne fuit rien vers un CDN. */
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("polices/Newsreader-var.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("polices/InstrumentSans-400_700.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("polices/IBMPlexMono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("polices/IBMPlexMono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer tokens {
+  :root {
+    /* — Encre : l'indigo des tissus teints du Sahel. Contrastes vérifiés. — */
+    --encre: oklch(0.205 0.035 265);              /* 17.05:1 */
+    --encre-secondaire: oklch(0.435 0.022 265);   /*  7.58:1 */
+    /* 4.5:1 minimum sur TOUTES les surfaces où ce ton se pose, teintes
+       comprises : papier-creux, laterite-voile, lagune-voile, laiton-voile.
+       Le calculer contre le seul --papier donnait un contrôle qui passe et
+       une page qui échoue. */
+    --encre-tertiaire: oklch(0.53 0.016 265);
+    --encre-muette: oklch(0.655 0.012 265);       /*  3.01:1 — désactivé */
+
+    /* — Papier : celui d'un avis d'opéré. Jamais de blanc pur. — */
+    --papier: oklch(0.983 0.0045 85);
+    --papier-leve: oklch(0.997 0.002 85);
+    --papier-creux: oklch(0.962 0.006 85);
+    --papier-survol: oklch(0.955 0.008 85);
+
+    /* — Le monde : lagune, latérite, laiton, indigo. — */
+    --lagune: oklch(0.505 0.095 172);             /* gain    5.30:1 */
+    --lagune-voile: oklch(0.945 0.028 172);
+    --laterite: oklch(0.545 0.145 38);            /* perte   5.02:1 */
+    --laterite-voile: oklch(0.948 0.028 45);
+    --laiton: oklch(0.535 0.115 82);              /* 4.59:1 sur --laiton-voile */
+    --laiton-marque: oklch(0.66 0.125 82);        /* marque  3.01:1 */
+    --laiton-voile: oklch(0.955 0.03 85);
+    --indigo: oklch(0.455 0.135 268);             /* accent  7.15:1 */
+    --indigo-voile: oklch(0.945 0.028 268);
+
+    /* — Traits. Toute la hiérarchie passe par eux. — */
+    --trait-discret: oklch(0.205 0.035 265 / 0.06);
+    --trait: oklch(0.205 0.035 265 / 0.11);
+    --trait-fort: oklch(0.205 0.035 265 / 0.18);
+
+    /* — Espacement, base 4px. — */
+    --e1: 4px;   --e2: 8px;   --e3: 12px;  --e4: 16px;
+    --e5: 20px;  --e6: 24px;  --e8: 32px;  --e12: 48px;
+
+    /* — Rayon : presque droit. Un formulaire administratif. — */
+    --rayon: 3px;
+    --rayon-large: 5px;
+    --rayon-plein: 999px;
+
+    /* — Typographie. — */
+    --titre: "Newsreader", Georgia, "Times New Roman", serif;
+    --interface: "Instrument Sans", system-ui, -apple-system, sans-serif;
+    --chiffres: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+    --t-micro: 0.6875rem;  /* 11px — micro-libellés */
+    --t-petit: 0.8125rem;  /* 13px — métadonnées */
+    --t-base: 0.875rem;    /* 14px — corps */
+    --t-moyen: 1rem;
+    --t-grand: 1.25rem;
+    --t-titre: 1.5rem;
+    --t-heros: clamp(1.75rem, 1.2rem + 1.8vw, 2.5rem);
+
+    --duree: 140ms;
+    --courbe: cubic-bezier(0.2, 0, 0.13, 1);
+  }
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;              /* pas 100vh : la barre mobile ment */
+    background: var(--papier);
+    color: var(--encre);
+    font-family: var(--interface);
+    font-size: var(--t-base);
+    line-height: 1.5;
+    font-synthesis-weight: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--titre);
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    line-height: 1.2;
+    margin: 0;
+  }
+
+  /* Chaque élément focalisable porte un anneau visible. Jamais d'outline: none
+     sans remplacement — c'est la première chose qu'on casse et la dernière
+     qu'on remarque. */
+  :focus-visible {
+    outline: 2px solid var(--indigo);
+    outline-offset: 2px;
+    border-radius: var(--rayon);
+  }
+  :focus:not(:focus-visible) { outline: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  ::selection { background: var(--indigo-voile); }
+}
+
+@layer composants {
+
+  /* ------------------------------------------------------------ ossature */
+
+  .page {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    min-height: 100dvh;
+  }
+
+  /* Le rail porte la même surface que le canevas, séparé par un simple trait.
+     Une couleur différente fragmenterait l'espace visuel pour rien. */
+  .rail {
+    border-inline-end: 1px solid var(--trait);
+    padding: var(--e6) var(--e4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--e6);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+  }
+
+  .marque { display: flex; flex-direction: column; gap: 2px; }
+  .marque strong {
+    font-family: var(--titre);
+    font-size: var(--t-grand);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .marque span {
+    font-size: var(--t-micro);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--encre-tertiaire);
+  }
+
+  .rail nav { display: flex; flex-direction: column; gap: 2px; }
+
+  .rail a {
+    display: flex;
+    align-items: center;
+    gap: var(--e2);
+    padding: 7px var(--e3);
+    border-radius: var(--rayon);
+    color: var(--encre-secondaire);
+    text-decoration: none;
+    font-size: var(--t-base);
+    transition: background var(--duree) var(--courbe),
+                color var(--duree) var(--courbe);
+  }
+  .rail a:hover { background: var(--papier-survol); color: var(--encre); }
+  .rail a[aria-current="true"] {
+    background: var(--papier-creux);
+    color: var(--encre);
+    font-weight: 600;
+  }
+  .rail a svg { flex: none; opacity: 0.65; }
+  .rail a[aria-current="true"] svg { opacity: 1; }
+
+  .contenu { min-width: 0; padding: var(--e6) var(--e8) var(--e12); }
+
+  /* ------------------------------------------- bandeau de fraîcheur */
+  /* Toujours visible, jamais une notification qui disparaît : c'est
+     l'information qui conditionne toutes les autres. */
+
+  .fraicheur {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--e2) var(--e4);
+    padding: var(--e3) var(--e4);
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    background: var(--papier-leve);
+    margin-block-end: var(--e6);
+  }
+  .fraicheur[data-perimee="true"] {
+    border-color: color-mix(in oklab, var(--laterite) 45%, transparent);
+    background: var(--laterite-voile);
+  }
+  .fraicheur .etiquette {
+    font-size: var(--t-micro);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--encre-tertiaire);
+  }
+  .fraicheur time { font-family: var(--chiffres); font-size: var(--t-petit); }
+  .fraicheur .age { font-family: var(--chiffres); font-size: var(--t-petit); }
+  .fraicheur[data-perimee="true"] .age { color: var(--laterite); font-weight: 500; }
+  .fraicheur p { margin: 0; font-size: var(--t-petit); color: var(--encre-secondaire); }
+
+  /* ------------------------------------------------------------ sections */
+
+  .section { margin-block-end: var(--e8); }
+  .section > header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--e4);
+    margin-block-end: var(--e4);
+  }
+  .section h2 { font-size: var(--t-grand); }
+  .section header p {
+    margin: 0;
+    font-size: var(--t-petit);
+    color: var(--encre-tertiaire);
+    max-width: 62ch;
+  }
+
+  /* ------------------------------------------------------- chiffres clés */
+
+  /* Le héros a sa propre bande : une chose qu'on vient chercher, séparée des
+     quatre chiffres qui la soutiennent. Une carte « span 2 » dans une grille
+     auto-fit laissait un orphelin — un espace que personne n'avait décidé. */
+  .heros {
+    display: grid;
+    grid-template-columns: minmax(260px, auto) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--e6);
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    background: var(--papier-leve);
+    padding: var(--e5) var(--e6);
+    margin-block-end: var(--e3);
+  }
+  .heros-chiffre { display: grid; gap: var(--e1); }
+  .heros-valeur {
+    margin: 0;
+    font-family: var(--chiffres);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--t-heros);
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+  }
+  .heros-note { margin: 0; font-size: var(--t-petit); color: var(--encre-tertiaire); }
+  .heros-trame { display: grid; gap: var(--e2); justify-items: start; min-width: 0; }
+  .heros-trame > div { display: grid; gap: var(--e2); width: 100%; min-width: 0; }
+
+  .etiquette {
+    margin: 0;
+    font-size: var(--t-micro);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--encre-tertiaire);
+  }
+
+  .chiffres {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--e3);
+  }
+
+  .chiffre {
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    background: var(--papier-leve);
+    padding: var(--e4) var(--e5) var(--e5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--e2);
+  }
+  .chiffre dt {
+    font-size: var(--t-micro);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--encre-tertiaire);
+  }
+  .chiffre dd {
+    margin: 0;
+    font-family: var(--chiffres);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--t-titre);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  .chiffre .unite,
+  .heros-valeur .unite {
+    font-size: var(--t-petit);
+    color: var(--encre-tertiaire);
+    font-weight: 400;
+    margin-inline-start: 0.4ch;
+  }
+  .chiffre small {
+    font-size: var(--t-petit);
+    color: var(--encre-tertiaire);
+    font-family: var(--interface);
+  }
+
+  .gain { color: var(--lagune); }
+  .perte { color: var(--laterite); }
+
+  /* ------------------------------------------------- SIGNATURE : la trame */
+  /* Une marque par séance attendue. Pleine si la valeur a réellement coté,
+     creuse sinon. La forme porte le sens ; la couleur ne fait que l'appuyer,
+     pour que la trame reste lisible sans distinction des couleurs. */
+
+  .trame {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 20px;
+  }
+  .trame .seance {
+    width: 5px;
+    border-radius: 1px;
+    flex: none;
+  }
+  .trame .seance[data-origine="COTEE"] {
+    height: 100%;
+    background: var(--encre);
+  }
+  /* Une trame de valeur, en ligne dans un tableau : plus compacte, mêmes règles. */
+  .trame--compacte { height: 16px; gap: 2px; }
+  .trame--compacte .seance { width: 4px; }
+  .trame .seance[data-origine="REPORTEE"] {
+    height: 100%;
+    background: transparent;
+    border: 1px solid var(--laiton-marque);
+  }
+  .trame .seance[data-origine="ABSENTE"] {
+    height: 4px;
+    background: var(--encre-muette);
+  }
+
+  .trame-legende {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--e2) var(--e4);
+    font-size: var(--t-micro);
+    color: var(--encre-tertiaire);
+    margin-block-start: var(--e2);
+  }
+  .trame-legende span { display: inline-flex; align-items: center; gap: 5px; }
+  .trame-legende i {
+    width: 5px; height: 15px; border-radius: 1px; display: inline-block;
+  }
+  .trame-legende .l-cotee { background: var(--encre); }
+  .trame-legende .l-reportee { border: 1px solid var(--laiton-marque); }
+  .trame-legende .l-absente { height: 4px; background: var(--encre-muette); }
+
+  .trame-compte {
+    font-family: var(--chiffres);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--t-petit);
+    color: var(--encre-secondaire);
+    white-space: nowrap;
+  }
+
+  /* La trame a une largeur incompressible : 30 marques de 5px. Sur un écran
+     étroit elle défile DANS sa cellule plutôt que d'élargir le document — une
+     page qui défile horizontalement est un défaut, une texture qui défile dans
+     sa case est une lecture. */
+  .assiduite {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, auto) auto;
+    align-items: center;
+    gap: var(--e3);
+    font-size: var(--t-petit);
+    min-width: 0;
+  }
+  .assiduite .valeur-titre { font-size: var(--t-base); }
+  .assiduite > .trame {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    padding-block-end: 2px;
+  }
+
+  /* ------------------------------------------------------------ tableaux */
+
+  .cadre {
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    background: var(--papier-leve);
+    overflow: hidden;
+  }
+  .defilant { overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: var(--t-base); }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--papier-creux);
+    font-size: var(--t-micro);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--encre-tertiaire);
+    text-align: start;
+    padding: var(--e2) var(--e3);
+    border-block-end: 1px solid var(--trait);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: var(--e3);
+    border-block-end: 1px solid var(--trait-discret);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-block-end: none; }
+  tbody tr:hover td { background: var(--papier-survol); }
+
+  .num {
+    font-family: var(--chiffres);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+  .valeur-titre { font-weight: 600; letter-spacing: -0.005em; }
+
+  /* ------------------------------------------------------------- jauges */
+  /* Un ratio contre une limite. Ce n'est pas un camembert : la limite doit
+     être visible, et un camembert ne sait pas la montrer. */
+
+  /* L'écart entre deux jauges (24px) domine largement l'écart interne (4px) :
+     sans cela, un poids se lit comme appartenant au libellé d'en dessous.
+     C'est de la proximité au sens de Gestalt, pas de la décoration. */
+  .jauge { display: grid; gap: 4px; }
+  .pile--jauges { gap: var(--e6); }
+  .jauge-tete {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--e3);
+    font-size: var(--t-petit);
+  }
+  .jauge-tete .cle { font-weight: 500; }
+  .jauge-piste {
+    position: relative;
+    height: 8px;
+    background: var(--papier-creux);
+    border: 1px solid var(--trait-discret);
+    border-radius: var(--rayon-plein);
+    overflow: hidden;
+  }
+  /* La mesure vient du script via --part ; la mise en forme reste ici. */
+  .jauge-remplissage {
+    height: 100%;
+    width: var(--part, 0%);
+    background: var(--encre-secondaire);
+    border-radius: var(--rayon-plein);
+    transition: width var(--duree) var(--courbe);
+  }
+  .jauge[data-depasse="true"] .jauge-remplissage { background: var(--laterite); }
+  .jauge-limite {
+    position: absolute;
+    inset-block: -3px;
+    inset-inline-start: var(--part, 0%);
+    width: 2px;
+    background: var(--encre);
+    border-radius: 1px;
+  }
+  .jauge-poids {
+    font-family: var(--chiffres);
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+  .jauge-limite-texte {
+    font-family: var(--chiffres);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--t-micro);
+    color: var(--encre-tertiaire);
+  }
+
+  /* ------------------------------------------------------------ étiquettes */
+
+  .etiq {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px var(--e2);
+    border-radius: var(--rayon);
+    font-size: var(--t-micro);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  /* Chaque étiquette porte un glyphe : jamais la couleur seule. */
+  .etiq--achat { background: var(--lagune-voile); color: var(--lagune);
+                 border-color: color-mix(in oklab, var(--lagune) 25%, transparent); }
+  .etiq--vente { background: var(--laterite-voile); color: var(--laterite);
+                 border-color: color-mix(in oklab, var(--laterite) 25%, transparent); }
+  .etiq--attention { background: var(--laiton-voile); color: var(--laiton);
+                     border-color: color-mix(in oklab, var(--laiton) 28%, transparent); }
+  .etiq--neutre { background: var(--papier-creux); color: var(--encre-secondaire);
+                  border-color: var(--trait); }
+
+  /* --------------------------------------------------------------- signaux */
+
+  .signaux { display: grid; gap: var(--e3); }
+  .signal {
+    border: 1px solid var(--trait);
+    border-radius: var(--rayon);
+    background: var(--papier-leve);
+    padding: var(--e4);
+    display: grid;
+    gap: var(--e3);
+  }
+  .signal-tete {
+    display: flex;
+    align-items: center;
+    gap: var(--e2);
+    flex-wrap: wrap;
+  }
+  .signal-regle { font-weight: 600; }
+  .signal p { margin: 0; color: var(--encre-secondaire); font-size: var(--t-petit); }
+  .signal-dates {
+    display: flex;
+    gap: var(--e5);
+    flex-wrap: wrap;
+    font-size: var(--t-petit);
+  }
+  .signal-dates div { display: grid; gap: 1px; }
+  .signal-dates dt {
+    font-size: var(--t-micro);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--encre-tertiaire);
+  }
+  .signal-dates dd {
+    margin: 0;
+    font-family: var(--chiffres);
+    font-variant-numeric: tabular-nums;
+  }
+  /* La date d'exécution est soulignée : un franchissement constaté à la clôture
+     n'était pas jouable pendant la séance qui l'a produit. */
+  .signal-dates .execution dd {
+    font-weight: 500;
+    box-shadow: inset 0 -2px 0 var(--laiton-voile);
+  }
+
+  /* --------------------------------------------------------- avertissements */
+
+  .note {
+    border: 1px solid var(--trait);
+    border-inline-start: 3px solid var(--encre-muette);
+    border-radius: var(--rayon);
+    background: var(--papier-leve);
+    padding: var(--e3) var(--e4);
+    font-size: var(--t-petit);
+    color: var(--encre-secondaire);
+    margin: 0;
+  }
+  .note--attention {
+    border-inline-start-color: var(--laiton-marque);
+    background: var(--laiton-voile);
+  }
+  .note--grave {
+    border-inline-start-color: var(--laterite);
+    background: var(--laterite-voile);
+  }
+  .note strong { color: var(--encre); }
+
+  /* -------------------------------------------------------------- courbe */
+
+  .courbe { width: 100%; height: 132px; display: block; }
+  .courbe .grille { stroke: var(--trait-discret); stroke-width: 1; }
+  .courbe .trace { fill: none; stroke: var(--encre); stroke-width: 1.75;
+                   stroke-linejoin: round; stroke-linecap: round; }
+  /* Segment reposant sur un cours reporté : trait interrompu. Le lisser
+     dessinerait une tendance qui n'a pas eu lieu. */
+  .courbe .trace--reporte { stroke: var(--encre-muette); stroke-dasharray: 3 3; }
+  .courbe .point { fill: var(--encre); }
+
+  /* ---------------------------------------------------------- états vides */
+
+  .vide {
+    padding: var(--e8) var(--e4);
+    text-align: center;
+    color: var(--encre-tertiaire);
+    font-size: var(--t-petit);
+  }
+  .vide strong { display: block; color: var(--encre-secondaire); margin-block-end: 4px; }
+
+  .squelette {
+    background: linear-gradient(90deg, var(--papier-creux) 25%,
+                var(--papier-survol) 37%, var(--papier-creux) 63%);
+    background-size: 400% 100%;
+    animation: glisse 1.4s ease infinite;
+    border-radius: var(--rayon);
+    height: 1em;
+  }
+  @keyframes glisse { 0% { background-position: 100% 0; }
+                      100% { background-position: 0 0; } }
+
+  .erreur {
+    border: 1px solid color-mix(in oklab, var(--laterite) 40%, transparent);
+    background: var(--laterite-voile);
+    border-radius: var(--rayon);
+    padding: var(--e4);
+    color: var(--encre);
+  }
+  .erreur h2 { font-size: var(--t-moyen); margin-block-end: var(--e2); }
+  .erreur p { margin: 0; font-size: var(--t-petit); color: var(--encre-secondaire); }
+
+  /* --------------------------------------------------------------- pied */
+
+  .mention {
+    margin-block-start: var(--e8);
+    padding-block-start: var(--e4);
+    border-block-start: 1px solid var(--trait-discret);
+    font-size: var(--t-petit);
+    color: var(--encre-tertiaire);
+    max-width: 74ch;
+  }
+
+  /* ------------------------------------------------- accessibilité, aide */
+
+  .lien-evitement {
+    position: absolute;
+    inset-inline-start: -9999px;
+    top: var(--e2);
+    padding: var(--e2) var(--e4);
+    background: var(--encre);
+    color: var(--papier);
+    border-radius: var(--rayon);
+    z-index: 10;
+  }
+  .lien-evitement:focus { inset-inline-start: var(--e2); }
+
+  .invisible {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+}
+
+  /* Classes remplaçant d'anciens styles en ligne. La politique de sécurité
+     de contenu interdit `style=` dans le document : c'est voulu, et cela force
+     à nommer chaque intention plutôt qu'à la disperser dans le balisage. */
+
+  .rail-mention {
+    font-size: var(--t-micro);
+    margin: auto 0 0;
+    line-height: 1.5;
+  }
+  .sous-titre {
+    font-size: var(--t-moyen);
+    margin-block: var(--e6) var(--e3);
+  }
+  .cadre--espace { margin-block-start: var(--e4); }
+  .cadre--rembourre { padding: var(--e5); }
+  .note--espacee {
+    margin-block-start: var(--e3);
+    max-width: 88ch;
+    border-inline-start-width: 1px;
+    border-inline-start-color: var(--trait);
+    background: transparent;
+  }
+  .pile--espacee { margin-block-start: var(--e4); }
+  .squelette--valeur { width: 9ch; display: inline-block; }
+  .journal {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-family: var(--chiffres);
+    font-size: var(--t-petit);
+    display: grid;
+    gap: 6px;
+  }
+  .cellule-indisponible {
+    text-align: start;
+    white-space: nowrap;
+  }
+  .ligne-stop {
+    margin: 0;
+    font-size: var(--t-petit);
+    color: var(--encre-secondaire);
+  }
+  .motif-ligne {
+    margin-inline-start: var(--e2);
+    font-family: var(--interface);
+  }
+}
+
+@layer utilitaires {
+  .pile { display: grid; gap: var(--e3); }
+  .rangee { display: flex; align-items: center; gap: var(--e2); flex-wrap: wrap; }
+  .sourdine { color: var(--encre-tertiaire); }
+  [hidden] { display: none !important; }
+}
+
+/* ------------------------------------------------------------ adaptatif */
+
+@media (max-width: 900px) {
+  .page { grid-template-columns: 1fr; }
+  /* Le héros s'empile : à 375px, deux colonnes dont une à 260px minimum ne
+     tiennent pas, et forcer donnerait un document plus large que l'écran. */
+  .heros { grid-template-columns: minmax(0, 1fr); gap: var(--e4); }
+  .rail {
+    position: static;
+    height: auto;
+    border-inline-end: none;
+    border-block-end: 1px solid var(--trait);
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--e3);
+  }
+  .rail nav { flex-direction: row; flex-wrap: wrap; }
+  .contenu { padding: var(--e4) var(--e4) var(--e8); }
+  .chiffre--principal { grid-column: span 1; }
+}
+
+/* Impression : c'est un relevé, il doit pouvoir être imprimé et classé. */
+@media print {
+  .rail, .lien-evitement { display: none; }
+  .page { display: block; }
+  body { background: #fff; }
+  .cadre, .chiffre, .signal { break-inside: avoid; }
+}
+
+/* Contrastes forcés : la trame repose déjà sur la forme, elle survit. */
+@media (forced-colors: active) {
+  .trame .seance[data-origine="COTEE"] { background: CanvasText; }
+  .trame .seance[data-origine="REPORTEE"] { border-color: CanvasText; }
+  .jauge-remplissage { background: CanvasText; }
+}

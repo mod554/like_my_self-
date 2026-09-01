@@ -6,6 +6,7 @@ Cinq commandes, une seule mécanique dessous :
 * ``collecter`` — un cycle complet : collecte, constats, alertes ;
 * ``exporter`` — écrit le classeur du jour ;
 * ``ordonnancer`` — laisse tourner la collecte aux heures déclarées ;
+* ``servir`` — ouvre l'interface web sur la machine locale ;
 * ``verifier`` — contrôle la configuration et annonce les prochaines séances.
 
 Toutes commencent par afficher le bandeau de fraîcheur, et toutes rendent un
@@ -32,6 +33,7 @@ from brvm.app.cycle import Cycle, ResultatCycle
 from brvm.app.etat import assembler
 from brvm.app.export import exporter, horodater, restituer
 from brvm.app.ordonnanceur import Ordonnanceur, PolitiqueOrdonnancement, seances_a_venir
+from brvm.app.serveur import HOTE_DEFAUT, PORT_DEFAUT, servir
 from brvm.config.chargement import (
     charger_configuration,
     construire_calendrier_depuis_config,
@@ -82,6 +84,17 @@ def construire_analyseur_arguments() -> argparse.ArgumentParser:
         default=1,
         help="Nombre de collectes à exécuter avant de rendre la main.",
     )
+
+    interface = sous.add_parser("servir", help="Ouvre l'interface web locale.")
+    interface.add_argument(
+        "--hote",
+        default=HOTE_DEFAUT,
+        help=(
+            "Adresse d'écoute. Par défaut la machine elle-même : l'interface "
+            "montre votre portefeuille et ne demande aucun mot de passe."
+        ),
+    )
+    interface.add_argument("--port", type=int, default=PORT_DEFAUT)
     return analyseur
 
 
@@ -242,6 +255,12 @@ def principal(arguments: list[str] | None = None) -> int:
                 )
             case "ordonnancer":
                 return commande_ordonnancer(configuration, base, options.occurrences)
+            case "servir":
+                # Le serveur ouvre sa propre connexion par requête : celle du
+                # CLI n'a pas à rester ouverte pendant des heures.
+                base.fermer()
+                servir(configuration, options.hote, options.port)
+                return SUCCES
             case _:  # pragma: no cover - argparse impose le choix
                 return ECHEC
     except ErreurBrvm as exc:

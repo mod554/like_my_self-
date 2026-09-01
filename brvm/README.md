@@ -26,6 +26,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 | 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, TRI, simulateur d'ordre | ✅ livrée |
 | 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ✅ livrée |
 | 7 — Exploitation | Ordonnanceur bridé par le calendrier, alertes fichier/courriel/webhook, tableau de bord, export tableur, ligne de commande | ✅ livrée |
+| 8 — Interface | Système de design « Cote & Papier », serveur local sans dépendance, interface web hors ligne | ✅ livrée |
 
 ---
 
@@ -47,7 +48,7 @@ sont **facultatifs**, et leur absence n'empêche jamais de travailler :
 |---|---|---|
 | `tableur` | export Excel (openpyxl) | `exporter --texte`, même information |
 | `ordonnanceur` | planificateur APScheduler | `Ordonnanceur.boucle()`, sans dépendance |
-| `tableau` | tableau de bord Streamlit | `python -m brvm.app.cli etat` |
+| `tableau` | tableau de bord Streamlit | `servir` (interface web, sans dépendance) |
 | `dev` | pytest, ruff, mypy | — |
 
 Chaque module concerné dit lequel installer si vous en avez besoin, plutôt que de
@@ -698,6 +699,77 @@ Chaque écran dit pourquoi le chiffre est absent, plutôt que d'en afficher un
 plausible et faux.
 
 
+## Interface web
+
+```bash
+python -m brvm.app.cli servir --config config/config.yaml
+# → http://127.0.0.1:8731
+```
+
+Aucune dépendance : le serveur est en bibliothèque standard, la page est du HTML,
+du CSS et du JavaScript natifs. Pas de build, pas de `npm`, pas de CDN. Les trois
+polices sont **auto-hébergées** (200 Ko, sous-ensemble latin) : l'interface
+fonctionne hors ligne et ne fuit rien vers un tiers.
+
+Le serveur **écoute sur la machine elle-même** par défaut. Cette interface montre
+la composition d'un portefeuille et ne demande aucun mot de passe ; l'ouvrir au
+réseau se demande explicitement, et le message le dit.
+
+### Le système de design
+
+Direction, tokens, décisions et raisons : [`.interface-design/system.md`](.interface-design/system.md).
+Construit avec le skill [`ui-ux-design-pro`](../.claude/skills/ui-ux-design-pro/)
+(MIT, `saifyxpro`) et le skill `dataviz`.
+
+Les couleurs viennent d'un lieu, pas d'un nuancier : l'**indigo** des tissus
+teints du Sahel pour l'encre, le **papier** chaud d'un avis d'opéré pour les
+surfaces, la **latérite** d'Abidjan pour les pertes, la **lagune** Ébrié pour les
+gains, le **laiton** patiné des poids akan pour l'attention. Le duo *navy + or*
+de toutes les applications de trading est écarté ; les titres sont en **serif**,
+comme un bulletin imprimé, quand tous les tableaux de bord sont en sans-serif.
+
+### La signature : la trame de séances
+
+**Aucun chiffre n'apparaît sans la texture du silence derrière lui.** Une marque
+par séance attendue : carré plein si la valeur a réellement coté, anneau creux si
+le cours a été reporté, point pâle si la séance est absente.
+
+Sur une place liquide, cette trame serait une barre pleine, donc muette. Ici,
+elle dit d'un coup d'œil qu'une valeur cote 87 % des séances quand une autre en
+cote 17 % — et un cours vu deux fois sur vingt ne vaut pas le même cours vu
+dix-huit fois sur vingt.
+
+La forme porte le sens, la couleur ne fait que l'appuyer : la trame reste lisible
+sans distinction des couleurs et en contrastes forcés.
+
+### Trois défauts du genre, écartés
+
+| Défaut | Remplacé par |
+|---|---|
+| Le gros pourcentage vert/rouge en héros | le montant en XOF ; sur un cours reporté, un pourcentage est un mensonge |
+| La sparkline lissée dans chaque carte | la trame discrète, qui montre les trous au lieu de les lisser ; sur la courbe, un segment reposant sur un cours reporté est **en pointillé** |
+| Le camembert de répartition | des jauges avec la limite marquée — un camembert ne sait pas montrer une limite |
+
+### Ce qui est vérifié, pas estimé
+
+- **Contrastes mesurés sur le rendu réel**, en peignant les pixels. Le premier
+  calcul opposait chaque ton à la surface principale ; or les micro-libellés
+  s'affichent sur les en-têtes de tableau et sur les surfaces teintées. Deux tons
+  ont été assombris. Calculer contre le mauvais fond donne un contrôle qui passe
+  et une page qui échoue.
+- **Aucune palette catégorielle** n'existe dans ce système : la forme retenue
+  pour chaque donnée (jauge, série unique, trame d'états) l'a rendue inutile.
+- **Zéro débordement horizontal** à 1440 px comme à 375 px, vérifié au navigateur.
+- **Navigation au clavier** : lien d'évitement en premier, anneau de focus visible
+  partout, aucun `outline: none` sans remplacement.
+- **Aucun style en ligne** dans le document : la politique de sécurité de contenu
+  les refuse, ce qui force à nommer chaque intention dans la feuille de style.
+
+La politique de contenu interdit toute ressource distante. Si quelqu'un ajoute un
+jour un script de CDN, la page cassera visiblement plutôt que d'exfiltrer
+discrètement la composition d'un portefeuille.
+
+
 ## Choix de conception
 
 ### Aucune donnée inventée
@@ -792,6 +864,8 @@ brvm/
 │   └── univers.reference-*.csv      48 valeurs relevées, pays recoupé
 ├── docs/
 │   └── sources-verifiees.md         d'où vient chaque structure pré-remplie
+├── .interface-design/
+│   └── system.md                    direction, tokens, décisions de design
 ├── src/brvm/
 │   ├── config/      schéma de configuration + chargement à messages actionnables
 │   ├── domain/      enums, arithmétique XOF, calendrier, cron, modèles, ajustement OST
@@ -801,9 +875,10 @@ brvm/
 │   ├── portfolio/   frais, fiscalité, PMP/FIFO, valorisation, performance, simulateur
 │   ├── risk/        volatilité, corrélation, drawdown, concentration, liquidité, stops
 │   ├── backtest/    moteur événementiel, exécution conservatrice, métriques, walk-forward
-│   ├── app/         état unique, alertes, ordonnanceur, export, tableau de bord, CLI
+│   ├── app/         état unique, alertes, ordonnanceur, export, API JSON, serveur, CLI
+│   │   └── web/     interface : HTML, CSS, JS natifs, polices auto-hébergées
 │   └── utils/       erreurs, journalisation structurée
-└── tests/           780 tests, 95 % de couverture
+└── tests/           810 tests, 94 % de couverture
 ```
 
 Le stockage passe entièrement par `storage/base.py` et `storage/depots.py` : un
@@ -842,6 +917,9 @@ remplacement de SQLite par DuckDB resterait circonscrit à ces deux fichiers.
   une erreur qu'une réponse fondée sur un calendrier supposé.
 - **Aucune performance chiffrée n'est publiée** faute d'historique de compte
   espèces. Voir « Exploitation » ci-dessus : c'est un manque assumé, pas un oubli.
+- **L'interface web n'a aucune authentification.** Elle écoute sur la machine
+  elle-même par défaut. Ne l'exposez pas au réseau sans placer un contrôle
+  d'accès devant.
 - **Le tableau de bord et l'export ne rafraîchissent rien tout seuls.** Ils lisent
   la base telle qu'elle est ; c'est l'ordonnanceur ou la commande `collecter` qui
   l'alimente.

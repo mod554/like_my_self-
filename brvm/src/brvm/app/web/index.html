@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivi de portefeuille — BRVM</title>
+<meta name="description" content="Suivi et analyse technique de portefeuille sur la BRVM (UEMOA).">
+<meta name="color-scheme" content="light">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='2' fill='%23FBF9F6'/><rect x='3' y='4' width='2' height='8' fill='%230F1727'/><rect x='6.5' y='4' width='2' height='8' fill='none' stroke='%23B88923'/><rect x='10' y='10' width='2' height='2' fill='%23969AA1'/></svg>">
+</head>
+<body>
+
+<a class="lien-evitement" href="#principal">Aller au contenu</a>
+
+<div class="page">
+
+  <!-- La navigation n'est pas de l'échafaudage : elle dit où l'on est et ce
+       que le produit sait faire. -->
+  <aside class="rail">
+    <div class="marque">
+      <strong>La cote</strong>
+      <span>Suivi BRVM</span>
+    </div>
+
+    <nav aria-label="Sections">
+      <a href="#portefeuille" aria-current="true">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <rect x="1.5" y="3.5" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M4.5 3.5V2.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+        Portefeuille
+      </a>
+      <a href="#signaux">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M1.5 9.5 5 6l2.5 2.5L12.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9.5 3.5h3v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Signaux
+      </a>
+      <a href="#risque">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M7 1.5 12.5 4v4c0 2.5-2.4 4.3-5.5 5.5C3.9 12.3 1.5 10.5 1.5 8V4L7 1.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+        </svg>
+        Risque
+      </a>
+      <a href="#donnees">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <ellipse cx="7" cy="3.5" rx="4.5" ry="2" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M2.5 3.5v7c0 1.1 2 2 4.5 2s4.5-.9 4.5-2v-7" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+        Données
+      </a>
+    </nav>
+
+    <p class="sourdine" class="rail-mention">
+      Cet écran constate. Il ne recommande rien et ne promet aucun rendement.
+    </p>
+  </aside>
+
+  <main class="contenu" id="principal">
+
+    <h1 class="invisible">Suivi de portefeuille BRVM</h1>
+
+    <!-- Bandeau de fraîcheur : l'âge de la donnée la plus ancienne employée.
+         Toujours présent, jamais une notification qui s'efface. -->
+    <div class="fraicheur" id="fraicheur" data-perimee="false" role="status">
+      <span class="etiquette">Donnée la plus ancienne</span>
+      <time id="fraicheur-horodatage" datetime="">—</time>
+      <span class="age" id="fraicheur-age"></span>
+      <p id="fraicheur-note"></p>
+    </div>
+
+    <div id="erreur" class="erreur" hidden>
+      <h2>L'état n'a pas pu être composé</h2>
+      <p id="erreur-detail"></p>
+    </div>
+
+    <!-- ------------------------------------------------ portefeuille -->
+    <section class="section" id="portefeuille" aria-labelledby="t-portefeuille">
+      <header>
+        <div>
+          <h2 id="t-portefeuille">Portefeuille</h2>
+          <p id="portefeuille-methode"></p>
+        </div>
+      </header>
+
+      <div class="heros">
+        <div class="heros-chiffre">
+          <p class="etiquette">Valeur au dernier cours connu</p>
+          <p class="heros-valeur">
+            <span id="c-valeur" class="squelette squelette--valeur">&nbsp;</span><span class="unite">XOF</span>
+          </p>
+          <p class="heros-note" id="c-valeur-note"></p>
+        </div>
+        <div class="heros-trame">
+          <p class="etiquette">Assiduité des valeurs détenues</p>
+          <div id="trame-globale"></div>
+        </div>
+      </div>
+
+      <dl class="chiffres" id="chiffres">
+        <div class="chiffre">
+          <dt>Coût engagé</dt>
+          <dd><span id="c-cout">—</span><span class="unite">XOF</span></dd>
+          <small>frais d'acquisition inclus</small>
+        </div>
+        <div class="chiffre">
+          <dt>Plus-value latente brute</dt>
+          <dd><span id="c-pv-brute">—</span><span class="unite">XOF</span></dd>
+          <small>avant frais et impôt</small>
+        </div>
+        <div class="chiffre">
+          <dt>Nette de frais et d'impôt</dt>
+          <dd><span id="c-pv-nette">—</span><span class="unite">XOF</span></dd>
+          <small>si vous vendiez aujourd'hui</small>
+        </div>
+        <div class="chiffre">
+          <dt>Dividendes nets encaissés</dt>
+          <dd><span id="c-dividendes">—</span><span class="unite">XOF</span></dd>
+          <small>après retenue à la source</small>
+        </div>
+      </dl>
+
+      <p class="note note--espacee" id="note-performance"></p>
+
+      <div class="cadre defilant cadre--espace">
+        <table>
+          <caption class="invisible">Lignes du portefeuille, avec la trame des séances cotées</caption>
+          <thead>
+            <tr>
+              <th scope="col">Valeur</th>
+              <th scope="col">Trente dernières séances</th>
+              <th scope="col" class="num">Qté</th>
+              <th scope="col" class="num">PRU</th>
+              <th scope="col" class="num">Cours</th>
+              <th scope="col" class="num">Âge</th>
+              <th scope="col" class="num">Valeur</th>
+              <th scope="col" class="num">Poids</th>
+              <th scope="col" class="num">+/− nette</th>
+            </tr>
+          </thead>
+          <tbody id="lignes">
+            <tr><td colspan="9" class="vide">Chargement…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="trame-legende" aria-hidden="true">
+        <span><i class="l-cotee"></i> séance cotée</span>
+        <span><i class="l-reportee"></i> cours reporté</span>
+        <span><i class="l-absente"></i> séance absente</span>
+      </div>
+    </section>
+
+    <!-- ----------------------------------------------------- signaux -->
+    <section class="section" id="signaux" aria-labelledby="t-signaux">
+      <header>
+        <div>
+          <h2 id="t-signaux">Signaux constatés</h2>
+          <p>Des franchissements observés après clôture, jamais des recommandations.
+             La date d'exécution rappelle qu'un signal constaté sur une séance
+             n'était pas jouable pendant cette séance.</p>
+        </div>
+      </header>
+      <div class="signaux" id="liste-signaux"></div>
+    </section>
+
+    <!-- ------------------------------------------------------- risque -->
+    <section class="section" id="risque" aria-labelledby="t-risque">
+      <header>
+        <div>
+          <h2 id="t-risque">Risque</h2>
+          <p>Chaque poids est montré contre sa limite. Le trait vertical marque
+             la limite déclarée dans votre configuration.</p>
+        </div>
+      </header>
+
+      <div class="cadre cadre--rembourre">
+        <div class="pile pile--jauges" id="concentrations"></div>
+      </div>
+
+      <div class="cadre defilant cadre--espace">
+        <table>
+          <caption class="invisible">Liquidité par valeur</caption>
+          <thead>
+            <tr>
+              <th scope="col">Valeur</th>
+              <th scope="col" class="num">Titres détenus</th>
+              <th scope="col" class="num">Volume moyen</th>
+              <th scope="col" class="num">Séances cotées</th>
+              <th scope="col" class="num">Séances pour solder</th>
+            </tr>
+          </thead>
+          <tbody id="liquidites"></tbody>
+        </table>
+      </div>
+
+      <div class="pile pile--espacee" id="stops"></div>
+    </section>
+
+    <!-- ------------------------------------------------------ données -->
+    <section class="section" id="donnees" aria-labelledby="t-donnees">
+      <header>
+        <div>
+          <h2 id="t-donnees">Données</h2>
+          <p>Une cotation en quarantaine est écrite en base pour investigation et
+             exclue de tous les calculs. Rien n'est corrigé en silence.</p>
+        </div>
+      </header>
+
+      <div class="cadre defilant">
+        <table>
+          <caption class="invisible">Anomalies ouvertes</caption>
+          <thead>
+            <tr>
+              <th scope="col">Détectée le</th>
+              <th scope="col">Gravité</th>
+              <th scope="col">Source</th>
+              <th scope="col">Valeur</th>
+              <th scope="col">Message</th>
+            </tr>
+          </thead>
+          <tbody id="anomalies"></tbody>
+        </table>
+      </div>
+
+      <div class="pile pile--espacee" id="avertissements"></div>
+
+      <h3 class="sous-titre">Journal des collectes</h3>
+      <div class="cadre cadre--rembourre">
+        <ul id="collectes" class="journal"></ul>
+      </div>
+    </section>
+
+    <p class="mention">
+      Constats produits par un outil de suivi. Aucun conseil d'investissement,
+      aucune promesse de rendement. Les cours affichés sont les derniers connus,
+      pas des cours actuels : vérifiez l'horodatage en tête de page avant d'agir.
+    </p>
+
+  </main>
+</div>
+
+<script src="app.js" type="module"></script>
+</body>
+</html>
