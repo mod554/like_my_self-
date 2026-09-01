@@ -64,6 +64,17 @@ CHAMPS_ANALYSABLES: frozenset[str] = frozenset(
 )
 
 
+#: Critères qu'un profil de classement peut pondérer. Doit rester aligné sur ce
+#: que produit `brvm.market.analyse` ; un test le vérifie.
+CRITERES_TECHNIQUES: frozenset[str] = frozenset(
+    {"momentum", "tendance", "regime_rsi", "repli", "volatilite", "volume"}
+)
+CRITERES_FONDAMENTAUX: frozenset[str] = frozenset(
+    {"rendement_dividende", "per", "price_book", "regularite_dividende"}
+)
+CRITERES_CONNUS: frozenset[str] = CRITERES_TECHNIQUES | CRITERES_FONDAMENTAUX
+
+
 class _Base(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, frozen=True)
 
@@ -618,6 +629,148 @@ class ConfigRisque(_Base):
     seances_max_debouclage: int | None = Field(default=None, gt=0)
 
 
+class ConfigBornes(_Base):
+    """Bornes de normalisation des critères de classement.
+
+    Chaque note de 0 à 1 vient d'une règle linéaire entre deux bornes. Ces bornes
+    sont des **jugements**, pas des faits : dire qu'un momentum de +15 % vaut la
+    note maximale est un choix, et il vous appartient. Le code n'en contient
+    aucune ; elles sont ici, nommées, et se règlent par backtest.
+    """
+
+    #: Momentum en deçà duquel la note est nulle, et au-delà duquel elle sature.
+    momentum_plancher: Decimal
+    momentum_plafond: Decimal
+    #: RSI considéré comme le régime normal, et écart toléré de part et d'autre.
+    #: Un RSI à 15 comme à 85 s'éloigne autant du régime, et rien ne dit dans
+    #: quel sens le cours y reviendra.
+    rsi_cible: Decimal = Field(gt=0, lt=100)
+    rsi_tolerance: Decimal = Field(gt=0)
+    #: Écart au plus haut glissant : 0 = au plus haut, 1 = au plus bas.
+    #: Sert au repli sur les creux, et se lit à l'envers selon l'horizon.
+    ecart_extreme_plafond: Fraction
+    #: Volatilité annualisée au-delà de laquelle la note tombe à zéro.
+    volatilite_plafond: Decimal = Field(gt=0)
+    #: Rendement du dividende saturant la note. Au-delà, un rendement très élevé
+    #: signale plus souvent un cours effondré qu'une aubaine.
+    rendement_dividende_plafond: Taux
+    #: PER en deçà duquel la note sature, au-delà duquel elle s'annule.
+    per_plancher: Decimal = Field(gt=0)
+    per_plafond: Decimal = Field(gt=0)
+    #: Cours / actif net comptable, mêmes bornes.
+    price_book_plancher: Decimal = Field(gt=0)
+    price_book_plafond: Decimal = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _valider(self) -> ConfigBornes:
+        if self.momentum_plafond <= self.momentum_plancher:
+            raise ValueError("momentum_plafond doit dépasser momentum_plancher.")
+        if self.per_plafond <= self.per_plancher:
+            raise ValueError("per_plafond doit dépasser per_plancher.")
+        if self.price_book_plafond <= self.price_book_plancher:
+            raise ValueError("price_book_plafond doit dépasser price_book_plancher.")
+        return self
+
+
+class ConfigHorizon(_Base):
+    """Un profil de classement : ce qui compte, et combien.
+
+    Deux profils sont attendus — court terme et long terme — mais rien n'empêche
+    d'en déclarer d'autres. Les poids vous appartiennent : ce sont eux qui disent
+    si vous classez sur la tendance ou sur le rendement.
+    """
+
+    libelle: str = Field(min_length=1)
+    #: Ce que ce profil mesure, en une phrase, affichée à côté du classement.
+    description: str = Field(min_length=1)
+    #: Nom du critère → poids. Un critère absent de cette table n'entre pas dans
+    #: le score de ce profil.
+    poids: dict[str, Decimal] = Field(min_length=1)
+    #: Part minimale des critères pondérés qui doit être mesurable pour qu'une
+    #: valeur soit classée. En deçà, elle apparaît en « non classable », avec la
+    #: liste de ce qui manque.
+    couverture_minimale: Fraction
+    #: Confiance de la donnée en deçà de laquelle la valeur n'est pas classée.
+    #: Sur cette place, c'est le garde-fou principal.
+    confiance_minimale: Fraction
+    #: Vrai si ce profil exige des données fondamentales. Un profil long terme
+    #: sans fondamentaux ne classe rien et le dit, plutôt que de retomber sur le
+    #: seul prix.
+    exige_fondamentaux: bool = False
+
+    @field_validator("poids")
+    @classmethod
+    def _valider_poids(cls, valeur: dict[str, Decimal]) -> dict[str, Decimal]:
+        if any(poids < 0 for poids in valeur.values()):
+            raise ValueError("Un poids ne peut pas être négatif.")
+        if sum(valeur.values()) <= 0:
+            raise ValueError("La somme des poids doit être strictement positive.")
+        # Un poids portant un nom inconnu ne pèserait sur rien et passerait
+        # inaperçu : le classement serait silencieusement établi sur autre chose
+        # que ce que l'utilisateur croit avoir déclaré.
+        if inconnus := set(valeur) - CRITERES_CONNUS:
+            raise ValueError(
+                "Critères inconnus dans les poids : "
+                + ", ".join(sorted(inconnus))
+                + ". Critères disponibles : "
+                + ", ".join(sorted(CRITERES_CONNUS))
+            )
+        return valeur
+
+    @model_validator(mode="after")
+    def _valider_coherence(self) -> ConfigHorizon:
+        fondamentaux_ponderes = set(self.poids) & CRITERES_FONDAMENTAUX
+        if self.exige_fondamentaux and not fondamentaux_ponderes:
+            raise ValueError(
+                f"Le profil {self.libelle!r} exige des fondamentaux mais n'en "
+                "pondère aucun. Ajoutez au moins un critère parmi : "
+                + ", ".join(sorted(CRITERES_FONDAMENTAUX))
+            )
+        if fondamentaux_ponderes and not self.exige_fondamentaux:
+            raise ValueError(
+                f"Le profil {self.libelle!r} pondère des critères fondamentaux "
+                + ", ".join(sorted(fondamentaux_ponderes))
+                + " sans les exiger. Les valeurs sans comptes saisis seraient "
+                "classées sur une couverture réduite et compareraient mal. "
+                "Passez `exige_fondamentaux` à true."
+            )
+        return self
+
+
+class ConfigAnalyse(_Base):
+    """Criblage de la cote : bornes de notation et profils de classement."""
+
+    #: Fichier CSV des données fondamentales, renseigné par vous depuis les
+    #: rapports annuels. Absent, les profils qui en dépendent s'abstiennent.
+    fichier_fondamentaux: Path
+    bornes: ConfigBornes
+    horizons: dict[str, ConfigHorizon] = Field(min_length=1)
+    #: Nombre de valeurs présentées en tête de chaque classement.
+    taille_classement: int = Field(gt=0)
+
+
+class ConfigAllocation(_Base):
+    """Contraintes de construction d'un portefeuille.
+
+    L'allocateur ne choisit rien : il applique vos limites, dans l'ordre, et dit
+    laquelle a mordu sur chaque ligne. Les limites de concentration viennent de
+    `risque` — elles ne sont pas redéclarées ici, pour qu'il n'y ait qu'un seul
+    endroit où elles vivent.
+    """
+
+    #: Nombre maximal de lignes proposées. Au-delà, les frais fixes et le suivi
+    #: coûtent plus que la diversification ne rapporte.
+    lignes_max: int = Field(gt=0)
+    #: Part du capital laissée en liquidités.
+    part_liquidites: Fraction
+    #: Montant minimal d'une ligne. En deçà, les frais fixes rendent l'opération
+    #: absurde ; le seuil dépend du barème de VOTRE SGI.
+    montant_minimum_ligne: int = Field(gt=0)
+    #: Part des frais dans le montant d'un ordre au-delà de laquelle l'ordre est
+    #: signalé comme coûteux.
+    frais_alerte: Fraction
+
+
 class ConfigBacktest(_Base):
     capital_initial: int = Field(gt=0)
     #: Glissement appliqué au cours d'exécution, en fraction.
@@ -699,6 +852,8 @@ class Configuration(_Base):
     fiscalite: ConfigFiscalite
     ingestion: ConfigIngestion
     indicateurs: ConfigIndicateurs
+    analyse: ConfigAnalyse
+    allocation: ConfigAllocation
     risque: ConfigRisque
     backtest: ConfigBacktest
     alertes: ConfigAlertes

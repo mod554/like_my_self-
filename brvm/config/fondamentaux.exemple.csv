@@ -1,0 +1,36 @@
+# Données fondamentales — À RENSEIGNER PAR VOUS, depuis les rapports annuels.
+#
+# Aucune de ces valeurs n'est déductible d'une série de cours, et le système
+# n'en invente aucune. Tant que ce fichier est vide, tout classement de long
+# terme s'abstient et le dit, plutôt que de classer plusieurs années sur la
+# seule tendance des prix.
+#
+# UNE LIGNE PAR VALEUR ET PAR EXERCICE. Le système retient le plus récent et
+# signale son ancienneté au-delà de deux ans.
+#
+# COLONNES OBLIGATOIRES
+#   ticker    code court, tel qu'il figure dans univers.csv
+#   exercice  année des comptes, par exemple 2025
+#   source    d'où vient le chiffre. Un montant sans provenance n'est pas
+#             auditable : citez le rapport annuel, le communiqué, l'avis.
+#
+# COLONNES FACULTATIVES — toutes en XOF, entiers, par action
+#   dividende_par_action          dividende NET versé au titre de l'exercice
+#   resultat_net_par_action       bénéfice par action (BPA)
+#   capitaux_propres_par_action   actif net comptable par action
+#   nombre_actions                titres composant le capital
+#   date_releve                   AAAA-MM-JJ, quand vous avez lu le document
+#   commentaire                   libre
+#
+# Une colonne vide reste vide : le ratio qui en dépend ne se calcule pas, et le
+# critère apparaît comme « non mesuré » plutôt que comme une note nulle.
+#
+# CE QUI SE CALCULE À PARTIR DE LÀ
+#   rendement du dividende = dividende_par_action / cours du jour
+#   PER                    = cours / resultat_net_par_action   (si BPA > 0)
+#   cours / actif net      = cours / capitaux_propres_par_action
+#   régularité             = exercices avec dividende / exercices renseignés
+#
+# Un PER sur une perte n'est pas calculé : il se lirait comme une valorisation.
+#
+ticker,exercice,source,dividende_par_action,resultat_net_par_action,capitaux_propres_par_action,nombre_actions,date_releve,commentaire

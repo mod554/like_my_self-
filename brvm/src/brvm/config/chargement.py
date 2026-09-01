@@ -28,9 +28,15 @@ CHEMINS_A_RESOUDRE: Final[tuple[tuple[str, ...], ...]] = (
     ("general", "base_donnees"),
     ("marche", "fichier_univers"),
     ("calendrier", "fichier_feries"),
+    ("analyse", "fichier_fondamentaux"),
     ("journalisation", "fichier"),
     ("ingestion", "repertoire_cache"),
 )
+
+#: Chemins déclarés ailleurs que dans un simple couple (section, clé), et donc
+#: résolus à la main plus bas. Recensés ici pour que le test de complétude
+#: sache les distinguer d'un oubli.
+CHEMINS_RESOLUS_A_PART: Final[frozenset[str]] = frozenset({"sources.chemin_fichier"})
 
 #: Explications attachées aux champs que le système s'interdit de deviner.
 #: La clé est un motif ``fnmatch`` appliqué au chemin pointé du champ fautif.

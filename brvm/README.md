@@ -156,6 +156,7 @@ reste du système. Créez le modèle, remplissez-le, collectez :
 
 ```python
 from brvm.ingestion.fichier import SourceFichier
+
 SourceFichier.ecrire_modele(Path("data/cotations_manuelles.csv"))
 ```
 

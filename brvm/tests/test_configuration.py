@@ -11,8 +11,11 @@ from typing import Any
 
 import pytest
 import yaml
+from pydantic import BaseModel
 
 from brvm.config.chargement import (
+    CHEMINS_A_RESOUDRE,
+    CHEMINS_RESOLUS_A_PART,
     charger_configuration,
     charger_jours_feries,
     construire_calendrier_depuis_config,
@@ -404,3 +407,60 @@ class TestOrdonnancement:
             brut = yaml.safe_load(chemin.read_text(encoding="utf-8"))
             jours = brut["ordonnanceur"]["cron_collecte"].split()[4]
             assert jours == "0-4", f"{chemin.name} : jours ouvrés attendus « 0-4 », lu « {jours} »"
+
+
+class TestResolutionDesChemins:
+    """Tout champ `Path` de la configuration doit être rendu absolu au
+    chargement, faute de quoi il dépend du répertoire courant.
+
+    Le mode d'échec est le plus grave de ceux que ce projet s'interdit : le
+    fichier que l'utilisateur a rempli n'est pas lu, et le système annonce
+    « aucune donnée saisie » — une affirmation fausse présentée comme un fait.
+    C'est exactement ce qui était arrivé à `analyse.fichier_fondamentaux`.
+    """
+
+    @staticmethod
+    def champs_chemin() -> set[str]:
+        """Tous les champs typés `Path` de la configuration, en notation pointée."""
+        trouves: set[str] = set()
+        vus: set[str] = set()
+
+        def parcourir(modele: type[Any], prefixe: str = "") -> None:
+            if modele.__name__ in vus:
+                return
+            vus.add(modele.__name__)
+            for nom, champ in modele.model_fields.items():
+                annotation = champ.annotation
+                arguments = getattr(annotation, "__args__", ())
+                if annotation is Path or Path in arguments:
+                    trouves.add(f"{prefixe}{nom}")
+                for sous in (annotation, *arguments):
+                    if isinstance(sous, type) and issubclass(sous, BaseModel):
+                        parcourir(sous, f"{prefixe}{nom}.")
+
+        parcourir(Configuration)
+        return trouves
+
+    def test_aucun_chemin_n_echappe_a_la_resolution(self) -> None:
+        declares = {f"{section}.{cle}" for section, cle in CHEMINS_A_RESOUDRE}
+        manquants = self.champs_chemin() - declares - CHEMINS_RESOLUS_A_PART
+        assert manquants == set(), (
+            "Chemins non résolus au chargement : "
+            + ", ".join(sorted(manquants))
+            + ". Ajoutez-les à CHEMINS_A_RESOUDRE, sinon ils dépendront du "
+            "répertoire courant et seront lus vides sans le dire."
+        )
+
+    def test_les_chemins_charges_sont_absolus(self, configuration: Configuration) -> None:
+        assert configuration.marche.fichier_univers.is_absolute()
+        assert configuration.analyse.fichier_fondamentaux.is_absolute()
+        assert configuration.calendrier.fichier_feries.is_absolute()
+
+    def test_le_referentiel_fondamental_est_lu_depuis_le_dossier_de_config(
+        self, configuration: Configuration
+    ) -> None:
+        """Contrôle de bout en bout : le fichier livré à côté du YAML est lu."""
+        from brvm.market.fondamentaux import charger_fondamentaux
+
+        referentiel = charger_fondamentaux(configuration.analyse.fichier_fondamentaux)
+        assert referentiel, "le référentiel fondamental de test doit être lu"

@@ -145,19 +145,21 @@ def fabrique_serie(
                     )
                 )
             else:
-                cotations.append(
-                    fabrique_cotation(
-                        jour=jour,
-                        ticker=ticker,
-                        cloture=cloture,
-                        volume=volume,
-                        ouverture=cloture,
-                        plus_haut=cloture + amplitude,
-                        plus_bas=max(1, cloture - amplitude),
-                        volume_xof=cloture * volume,
-                        **extras,
-                    )
-                )
+                # Les défauts sont posés puis écrasés par les extras : un test
+                # doit pouvoir simuler une source qui ne publie pas les montants
+                # (`volume_xof=None`) sans que la fabrique le recalcule.
+                champs: dict[str, object] = {
+                    "jour": jour,
+                    "ticker": ticker,
+                    "cloture": cloture,
+                    "volume": volume,
+                    "ouverture": cloture,
+                    "plus_haut": cloture + amplitude,
+                    "plus_bas": max(1, cloture - amplitude),
+                    "volume_xof": cloture * volume,
+                }
+                champs.update(extras)
+                cotations.append(fabrique_cotation(**champs))
         return construire_serie(cotations, calendrier, configuration, operations, jusqu_a=jusqu_a)
 
     return construire

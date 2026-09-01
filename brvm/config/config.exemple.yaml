@@ -382,6 +382,95 @@ indicateurs:
   volume_reference_xof: 5000000
 
 # ------------------------------------------------------------------------------
+#  Analyse de la cote — [PRÉFÉRENCE] les poids vous appartiennent
+# ------------------------------------------------------------------------------
+#  Ces valeurs ne sont pas des faits de marché : ce sont VOS jugements, écrits
+#  ici plutôt que cachés dans le code. Dire qu'un momentum de +15 % vaut la note
+#  maximale est un choix ; il se règle et se valide par backtest.
+#
+#  Aucun classement produit ici n'est une recommandation. Le système ordonne des
+#  valeurs selon des critères mesurés sur des données passées. Il ne prédit rien.
+analyse:
+  # Données fondamentales, saisies par VOUS depuis les rapports annuels.
+  # Tant que ce fichier est vide, tout classement de long terme s'abstient.
+  fichier_fondamentaux: ./fondamentaux.csv
+  taille_classement: 10
+
+  bornes:
+    # Momentum : note nulle en dessous, saturée au-dessus.
+    momentum_plancher: -0.15
+    momentum_plafond: 0.15
+    # RSI : régime jugé normal, et écart toléré de part et d'autre. Un RSI à 15
+    # comme à 85 s'éloigne autant du régime, et rien ne dit dans quel sens le
+    # cours y reviendra.
+    rsi_cible: 50
+    rsi_tolerance: 30
+    # Écart au plus haut glissant saturant la note de repli.
+    ecart_extreme_plafond: 0.30
+    # Volatilité annualisée annulant la note. À ajuster après une année de
+    # collecte : sur une valeur qui cote une séance sur trois, l'annualisation
+    # suppose une continuité qui n'existe pas.
+    volatilite_plafond: 0.60
+    # Rendement du dividende saturant la note. Au-delà, un rendement très élevé
+    # signale plus souvent un cours effondré qu'une aubaine.
+    rendement_dividende_plafond: 0.12
+    per_plancher: 5
+    per_plafond: 25
+    price_book_plancher: 0.5
+    price_book_plafond: 3
+
+  horizons:
+    court_terme:
+      libelle: Court terme
+      description: >-
+        Classe sur la dynamique récente et la capacité à entrer ET sortir.
+        Sur cette place, c'est la liquidité qui borne, pas la tendance.
+      couverture_minimale: 0.6
+      # En dessous de cette confiance, la valeur n'est pas classée du tout :
+      # ordonner des séries trouées revient à ordonner du bruit.
+      confiance_minimale: 0.25
+      exige_fondamentaux: false
+      poids:
+        momentum: 3
+        tendance: 2
+        regime_rsi: 1
+        repli: 1
+        volume: 2
+
+    long_terme:
+      libelle: Long terme
+      description: >-
+        Classe sur le rendement, la valorisation et la régularité du dividende.
+        Refuse de classer une valeur dont les comptes ne sont pas saisis.
+      couverture_minimale: 0.5
+      confiance_minimale: 0.15
+      # Sans fondamentaux, ce profil ne retombe PAS sur le prix : classer
+      # plusieurs années sur la seule tendance des cours n'aurait pas de sens.
+      exige_fondamentaux: true
+      poids:
+        rendement_dividende: 3
+        regularite_dividende: 2
+        per: 2
+        price_book: 1
+        volatilite: 1
+        tendance: 1
+
+# ------------------------------------------------------------------------------
+#  Allocation — [PRÉFÉRENCE] vos contraintes de construction
+# ------------------------------------------------------------------------------
+#  Les limites de concentration ne sont PAS redéclarées ici : elles vivent dans
+#  `risque`, à un seul endroit. L'allocateur les applique et dit, pour chaque
+#  ligne, laquelle a borné sa taille.
+allocation:
+  lignes_max: 8
+  part_liquidites: 0.10
+  # En deçà, les frais fixes de votre barème rendent l'opération absurde.
+  # Ce seuil dépend de la grille de VOTRE SGI : ajustez-le.
+  montant_minimum_ligne: 100000
+  # Part des frais dans un ordre au-delà de laquelle il est signalé comme coûteux.
+  frais_alerte: 0.02
+
+# ------------------------------------------------------------------------------
 #  Risque — [PRÉFÉRENCE]
 # ------------------------------------------------------------------------------
 risque:
