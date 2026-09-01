@@ -18,9 +18,11 @@ import pytest
 from brvm.config.chargement import charger_configuration, construire_calendrier_depuis_config
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
-from brvm.domain.enums import StatutSeance
-from brvm.domain.modeles import Cotation, OperationSurTitre
+from brvm.domain.enums import SensOperation, StatutSeance
+from brvm.domain.modeles import Cotation, LigneFrais, OperationSurTitre, Transaction
 from brvm.indicators.serie import SerieTechnique, construire_serie
+from brvm.portfolio.fiscalite import MoteurFiscal
+from brvm.portfolio.frais import MoteurFrais
 from brvm.storage.base import BaseDonnees
 
 DOSSIER_DONNEES = Path(__file__).parent / "donnees"
@@ -159,3 +161,42 @@ def fabrique_serie(
         return construire_serie(cotations, calendrier, configuration, operations, jusqu_a=jusqu_a)
 
     return construire
+
+
+# ------------------------------------------------------------------ portefeuille
+
+
+@pytest.fixture
+def moteur_frais(configuration: Configuration) -> MoteurFrais:
+    return MoteurFrais(configuration)
+
+
+@pytest.fixture
+def moteur_fiscal(configuration: Configuration) -> MoteurFiscal:
+    return MoteurFiscal(configuration)
+
+
+@pytest.fixture
+def fabrique_transaction() -> Callable[..., Transaction]:
+    """Transaction de test, frais explicites ou absents selon le besoin."""
+
+    def fabriquer(
+        identifiant: str,
+        ticker: str = "TEST1",
+        jour: date = date(2026, 3, 2),
+        sens: SensOperation = SensOperation.ACHAT,
+        quantite: int = 10,
+        cours: int = 1000,
+        frais: tuple[LigneFrais, ...] = (),
+    ) -> Transaction:
+        return Transaction(
+            identifiant=identifiant,
+            ticker=ticker,
+            date_operation=jour,
+            sens=sens,
+            quantite=quantite,
+            cours_unitaire=cours,
+            frais=frais,
+        )
+
+    return fabriquer

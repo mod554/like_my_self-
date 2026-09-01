@@ -23,7 +23,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 | 2 — Modèle de données | Modèles pydantic, schéma SQLite, écriture idempotente, historisation des corrections, ajustement des OST | ✅ livrée |
 | 3 — Ingestion | Interface `DataSource`, connecteur fichier opérationnel, connecteur web à analyse déclarée, politique réseau, anomalies et quarantaine | ✅ livrée |
 | 4 — Analyse technique | SMA, EMA, RSI, MACD, Bollinger, ATR, OBV, momentum, extrêmes glissants, score de confiance liquidité, signaux | ✅ livrée |
-| 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, IRR, simulateur d'ordre | ⏳ à venir |
+| 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, TRI, simulateur d'ordre | ✅ livrée |
 | 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ⏳ à venir |
 | 7 — Exploitation | Ordonnanceur, alertes, tableau de bord Streamlit, export Excel | ⏳ à venir |
 
@@ -294,6 +294,108 @@ sous-jacente est mince.
 
 ---
 
+## Portefeuille, frais réels et fiscalité
+
+### Le coût affiché n'est jamais le coût réel
+
+Le moteur applique votre barème ligne à ligne et rend le décompte tel qu'il
+devrait figurer sur l'avis d'opéré :
+
+```
+ACHAT 7 × 28 400 XOF
+  Montant brut............................................         198 800 XOF
+  Commission de courtage SGI (0.8000%)                               1 590 XOF
+  TVA sur commissions (18.0000%)                                       286 XOF
+  Total des frais.........................................           1 876 XOF
+  Montant net.............................................         200 676 XOF
+  Prix de revient unitaire                                        28668.00 XOF
+  Seuil de rentabilité....................................          28 942 XOF soit +1.91%
+```
+
+Trois règles de calcul, vérifiables sur un avis réel :
+
+- **chaque ligne est arrondie, puis les lignes sont sommées.** Arrondir la somme
+  donnerait un total différent de celui facturé ;
+- **une ligne assise sur le total des commissions ne taxe pas une autre taxe.**
+  Pour qu'un forfait échappe à la TVA, donnez-lui un ordre supérieur : c'est
+  l'ordre déclaré qui décide de tout ;
+- **le minimum de perception s'applique à la ligne, puis au total**, et un
+  complément global apparaît comme une ligne nommée — la somme des lignes fait
+  toujours le total.
+
+Les **frais récurrents** (droits de garde, tenue de compte) sont modélisés à
+part : ils ne se déclenchent pas à l'achat, ils courent tant que la ligne est
+détenue. Le système avertit au démarrage si aucun n'est déclaré.
+
+### Le seuil de rentabilité
+
+C'est le chiffre que le simulateur existe pour produire : **le cours à partir
+duquel l'opération devient bénéficiaire**, frais d'achat, frais de revente et
+impôt compris. Il est cherché par dichotomie, parce que minimums de perception
+et paliers d'imposition rendent la fonction de coût discontinue — une formule
+fermée cesserait d'être juste dès qu'un barème comporte un palier.
+
+Sur un petit ordre, l'écart surprend : le voir avant de passer l'ordre change
+les décisions.
+
+### PMP et FIFO répondent à deux questions différentes
+
+| | PMP | FIFO |
+|---|---|---|
+| Prix de revient | moyenne pondérée | par lot |
+| Cession | une par vente | **une par lot consommé** |
+| Durée de détention des titres cédés | **`None`** | connue |
+
+En PMP, après un achat les titres perdent leur identité : la durée de détention
+des titres cédés n'existe plus. Le système renvoie `None` plutôt qu'une durée
+inventée. **Si votre fiscalité comporte une exonération pour durée de détention,
+seule la méthode FIFO permet de la calculer.**
+
+Les deux méthodes donnent le même prix de revient tant qu'aucune vente n'a eu
+lieu, et divergent ensuite sur le montant de plus-value réalisée — donc sur
+l'impôt.
+
+Les frais réellement facturés, lorsqu'ils figurent sur la transaction,
+l'emportent toujours sur ceux que le barème recalculerait : **c'est l'avis
+d'opéré qui fait foi, pas le modèle.**
+
+### Plus-value latente : brute et nette
+
+Ce qui resterait si vous vendiez aujourd'hui, c'est le produit *après* frais de
+cession et après impôt. Sur une petite ligne, l'écart entre brute et nette
+dépasse souvent le gain affiché. Les deux sont calculées et présentées côte à
+côte.
+
+### TWR et TRI
+
+Deux chiffres, deux questions :
+
+- **TWR** neutralise les apports et retraits. Il mesure la qualité des choix de
+  valeurs, indépendamment du moment où l'argent est entré. C'est ce qui se
+  compare à un indice.
+- **TRI** tient compte du calendrier des versements. Il mesure ce que *votre*
+  argent a rapporté. Sur une stratégie d'investissement progressif, les deux
+  divergent nettement.
+
+Aucun n'est annualisé automatiquement : sur une période de moins d'un an,
+`annualise()` renvoie `None` plutôt qu'un chiffre spectaculaire et dépourvu de
+sens. Le TRI est résolu par dichotomie — elle ne diverge pas et donne un
+résultat reproductible — et renvoie `None` avec un motif quand aucun taux
+n'existe.
+
+### Fraîcheur affichée
+
+Toute valorisation porte l'horodatage de sa donnée la plus ancienne :
+
+```
+Donnée la plus ancienne utilisée : 2026-08-21T15:30:00+00:00 (10080 minutes)
+```
+
+Une ligne sans cours **n'est pas comptée pour zéro** : elle est signalée comme
+non valorisée, et le total du portefeuille est déclaré incomplet.
+
+---
+
 ## Choix de conception
 
 ### Aucune donnée inventée
@@ -390,12 +492,12 @@ brvm/
 │   ├── storage/     schéma SQL, connexion/migration, dépôts idempotents
 │   ├── ingestion/   DataSource, politique réseau, connecteurs, anomalies, orchestrateur
 │   ├── indicators/  série illiquidité-consciente, calculs, confiance, signaux
-│   ├── portfolio/   couche 5 — à venir
+│   ├── portfolio/   frais, fiscalité, PMP/FIFO, valorisation, performance, simulateur
 │   ├── risk/        couche 6 — à venir
 │   ├── backtest/    couche 6 — à venir
 │   ├── app/         couche 7 — à venir
 │   └── utils/       erreurs, journalisation structurée
-└── tests/           425 tests, 94 % de couverture
+└── tests/           530 tests, 94 % de couverture
 ```
 
 Le stockage passe entièrement par `storage/base.py` et `storage/depots.py` : un
