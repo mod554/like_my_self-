@@ -24,7 +24,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 | 3 — Ingestion | Interface `DataSource`, connecteur fichier opérationnel, connecteur web à analyse déclarée, politique réseau, anomalies et quarantaine | ✅ livrée |
 | 4 — Analyse technique | SMA, EMA, RSI, MACD, Bollinger, ATR, OBV, momentum, extrêmes glissants, score de confiance liquidité, signaux | ✅ livrée |
 | 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, TRI, simulateur d'ordre | ✅ livrée |
-| 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ⏳ à venir |
+| 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ✅ livrée |
 | 7 — Exploitation | Ordonnanceur, alertes, tableau de bord Streamlit, export Excel | ⏳ à venir |
 
 ---
@@ -396,6 +396,117 @@ non valorisée, et le total du portefeuille est déclaré incomplet.
 
 ---
 
+## Risque
+
+### La corrélation ne se calcule que sur les séances communes
+
+C'est l'adaptation la plus importante de cette couche. Calculée sur des séries à
+cours reportés, une corrélation mesure surtout que deux valeurs n'ont pas coté
+les mêmes jours : **deux titres immobiles paraissent parfaitement corrélés alors
+qu'aucune information ne les relie**. Une diversification bâtie là-dessus est une
+illusion, et c'est le genre d'illusion qui coûte cher le jour où le marché bouge.
+
+Le système n'apparie donc que les séances où les **deux** valeurs ont réellement
+échangé, et refuse de répondre en dessous d'un nombre configuré de séances
+communes. Même logique pour la volatilité : une suite de rendements nuls faute
+d'échange n'est pas une faible volatilité.
+
+### Le délai de débouclage
+
+Une position peut être parfaitement dimensionnée en pourcentage du portefeuille
+et rester impossible à solder en moins de trois semaines :
+
+```
+TEST1 : 250 titres, volume moyen 100/séance, débit tenable 25/séance
+        → environ 10.0 séance(s) pour solder la ligne
+```
+
+Le débit tenable est la part configurée du volume quotidien moyen — calculé sur
+les seules séances cotées, car diviser par des jours où rien ne pouvait
+s'échanger fausserait la mesure.
+
+### Les stops ATR, avec leur avertissement
+
+Le niveau est calculé ; son exécutabilité ne l'est pas. Sur une valeur qui ne
+cote pas tous les jours, un stop peut n'être franchi qu'à l'ouverture d'une
+séance ultérieure, à un cours sensiblement inférieur au seuil. L'avertissement
+accompagne **systématiquement** le chiffre, et s'enrichit quand la ligne demande
+plusieurs séances pour être soldée :
+
+> Un stop est difficilement exécutable sur une valeur peu liquide […] Considérez
+> ce niveau comme un signal de révision, pas comme une protection acquise.
+
+Les contrôles de concentration ne bloquent rien : ils constatent, chiffrent et
+expliquent. Une valeur absente du référentiel est signalée, jamais rangée dans
+une catégorie inventée.
+
+---
+
+## Backtest
+
+### L'ordre des opérations n'est pas négociable
+
+Sur chaque barre :
+
+1. **exécuter** les intentions décidées à la barre *précédente*, à l'ouverture ;
+2. **valoriser** le portefeuille à la clôture ;
+3. **décider** pour la barre suivante, sur une vue tronquée à cette barre incluse.
+
+Une intention ne peut donc jamais être exécutée sur la barre qui l'a produite.
+
+Le biais d'anticipation n'est pas évité par discipline mais **par construction** :
+une stratégie ne reçoit qu'un `ContexteBarre`, et celui-ci ne contient que des
+séries tronquées. Il n'existe aucun chemin par lequel une stratégie pourrait
+consulter une barre future, même par erreur. Deux tests le vérifient.
+
+### Hypothèses d'exécution, toutes conservatrices
+
+| Règle | Effet |
+|---|---|
+| Exécution à l'ouverture de la barre suivante | jamais à la clôture qui a produit le signal |
+| Glissement | appliqué en défaveur de l'opérateur, des deux côtés |
+| Plafond de volume | un ordre ne consomme qu'une part configurée du volume de la séance ; au-delà, exécution partielle consignée |
+| Séance sans transaction | aucune exécution — l'ordre n'aurait pas trouvé de contrepartie |
+| Cours d'ouverture non publié | refus par défaut ; le repli sur la clôture de la veille est un choix explicite en configuration |
+| Frais | barème réel appliqué à chaque opération simulée |
+
+Supposer qu'un gros ordre passe entièrement sur une valeur peu liquide est la
+façon la plus rapide de fabriquer une performance imaginaire.
+
+### La métrique la plus utile n'est pas le rendement
+
+C'est la **part des coûts dans la performance brute**. Une stratégie qui dégage
+12 % brut et 4 % net n'est pas une stratégie à 4 % : c'est une stratégie dont les
+deux tiers du travail sont allés à l'intermédiaire. Le voir change la fréquence à
+laquelle on négocie.
+
+Quand la performance brute est nulle ou négative, le ratio n'est pas calculé — il
+n'aurait aucun sens — et un avertissement dit combien de frais ont été payés pour
+rien.
+
+### Walk-forward
+
+Optimiser sur tout l'historique puis présenter le résultat comme une performance
+est la faute la plus commune de l'analyse technique. Avec assez de paramètres, on
+trouve toujours une combinaison qui aurait fonctionné.
+
+Les paramètres sont choisis sur la partie **apprentissage** de chaque fenêtre,
+puis appliqués tels quels à la partie **validation**, qui n'a pas servi au choix.
+Seuls les résultats de validation comptent, et l'écart entre les deux est
+explicitement signalé :
+
+> L'apprentissage promettait 18,40 %, la validation a donné 3,10 %. Seul le second
+> chiffre a une valeur ; l'écart mesure ce que l'optimisation avait d'illusoire.
+
+Le système signale aussi quand les paramètres retenus changent d'une fenêtre à
+l'autre : un réglage qui suit le bruit plutôt qu'une régularité.
+
+La stratégie d'achat-conservation sert de comparatif. Une stratégie active qui ne
+la bat pas **après frais** n'a rien démontré — et sur un marché où chaque
+aller-retour coûte deux commissions et deux TVA, c'est un comparatif exigeant.
+
+---
+
 ## Choix de conception
 
 ### Aucune donnée inventée
@@ -493,11 +604,11 @@ brvm/
 │   ├── ingestion/   DataSource, politique réseau, connecteurs, anomalies, orchestrateur
 │   ├── indicators/  série illiquidité-consciente, calculs, confiance, signaux
 │   ├── portfolio/   frais, fiscalité, PMP/FIFO, valorisation, performance, simulateur
-│   ├── risk/        couche 6 — à venir
-│   ├── backtest/    couche 6 — à venir
+│   ├── risk/        volatilité, corrélation, drawdown, concentration, liquidité, stops
+│   ├── backtest/    moteur événementiel, exécution conservatrice, métriques, walk-forward
 │   ├── app/         couche 7 — à venir
 │   └── utils/       erreurs, journalisation structurée
-└── tests/           530 tests, 94 % de couverture
+└── tests/           595 tests, 94 % de couverture
 ```
 
 Le stockage passe entièrement par `storage/base.py` et `storage/depots.py` : un

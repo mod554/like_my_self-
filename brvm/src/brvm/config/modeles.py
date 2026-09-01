@@ -527,6 +527,13 @@ class ConfigRisque(_Base):
     #: Drawdown déclenchant une alerte, en fraction.
     drawdown_alerte: Fraction
     fenetre_volatilite: int = Field(gt=0)
+    #: Nombre de séances de bourse dans une année, pour annualiser une
+    #: volatilité ou un ratio. Dépend du calendrier réel : à ajuster après une
+    #: année complète de collecte plutôt qu'à supposer.
+    seances_par_an: int = Field(gt=0)
+    #: Nombre minimal de séances réellement cotées en commun pour qu'une
+    #: corrélation entre deux valeurs soit calculée.
+    seances_minimum_correlation: int = Field(gt=1)
 
 
 class ConfigBacktest(_Base):
@@ -537,9 +544,19 @@ class ConfigBacktest(_Base):
     part_max_volume_seance: Fraction
     #: Seule hypothèse d'exécution retenue : à l'ouverture de la barre suivante.
     execution: Literal["OUVERTURE_BARRE_SUIVANTE"]
+    #: Que faire quand la source ne publie pas de cours d'ouverture.
+    #: REFUSER : aucune exécution — le backtest est plus pauvre mais rigoureux.
+    #: COURS_PRECEDENT : exécuter à la clôture de la veille, qui est connue avant
+    #: l'ouverture. C'est une approximation qui ignore les écarts d'ouverture,
+    #: fréquents sur une valeur qui n'a pas coté depuis plusieurs séances.
+    execution_sans_ouverture: Literal["REFUSER", "COURS_PRECEDENT"]
     #: Découpage walk-forward : longueurs en nombre de séances.
     walk_forward_apprentissage: int = Field(gt=0)
     walk_forward_validation: int = Field(gt=0)
+    #: Taux sans risque annuel utilisé par le ratio de Sharpe, en fraction.
+    #: Zéro est un choix, pas une absence de choix : le déclarer évite de
+    #: comparer une performance à un placement sans risque imaginaire.
+    taux_sans_risque: Taux
 
 
 class ConfigCanalAlerte(_Base):

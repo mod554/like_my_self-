@@ -271,6 +271,8 @@ risque:
   multiple_atr_stop: 2.5
   drawdown_alerte: 0.15
   fenetre_volatilite: 60
+  seances_par_an: 250
+  seances_minimum_correlation: 20
 
 backtest:
   # Capital indiqué dans le dossier fourni.
@@ -278,8 +280,12 @@ backtest:
   slippage: 0.005
   part_max_volume_seance: 0.10
   execution: OUVERTURE_BARRE_SUIVANTE
+  # REFUSER (rigoureux) ou COURS_PRECEDENT (approché) si la source ne
+  # publie pas de cours d'ouverture.
+  execution_sans_ouverture: REFUSER
   walk_forward_apprentissage: 250
   walk_forward_validation: 60
+  taux_sans_risque: 0
 
 alertes:
   age_donnee_max_minutes: 1440
