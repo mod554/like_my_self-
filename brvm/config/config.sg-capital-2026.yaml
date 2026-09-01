@@ -433,6 +433,29 @@ alertes:
       actif: true
       parametres:
         chemin: ../data/alertes.log
+    # - nom: courriel
+    #   type: email
+    #   actif: false
+    #   parametres:
+    #     # Tous ces paramètres sont obligatoires : un canal mal réglé ne
+    #     # prévient personne, et le système refuse de le construire à moitié.
+    #     serveur: smtp.exemple.org
+    #     port: "587"
+    #     expediteur: robot-brvm@exemple.org
+    #     destinataires: vous@exemple.org, associe@exemple.org
+    #     # Facultatifs :
+    #     utilisateur: robot-brvm@exemple.org
+    #     motdepasse: ""          # préférez une variable d'environnement
+    #     starttls: "true"
+    #     objet_prefixe: "[BRVM]"
+    # - nom: webhook
+    #   type: webhook
+    #   actif: false
+    #   parametres:
+    #     # https exclusivement : une alerte décrit la composition de votre
+    #     # portefeuille, ce qui n'a rien à faire en clair sur le réseau.
+    #     url: https://exemple.org/hook
+    #     entete_autorisation: "Bearer votre-jeton"
 
 journalisation:
   niveau: INFO
@@ -444,5 +467,13 @@ journalisation:
 ordonnanceur:
   actif: false
   # Clôture à 15h30 heure d'Abidjan [C1.2] : collecte à 16h00, séances seulement.
-  cron_collecte: "0 16 * * 1-5"
+  #
+  # ⚠️ CONVENTION : 0 = lundi, comme partout ailleurs dans ce système, et NON
+  # 0 = dimanche comme dans certains cron Unix. Les jours ouvrés s'écrivent donc
+  # « 0-4 » et non « 1-5 » — qui désignerait mardi à samedi, et sauterait tous
+  # les lundis sans le moindre message. L'expression est analysée au chargement.
+  #
+  # De toute façon, le calendrier a le dernier mot : un jour férié dans l'un des
+  # États de l'Union ferme la bourse, et aucune collecte ne part ce jour-là.
+  cron_collecte: "0 16 * * 0-4"
   fuseau_horaire: Africa/Abidjan

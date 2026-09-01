@@ -35,6 +35,7 @@ from brvm.domain.enums import (
     SensOperation,
 )
 from brvm.domain.monnaie import ModeArrondi
+from brvm.domain.planification import Cron
 
 #: Taux exprimé en fraction de l'assiette (0.006 = 0,6 %).
 Taux = Annotated[Decimal, Field(ge=0, le=1)]
@@ -609,6 +610,12 @@ class ConfigRisque(_Base):
     #: Nombre minimal de séances réellement cotées en commun pour qu'une
     #: corrélation entre deux valeurs soit calculée.
     seances_minimum_correlation: int = Field(gt=1)
+    #: Nombre de séances de débouclage au-delà duquel une ligne est signalée
+    #: comme trop grosse pour sa liquidité. Facultatif : aucune valeur par défaut
+    #: n'est fournie, parce qu'il n'en existe pas d'objective — le délai tolérable
+    #: dépend de votre horizon. Laissé vide, le délai est calculé et affiché mais
+    #: ne déclenche aucune alerte.
+    seances_max_debouclage: int | None = Field(default=None, gt=0)
 
 
 class ConfigBacktest(_Base):
@@ -663,8 +670,22 @@ class ConfigJournalisation(_Base):
 class ConfigOrdonnanceur(_Base):
     actif: bool
     #: Expression cron des collectes, appliquée uniquement les jours de séance.
+    #:
+    #: **0 = lundi**, comme `date.weekday()` et comme partout ailleurs dans ce
+    #: système — et non 0 = dimanche comme dans certains cron Unix. Les jours
+    #: ouvrés s'écrivent donc ``1-5``… non : ``0-4``. C'est exactement le genre
+    #: d'erreur qui ne produit aucun message, seulement une séance jamais
+    #: collectée le lundi ; l'expression est donc analysée dès le chargement.
     cron_collecte: str = Field(min_length=1)
     fuseau_horaire: str = Field(min_length=1)
+
+    @field_validator("cron_collecte")
+    @classmethod
+    def _valider_cron(cls, valeur: str) -> str:
+        # Analysée maintenant plutôt qu'au premier réveil : une expression fautive
+        # découverte à 16h00 un jour de séance est découverte trop tard.
+        Cron.analyser(valeur)
+        return valeur
 
 
 class Configuration(_Base):

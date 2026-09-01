@@ -380,3 +380,27 @@ class TestFraisPeriodiques:
 
     def test_absence_totale_signalee(self, configuration: Configuration) -> None:
         assert any("Aucun frais périodique" in m for m in configuration.avertissements())
+
+
+class TestOrdonnancement:
+    """L'expression cron est validée au chargement, pas au premier réveil manqué."""
+
+    def test_expression_fautive_refusee_des_le_chargement(self, dossier_config: Path) -> None:
+        brut = charger_brut(dossier_config)
+        brut["ordonnanceur"]["cron_collecte"] = "30 15 * *"
+        with pytest.raises(ErreurConfiguration, match="au lieu de 5"):
+            charger_configuration(ecrire(dossier_config / "cron.yaml", brut))
+
+    def test_jour_de_semaine_hors_bornes_refuse(self, dossier_config: Path) -> None:
+        brut = charger_brut(dossier_config)
+        brut["ordonnanceur"]["cron_collecte"] = "30 15 * * 9"
+        with pytest.raises(ErreurConfiguration, match="hors bornes"):
+            charger_configuration(ecrire(dossier_config / "cron.yaml", brut))
+
+    def test_les_fichiers_livres_emploient_la_convention_du_projet(self) -> None:
+        """0 = lundi. « 1-5 » désignerait mardi à samedi et sauterait tous les
+        lundis sans produire le moindre message — d'où ce contrôle."""
+        for chemin in (CONFIG_EXEMPLE, RACINE_PROJET / "config" / "config.sg-capital-2026.yaml"):
+            brut = yaml.safe_load(chemin.read_text(encoding="utf-8"))
+            jours = brut["ordonnanceur"]["cron_collecte"].split()[4]
+            assert jours == "0-4", f"{chemin.name} : jours ouvrés attendus « 0-4 », lu « {jours} »"

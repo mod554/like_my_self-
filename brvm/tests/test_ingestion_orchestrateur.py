@@ -13,6 +13,7 @@ from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
 from brvm.domain.enums import GraviteAnomalie, Pays, StatutCollecte, StatutFiabilite
 from brvm.domain.modeles import Instrument
+from brvm.ingestion.base import DataSource, ResultatCollecte
 from brvm.ingestion.fichier import SourceFichier
 from brvm.ingestion.orchestrateur import BilanIngestion, Orchestrateur
 from brvm.storage.base import BaseDonnees
@@ -22,6 +23,7 @@ from brvm.storage.depots import (
     DepotInstruments,
     DepotJournalCollectes,
 )
+from brvm.utils.erreurs import ErreurConfiguration
 
 ENTETE = "ticker,date_seance,statut_seance,cloture,volume_titres,cours_precedent"
 SEANCE = date(2026, 3, 2)
@@ -250,3 +252,27 @@ def test_seance_posterieure_a_l_instant_de_reference_mise_en_quarantaine(
     assert bilan.en_quarantaine == 1
     assert DepotCotations(base).lire("TEST1") == []
     assert any(a.type_anomalie == "date_future" for a in DepotAnomalies(base).lister())
+
+
+class TestSourceNonDeclaree:
+    def test_un_connecteur_hors_configuration_est_nomme(
+        self,
+        configuration: Configuration,
+        base: BaseDonnees,
+        calendrier: CalendrierSeances,
+    ) -> None:
+        """Les seuils de contrôle sont propres à chaque source : sans son bloc de
+        configuration, on ne saurait pas selon quels critères la juger."""
+
+        class Inconnue(DataSource):
+            nom = "source_fantome"
+
+            def disponible(self) -> bool:
+                return True
+
+            def collecter(self, jour: date | None = None) -> ResultatCollecte:
+                raise AssertionError("ne doit jamais être appelée")
+
+        orchestrateur = Orchestrateur(configuration, base, calendrier, sources=[Inconnue()])
+        with pytest.raises(ErreurConfiguration, match="source_fantome"):
+            orchestrateur.executer()

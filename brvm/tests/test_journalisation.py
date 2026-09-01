@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from collections.abc import Iterator
@@ -11,6 +12,7 @@ import pytest
 
 from brvm.config.modeles import ConfigJournalisation
 from brvm.utils.journalisation import (
+    _ATTRIBUTS_STANDARD,
     RACINE,
     FormateurJson,
     FormateurTexte,
@@ -163,3 +165,47 @@ class TestConfiguration:
 
 def test_nom_du_journal_prefixe() -> None:
     assert obtenir_journal("ingestion.source").name == f"{RACINE}.ingestion.source"
+
+
+class TestContexteDesAppels:
+    """Aucun appel de journalisation ne doit employer un nom réservé.
+
+    `logging` lève une `KeyError` quand `extra` contient une clé qui existe déjà
+    sur `LogRecord` — « message » en particulier, qui vient naturellement sous
+    les doigts. L'appel de journal fait alors tomber le code qu'il devait
+    seulement documenter. Ce contrôle balaie les sources plutôt que d'attendre
+    que chaque chemin d'exécution soit exercé.
+    """
+
+    @staticmethod
+    def _cles_extra(fichier: Path) -> list[tuple[str, int, str]]:
+        arbre = ast.parse(fichier.read_text(encoding="utf-8"))
+        trouvees: list[tuple[str, int, str]] = []
+        for noeud in ast.walk(arbre):
+            if not isinstance(noeud, ast.Call):
+                continue
+            for argument in noeud.keywords:
+                if argument.arg != "extra" or not isinstance(argument.value, ast.Dict):
+                    continue
+                for cle in argument.value.keys:
+                    if isinstance(cle, ast.Constant) and isinstance(cle.value, str):
+                        trouvees.append((fichier.name, noeud.lineno, cle.value))
+        return trouvees
+
+    def test_aucune_cle_reservee_dans_les_sources(self) -> None:
+        racine = Path(__file__).resolve().parents[1] / "src" / "brvm"
+        fautives = [
+            (nom, ligne, cle)
+            for fichier in sorted(racine.rglob("*.py"))
+            for nom, ligne, cle in self._cles_extra(fichier)
+            if cle in _ATTRIBUTS_STANDARD
+        ]
+        assert fautives == [], "Clés réservées passées à logging : " + ", ".join(
+            f"{nom}:{ligne} → {cle!r}" for nom, ligne, cle in fautives
+        )
+
+    def test_le_controle_reconnait_bien_une_cle_fautive(self, tmp_path: Path) -> None:
+        """Un contrôle qui ne détecte rien ne prouve rien."""
+        piege = tmp_path / "piege.py"
+        piege.write_text('journal.info("x", extra={"message": "y"})\n', encoding="utf-8")
+        assert ("piege.py", 1, "message") in self._cles_extra(piege)

@@ -435,13 +435,25 @@ alertes:
     #   type: email
     #   actif: false
     #   parametres:
-    #     destinataire: vous@exemple.org
-    #     serveur_smtp: smtp.exemple.org
+    #     # Tous ces paramètres sont obligatoires : un canal mal réglé ne
+    #     # prévient personne, et le système refuse de le construire à moitié.
+    #     serveur: smtp.exemple.org
+    #     port: "587"
+    #     expediteur: robot-brvm@exemple.org
+    #     destinataires: vous@exemple.org, associe@exemple.org
+    #     # Facultatifs :
+    #     utilisateur: robot-brvm@exemple.org
+    #     motdepasse: ""          # préférez une variable d'environnement
+    #     starttls: "true"
+    #     objet_prefixe: "[BRVM]"
     # - nom: webhook
     #   type: webhook
     #   actif: false
     #   parametres:
+    #     # https exclusivement : une alerte décrit la composition de votre
+    #     # portefeuille, ce qui n'a rien à faire en clair sur le réseau.
     #     url: https://exemple.org/hook
+    #     entete_autorisation: "Bearer votre-jeton"
 
 # ------------------------------------------------------------------------------
 #  Journalisation — [PRÉFÉRENCE]
@@ -459,5 +471,9 @@ journalisation:
 ordonnanceur:
   actif: false
   # Collecte de fin de séance, appliquée uniquement les jours de séance.
-  cron_collecte: "30 15 * * 1-5"
+  # ⚠️ 0 = lundi (comme date.weekday()), pas 0 = dimanche. Les jours ouvrés
+  # s'écrivent « 0-4 » ; « 1-5 » désignerait mardi à samedi et sauterait les
+  # lundis en silence. L'expression est analysée au chargement de la
+  # configuration, pas au premier réveil manqué.
+  cron_collecte: "30 15 * * 0-4"
   fuseau_horaire: Africa/Abidjan

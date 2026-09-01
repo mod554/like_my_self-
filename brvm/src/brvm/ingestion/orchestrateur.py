@@ -45,6 +45,7 @@ from brvm.storage.depots import (
     DepotJournalCollectes,
     ResumeEcriture,
 )
+from brvm.utils.erreurs import ErreurConfiguration
 from brvm.utils.journalisation import obtenir_journal
 
 _journal = obtenir_journal("ingestion.orchestrateur")
@@ -136,7 +137,19 @@ class Orchestrateur:
         reglages = {source.nom: source for source in self.configuration.sources}
         bilans: list[BilanIngestion] = []
         for source in self.sources:
-            bilans.append(self._traiter(source, reglages[source.nom], detecteur, jour, maintenant))
+            reglage = reglages.get(source.nom)
+            if reglage is None:
+                # Les seuils de contrôle (fraîcheur, tolérances) sont propres à
+                # chaque source : sans son bloc de configuration, on ne saurait
+                # pas selon quels critères juger ce qu'elle rapporte.
+                raise ErreurConfiguration(
+                    f"Le connecteur {source.nom!r} ne correspond à aucune source "
+                    "déclarée en configuration. Ajoutez son bloc `sources[]`, ou "
+                    "corrigez son nom : les seuils de contrôle en dépendent.",
+                    source=source.nom,
+                    connues=", ".join(sorted(reglages)),
+                )
+            bilans.append(self._traiter(source, reglage, detecteur, jour, maintenant))
         return bilans
 
     # ------------------------------------------------------------------ interne

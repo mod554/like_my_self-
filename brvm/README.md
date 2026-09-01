@@ -25,7 +25,7 @@ Le projet est livré **couche par couche**, chacune testée avant la suivante.
 | 4 — Analyse technique | SMA, EMA, RSI, MACD, Bollinger, ATR, OBV, momentum, extrêmes glissants, score de confiance liquidité, signaux | ✅ livrée |
 | 5 — Portefeuille | PMP et FIFO, moteur de frais, fiscalité, TWR, TRI, simulateur d'ordre | ✅ livrée |
 | 6 — Risque et backtest | Limites de concentration, contrainte de liquidité, stops ATR, moteur événementiel walk-forward | ✅ livrée |
-| 7 — Exploitation | Ordonnanceur, alertes, tableau de bord Streamlit, export Excel | ⏳ à venir |
+| 7 — Exploitation | Ordonnanceur bridé par le calendrier, alertes fichier/courriel/webhook, tableau de bord, export tableur, ligne de commande | ✅ livrée |
 
 ---
 
@@ -39,6 +39,19 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
+
+Le cœur du système ne dépend que de pydantic, pandas et PyYAML. Quatre extras
+sont **facultatifs**, et leur absence n'empêche jamais de travailler :
+
+| Extra | Ce qu'il ajoute | Ce qui le remplace sans lui |
+|---|---|---|
+| `tableur` | export Excel (openpyxl) | `exporter --texte`, même information |
+| `ordonnanceur` | planificateur APScheduler | `Ordonnanceur.boucle()`, sans dépendance |
+| `tableau` | tableau de bord Streamlit | `python -m brvm.app.cli etat` |
+| `dev` | pytest, ruff, mypy | — |
+
+Chaque module concerné dit lequel installer si vous en avez besoin, plutôt que de
+lever une erreur d'import.
 
 Vérification :
 
@@ -565,6 +578,126 @@ aller-retour coûte deux commissions et deux TVA, c'est un comparatif exigeant.
 
 ---
 
+## Exploitation
+
+Une seule commande fait tout ; les autres en sont des morceaux.
+
+```bash
+python -m brvm.app.cli verifier   --config config/config.yaml   # que va-t-il faire ?
+python -m brvm.app.cli collecter  --config config/config.yaml   # cycle complet
+python -m brvm.app.cli etat       --config config/config.yaml   # état, sans réseau
+python -m brvm.app.cli exporter   --config config/config.yaml --sortie rapports/
+python -m brvm.app.cli ordonnancer --config config/config.yaml --occurrences 5
+```
+
+Les codes de sortie distinguent trois situations, pour qu'un cron extérieur
+puisse réagir : `0` tout va bien, `1` la commande n'a pas pu s'exécuter, `2` elle
+a tourné mais quelque chose s'est mal passé — une source tombée, un canal
+d'alerte injoignable, une donnée plus vieille que le seuil déclaré.
+
+### Une seule lecture, servie à toutes les sorties
+
+Le tableau de bord, l'export tableur et les alertes lisent **le même objet**,
+composé une fois par `brvm.app.etat.assembler`. Un écran qui recalculerait pour
+son compte finirait par afficher un total qui ne correspond à aucun autre, et
+personne ne saurait lequel croire.
+
+Cet objet accepte une **borne de connaissance** (`jusqu_a`) : rien de postérieur
+n'est lu. Une restitution est donc rejouable à une date passée sans qu'aucun
+calcul puisse consulter une séance qui n'existait pas encore.
+
+### L'ordonnanceur ne collecte que les jours de séance
+
+C'est toute la différence avec un cron ordinaire. Deux conditions doivent être
+réunies : l'expression cron correspond à l'instant, **et** le calendrier
+reconnaît une séance ce jour-là. Un jour férié dans l'un des États de l'Union
+ferme la bourse ; lancer une collecte ce jour-là ne rapporterait que la page de
+la veille, prise pour celle du jour.
+
+Hors de la période couverte par le calendrier, le système s'abstient plutôt que
+de supposer une séance.
+
+> **Convention : `0` = lundi**, comme `date.weekday()` et comme partout ailleurs
+> ici — pas `0` = dimanche. Les jours ouvrés s'écrivent donc `0-4`. Écrire `1-5`
+> désignerait mardi à samedi et sauterait tous les lundis **sans produire le
+> moindre message**. L'expression est analysée au chargement de la configuration,
+> et un test vérifie que les fichiers livrés respectent la convention.
+
+APScheduler est facultatif : la politique de déclenchement est écrite sans lui et
+`Ordonnanceur.boucle()` suffit à un poste qui reste allumé. `pip install -e
+'.[ordonnanceur]'` l'ajoute si vous préférez un vrai planificateur.
+
+### Alertes : des constats, jamais des conseils
+
+Quatre familles, chacune activable séparément :
+
+| Catégorie | Se déclenche quand |
+|---|---|
+| `ECHEC_SOURCE` | une collecte échoue, est servie depuis le cache, ou rejette des lignes |
+| `DONNEE_PERIMEE` | un cours dépasse `alertes.age_donnee_max_minutes`, ou une ligne n'est pas valorisée |
+| `SEUIL_RISQUE` | une limite de concentration est dépassée, ou une liquidité n'est pas mesurable |
+| `SIGNAL_TECHNIQUE` | un franchissement est constaté — avec sa date d'exécution |
+
+Trois canaux : **fichier** (JSON par ligne, fonctionne sans rien configurer
+d'autre), **courriel** (SMTP, tous les paramètres obligatoires) et **webhook**
+(`https` exclusivement — une alerte décrit la composition de votre portefeuille).
+
+Le `User-Agent` n'est pas surchargeable par une source ou un canal : l'identité
+annoncée doit rester vraie.
+
+Un canal qui tombe n'emporte pas les autres, et une alerte que personne n'a reçue
+reste dans le journal du système. Un constat déjà diffusé n'est pas réémis tant
+qu'il n'a pas disparu puis réapparu : réémettre chaque jour la même alerte de
+concentration finit par la rendre invisible.
+
+Aucune alerte ne dit quoi faire. Celles qui portent un signal technique
+répètent, dans leur texte, que le système constate un franchissement, ne prédit
+aucun cours et ne promet aucun rendement.
+
+### Le seuil de débouclage est facultatif, et c'est délibéré
+
+Le délai de sortie d'une ligne est toujours calculé et affiché. Il ne déclenche
+une alerte que si vous avez renseigné `risque.seances_max_debouclage`. Il n'existe
+pas de délai « raisonnable » objectif : cela dépend de votre horizon, et le
+système ne choisit pas à votre place.
+
+En revanche, une liquidité **non mesurable** est signalée d'office : ne pas savoir
+combien de temps il faut pour sortir n'est pas une bonne nouvelle.
+
+### Tableau de bord et export
+
+```bash
+pip install -e '.[tableau]'
+streamlit run src/brvm/app/tableau_de_bord.py -- --config config/config.yaml
+```
+
+Quatre onglets — portefeuille, signaux, risque, données — et **chacun commence
+par le bandeau de fraîcheur**. Quand la donnée dépasse le seuil déclaré, le
+bandeau passe en rouge et dit explicitement que les chiffres décrivent cette
+date-là, pas aujourd'hui.
+
+L'export tableur produit cinq feuilles (positions, signaux, risque, anomalies,
+collectes), chacune portant le même bandeau en tête, et le nom du fichier est
+horodaté — un export non daté est ininterprétable trois mois plus tard. Sans
+`openpyxl`, `--texte` donne exactement la même information.
+
+Le module Streamlit ne calcule rien : il ne fait qu'afficher l'état qu'on lui
+donne. C'est ce qui permet de le vérifier par des tests sans lancer de serveur.
+
+### Aucune performance chiffrée n'est publiée
+
+Ni dans le tableau de bord, ni dans l'export. Le TWR et le TRI sont écrits et
+testés (couche 5), mais les alimenter correctement suppose un **historique de
+compte espèces** — apports, retraits, produit net des ventes, dividendes
+encaissés, frais de garde — que le système n'enregistre pas encore.
+
+Un rendement calculé sur la seule valeur des titres serait faux dès la première
+ligne soldée : la sous-période se termine sur un portefeuille de valeur nulle, et
+le rendement part à −100 % alors que l'argent est simplement passé en liquidités.
+Chaque écran dit pourquoi le chiffre est absent, plutôt que d'en afficher un
+plausible et faux.
+
+
 ## Choix de conception
 
 ### Aucune donnée inventée
@@ -661,16 +794,16 @@ brvm/
 │   └── sources-verifiees.md         d'où vient chaque structure pré-remplie
 ├── src/brvm/
 │   ├── config/      schéma de configuration + chargement à messages actionnables
-│   ├── domain/      enums, arithmétique XOF, calendrier, modèles, ajustement OST
+│   ├── domain/      enums, arithmétique XOF, calendrier, cron, modèles, ajustement OST
 │   ├── storage/     schéma SQL, connexion/migration, dépôts idempotents
 │   ├── ingestion/   DataSource, politique réseau, connecteurs, univers, anomalies, orchestrateur
 │   ├── indicators/  série illiquidité-consciente, calculs, confiance, signaux
 │   ├── portfolio/   frais, fiscalité, PMP/FIFO, valorisation, performance, simulateur
 │   ├── risk/        volatilité, corrélation, drawdown, concentration, liquidité, stops
 │   ├── backtest/    moteur événementiel, exécution conservatrice, métriques, walk-forward
-│   ├── app/         couche 7 — à venir
+│   ├── app/         état unique, alertes, ordonnanceur, export, tableau de bord, CLI
 │   └── utils/       erreurs, journalisation structurée
-└── tests/           663 tests, 95 % de couverture
+└── tests/           780 tests, 95 % de couverture
 ```
 
 Le stockage passe entièrement par `storage/base.py` et `storage/depots.py` : un
@@ -707,6 +840,11 @@ remplacement de SQLite par DuckDB resterait circonscrit à ces deux fichiers.
   ATR de la couche risque seront accompagnés d'un avertissement explicite.
 - **Le calendrier ne couvre que la période déclarée.** C'est un choix : mieux vaut
   une erreur qu'une réponse fondée sur un calendrier supposé.
+- **Aucune performance chiffrée n'est publiée** faute d'historique de compte
+  espèces. Voir « Exploitation » ci-dessus : c'est un manque assumé, pas un oubli.
+- **Le tableau de bord et l'export ne rafraîchissent rien tout seuls.** Ils lisent
+  la base telle qu'elle est ; c'est l'ordonnanceur ou la commande `collecter` qui
+  l'alimente.
 - **La méthode de valorisation par défaut est le PMP**, FIFO étant calculé en
   parallèle pour l'analyse fiscale. Les deux peuvent diverger sur le montant de
   plus-value imposable ; c'est votre régime fiscal qui tranche, pas le logiciel.
@@ -730,5 +868,7 @@ dégradé sur cache périmé, extraction de tableaux HTML et correspondance de
 colonnes déclarée, lecture stricte du référentiel d'univers, appels d'API en
 POST avec un cache distinct par corps de requête, refus d'une date qui ne respecte
 pas le format déclaré, chaque contrôle d'anomalie avec sa gravité, les valeurs de
-référence de chaque indicateur, la causalité de tous les calculs, et
-l'impossibilité d'exécuter un signal sur la barre qui l'a produit.
+référence de chaque indicateur, la causalité de tous les calculs,
+l'impossibilité d'exécuter un signal sur la barre qui l'a produit, la porte du
+calendrier devant l'ordonnanceur, la tolérance des alertes à un canal en panne,
+et la présence du bandeau de fraîcheur sur chaque onglet du tableau de bord.

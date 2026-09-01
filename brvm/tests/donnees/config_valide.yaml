@@ -178,5 +178,5 @@ journalisation:
 
 ordonnanceur:
   actif: false
-  cron_collecte: "30 15 * * 1-5"
+  cron_collecte: "30 15 * * 0-4"   # 0 = lundi
   fuseau_horaire: Africa/Abidjan
