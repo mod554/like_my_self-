@@ -874,6 +874,7 @@ function blocHorizon(classement, proposition) {
 }
 
 function rendreMarche(donnees) {
+  $("marche-portee").hidden = false;
   $("marche-portee").textContent =
     `${donnees.fraicheur.entete} — univers de ${donnees.univers} valeur(s), ` +
     `${donnees.analysees} analysée(s), ${donnees.fondamentaux_renseignes} avec ` +
@@ -937,6 +938,7 @@ async function chargerMarche() {
   const capital = $("capital").value.trim();
   const bouton = $("cribler");
   bouton.disabled = true;
+  $("marche-portee").hidden = false;
   $("marche-portee").textContent = "Criblage de la cote en cours…";
   try {
     const adresse = capital ? `/api/marche?capital=${encodeURIComponent(capital)}` : "/api/marche";
@@ -948,7 +950,10 @@ async function chargerMarche() {
   } catch (exception) {
     $("marche-erreur").hidden = false;
     $("marche-erreur-detail").textContent = String(exception.message || exception);
+    // Masquer plutôt que vider : ce paragraphe porte une bordure, et vidé il
+    // laisserait un cadre vide sous le message d'erreur.
     $("marche-portee").textContent = "";
+    $("marche-portee").hidden = true;
   } finally {
     bouton.disabled = false;
   }
