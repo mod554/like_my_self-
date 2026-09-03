@@ -105,7 +105,7 @@ FAVICON = (
 )
 
 DESCRIPTION = (
-    "Classement de la cote BRVM selon des criteres declares. Aucun conseil en investissement."
+    "Classement de la cote BRVM selon des critères déclarés. Aucun conseil en investissement."
 )
 
 
@@ -133,7 +133,7 @@ def batir(sortie: Path) -> Path:
       <span>BRVM &mdash; criblage public</span>
     </div>
     <p class="sourdine rail-mention">
-      Cet ecran classe. Il ne recommande rien et ne promet aucun rendement.
+      Cet écran classe. Il ne recommande rien et ne promet aucun rendement.
     </p>
   </aside>
 
@@ -142,25 +142,20 @@ def batir(sortie: Path) -> Path:
 
     <div class="portee">
       <p><strong>Criblage public de la cote BRVM.</strong> Cette page classe des
-      valeurs selon des criteres declares, sur des donnees passees. Elle ne
+      valeurs selon des critères déclarés, sur des données passées. Elle ne
       contient aucun portefeuille, aucun montant personnel et aucune proposition
-      de repartition : celles-ci restent sur la machine de leur proprietaire.</p>
+      de répartition : celles-ci restent sur la machine de leur propriétaire.</p>
       <p>Ce n'est pas un conseil en investissement, et aucun rendement n'est
-      promis. Les cours affiches sont les derniers connus, pas des cours
-      actuels : verifiez l'horodatage avant d'agir.</p>
-    </div>
-
-    <div id="marche-erreur" class="erreur" hidden>
-      <h2>La cote n'a pas pu etre affichee</h2>
-      <p id="marche-erreur-detail"></p>
+      promis. Les cours affichés sont les derniers connus, pas des cours
+      actuels : vérifiez l'horodatage avant d'agir.</p>
     </div>
 
 {section_marche(index)}
 
     <p class="mention">
-      Classement mecanique de criteres declares, sur donnees passees. Aucune
-      prevision, aucune recommandation, aucune promesse de rendement. Recoupez
-      avec la cote officielle de la BRVM avant toute decision.
+      Classement mécanique de critères déclarés, sur données passées. Aucune
+      prévision, aucune recommandation, aucune promesse de rendement. Recoupez
+      avec la cote officielle de la BRVM avant toute décision.
     </p>
   </main>
 </div>
