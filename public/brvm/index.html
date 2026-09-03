@@ -1,3 +1,96 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Criblage de la cote BRVM</title>
+<meta name="description" content="Classement de la cote BRVM selon des criteres declares. Aucun conseil en investissement.">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='2' fill='%23FBF9F6'/><rect x='3' y='4' width='2' height='8' fill='%230F1727'/><rect x='6.5' y='4' width='2' height='8' fill='none' stroke='%23B88923'/><rect x='10' y='10' width='2' height='2' fill='%23969AA1'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="lien-evitement" href="#principal">Aller au contenu</a>
+
+<div class="page">
+  <aside class="rail">
+    <div class="marque">
+      <strong>La cote</strong>
+      <span>BRVM &mdash; criblage public</span>
+    </div>
+    <p class="sourdine rail-mention">
+      Cet ecran classe. Il ne recommande rien et ne promet aucun rendement.
+    </p>
+  </aside>
+
+  <main class="contenu" id="principal">
+    <h1 class="invisible">Criblage public de la cote BRVM</h1>
+
+    <div class="portee">
+      <p><strong>Criblage public de la cote BRVM.</strong> Cette page classe des
+      valeurs selon des criteres declares, sur des donnees passees. Elle ne
+      contient aucun portefeuille, aucun montant personnel et aucune proposition
+      de repartition : celles-ci restent sur la machine de leur proprietaire.</p>
+      <p>Ce n'est pas un conseil en investissement, et aucun rendement n'est
+      promis. Les cours affiches sont les derniers connus, pas des cours
+      actuels : verifiez l'horodatage avant d'agir.</p>
+    </div>
+
+    <div id="marche-erreur" class="erreur" hidden>
+      <h2>La cote n'a pas pu etre affichee</h2>
+      <p id="marche-erreur-detail"></p>
+    </div>
+
+<section class="section" id="marche" aria-labelledby="t-marche">
+      <header>
+        <div>
+          <h2 id="t-marche">Toute la cote</h2>
+          <p>Chaque valeur est mesurée sur des critères déclarés, puis classée
+             selon les poids que <strong>vous</strong> avez fixés dans la
+             configuration. Un classement n'est pas une recommandation : il
+             ordonne du passé, il ne prédit rien.</p>
+        </div>
+      </header>
+
+
+      <div id="marche-erreur" class="erreur" hidden>
+        <h3>La cote n'a pas pu être criblée</h3>
+        <p id="marche-erreur-detail"></p>
+      </div>
+
+      <p class="note note--espacee" id="marche-portee">Chargement du criblage…</p>
+
+      <div class="onglets" id="onglets-horizon" role="tablist"
+           aria-label="Profils de classement"></div>
+
+      <div id="horizons"></div>
+
+      <details class="repli">
+        <summary>Valeurs de l'univers non analysables</summary>
+        <div class="cadre defilant cadre--espace">
+          <table>
+            <caption class="invisible">Valeurs sans analyse possible, et pourquoi</caption>
+            <thead>
+              <tr><th scope="col">Valeur</th><th scope="col">Raison</th></tr>
+            </thead>
+            <tbody id="marche-ecartees"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <div class="pile pile--espacee" id="marche-avertissements"></div>
+    </section>
+
+    <p class="mention">
+      Classement mecanique de criteres declares, sur donnees passees. Aucune
+      prevision, aucune recommandation, aucune promesse de rendement. Recoupez
+      avec la cote officielle de la BRVM avant toute decision.
+    </p>
+  </main>
+</div>
+
+<script type="module">
 // Rendu de l'interface. Cette couche n'effectue AUCUN calcul : elle affiche ce
 // que /api/etat lui remet. Un écran qui recalculerait pour son compte finirait
 // par montrer un total qui ne correspond ni à l'export, ni aux alertes.
@@ -937,16 +1030,15 @@ function rendreMarche(donnees) {
 }
 
 async function chargerMarche() {
-  const capital = $("capital").value.trim();
-  const bouton = $("cribler");
+  const capital = "";
+  const bouton = { disabled: false };
   bouton.disabled = true;
   $("marche-portee").hidden = false;
   $("marche-portee").textContent = "Criblage de la cote en cours…";
   try {
-    const adresse = capital ? `/api/marche?capital=${encodeURIComponent(capital)}` : "/api/marche";
-    const reponse = await fetch(adresse, { headers: { Accept: "application/json" } });
+    const reponse = await fetch("marche.json", { cache: "no-store" });
     const charge = await reponse.json();
-    if (!reponse.ok) throw new Error(charge.erreur || `HTTP ${reponse.status}`);
+    if (!reponse.ok) throw new Error(`HTTP ${reponse.status}`);
     rendreMarche(charge);
     $("marche-erreur").hidden = true;
   } catch (exception) {
@@ -1008,12 +1100,11 @@ async function charger() {
   }
 }
 
-charger();
 // Le criblage lit toute la cote : il part séparément, pour qu'une cote lente ne
 // retarde pas l'affichage du portefeuille.
 chargerMarche();
-$("cribler").addEventListener("click", chargerMarche);
-$("capital").addEventListener("keydown", (evenement) => {
-  if (evenement.key === "Enter") chargerMarche();
-});
 suivreSections();
+
+</script>
+</body>
+</html>

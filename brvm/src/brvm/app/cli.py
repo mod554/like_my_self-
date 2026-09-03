@@ -34,6 +34,7 @@ from brvm.app.cycle import Cycle, ResultatCycle
 from brvm.app.etat import assembler
 from brvm.app.export import exporter, horodater, restituer, restituer_criblage
 from brvm.app.ordonnanceur import Ordonnanceur, PolitiqueOrdonnancement, seances_a_venir
+from brvm.app.publication import publier
 from brvm.app.serveur import HOTE_DEFAUT, PORT_DEFAUT, servir
 from brvm.config.chargement import (
     charger_configuration,
@@ -72,6 +73,11 @@ def construire_analyseur_arguments() -> argparse.ArgumentParser:
     sous.add_parser("verifier", help="Contrôle la configuration et annonce les prochaines séances.")
     sous.add_parser("etat", help="Recompose et affiche l'état, sans réseau.")
     sous.add_parser("collecter", help="Cycle complet : collecte, constats, alertes.")
+
+    publication = sous.add_parser(
+        "publier", help="Écrit l'instantané PUBLIC du criblage (aucune donnée personnelle)."
+    )
+    publication.add_argument("--sortie", type=Path, required=True, help="Fichier JSON à écrire.")
 
     criblage = sous.add_parser("cribler", help="Analyse et classe toute la cote, sans réseau.")
     criblage.add_argument(
@@ -211,6 +217,14 @@ def commande_cribler(
     return DEGRADE if criblage.avertissements else SUCCES
 
 
+def commande_publier(configuration: Configuration, base: BaseDonnees, sortie: Path) -> int:
+    """Écrit l'instantané public. Rien de personnel n'y figure, par construction."""
+    calendrier = construire_calendrier_depuis_config(configuration)
+    fichier = publier(base, configuration, calendrier, sortie)
+    print(f"Instantané public écrit : {fichier} ({fichier.stat().st_size} octets)")
+    return SUCCES
+
+
 def _cycle(configuration: Configuration, base: BaseDonnees) -> Cycle:
     calendrier = construire_calendrier_depuis_config(configuration)
     diffuseur = Diffuseur(construire_canaux(configuration.alertes, configuration.ingestion))
@@ -315,6 +329,8 @@ def principal(arguments: list[str] | None = None) -> int:
                 return commande_verifier(configuration)
             case "etat":
                 return commande_etat(configuration, base, options.seance)
+            case "publier":
+                return commande_publier(configuration, base, options.sortie)
             case "cribler":
                 return commande_cribler(
                     configuration, base, options.seance, options.capital, options.horizon

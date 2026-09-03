@@ -1,0 +1,97 @@
+# Regenere la page publique du criblage BRVM, apres la cloture de la seance.
+#
+# POURQUOI UN WORKFLOW ET PAS UNE FONCTION VERCEL : la collecte interroge 48
+# valeurs et prend une minute et demie ; les fonctions serverless de Vercel
+# expirent bien avant. Elle produit aussi une base SQLite, que le systeme de
+# fichiers en lecture seule de Vercel n'accepterait pas. Ici, le calcul se fait
+# dans le runner, et Vercel ne sert qu'un fichier statique — ce qu'il fait bien.
+#
+# CE QUI EST PUBLIE : le criblage de la cote, et rien d'autre. Aucun
+# portefeuille, aucun montant personnel, aucune repartition chiffree. La
+# separation est faite dans `brvm.app.publication`, qui refuse d'ecrire un
+# fichier contenant un champ personnel.
+
+name: Criblage BRVM — page publique
+
+on:
+  schedule:
+    # 16h00 UTC du lundi au vendredi. La BRVM cloture a 15h30 a Abidjan, qui est
+    # a UTC+0 toute l'annee : la seance est donc terminee depuis 30 minutes.
+    - cron: "0 16 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: brvm-publication
+  cancel-in-progress: false
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer le sous-projet
+        working-directory: brvm
+        run: pip install -e .
+
+      - name: Collecter la cote
+        working-directory: brvm
+        # Code 2 = DEGRADE : des lignes ont ete rejetees en quarantaine, ce qui
+        # est le cas normal sur cette source. On distingue ce cas d'un echec.
+        run: |
+          set +e
+          python -m brvm.app.cli --config config/config.publication.yaml collecter
+          code=$?
+          set -e
+          if [ "$code" -gt 2 ]; then
+            echo "::error::Collecte en echec (code $code)"
+            exit "$code"
+          fi
+          if [ "$code" -eq 2 ]; then
+            echo "::warning::Collecte degradee : voir les constats ci-dessus"
+          fi
+
+      - name: Ecrire l'instantane public
+        working-directory: brvm
+        run: |
+          python -m brvm.app.cli --config config/config.publication.yaml \
+            publier --sortie ../public/brvm/marche.json
+
+      - name: Reconstruire la page
+        working-directory: brvm
+        run: python outils/batir_page_publique.py ../public/brvm
+
+      - name: Verifier qu'aucune donnee personnelle ne part en ligne
+        # Second garde-fou, apres celui du code : si l'un des deux cede, l'autre
+        # tient. Ce qui part en ligne est public par construction, pas par
+        # confiance dans une couche unique.
+        run: |
+          python3 - <<'PYEOF'
+          import json, sys
+          charge = json.load(open("public/brvm/marche.json", encoding="utf-8"))
+          interdits = {"portefeuille", "lignes", "propositions", "capital", "transactions"}
+          presents = interdits & set(charge)
+          if presents:
+              sys.exit(f"Champs personnels dans la charge publique : {sorted(presents)}")
+          print(f"{charge['analysees']} valeur(s) analysee(s), aucun champ personnel.")
+          PYEOF
+
+      - name: Publier si la cote a bouge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/brvm/
+          if git diff --cached --quiet; then
+            echo "Rien de nouveau : la cote n'a pas bouge."
+            exit 0
+          fi
+          jour=$(python3 -c "import json;print(json.load(open('public/brvm/marche.json'))['jusqu_a'])")
+          git commit -m "Criblage BRVM au $jour"
+          git push
