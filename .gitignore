@@ -63,3 +63,6 @@ brvm/config/univers.csv
 
 # Base de données locale, journaux et fichiers de cotations
 brvm/data/
+
+# Artefacts des tests (chemins relatifs de la configuration de test)
+donnees_test/
