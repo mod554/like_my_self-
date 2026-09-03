@@ -232,6 +232,10 @@ risque:
   drawdown_alerte: 0.15
   fenetre_volatilite: 60
   seances_par_an: 250
+  # Corrélation au-delà de laquelle deux lignes détenues sont signalées.
+  # [PRÉFÉRENCE] Trois lignes de 15 % qui varient ensemble font une position
+  # de 45 % qu'aucun contrôle de poids ne voit.
+  correlation_alerte: 0.80
   seances_minimum_correlation: 20
 
 backtest:

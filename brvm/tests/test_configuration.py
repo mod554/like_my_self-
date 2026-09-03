@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 import yaml
@@ -464,3 +464,76 @@ class TestResolutionDesChemins:
 
         referentiel = charger_fondamentaux(configuration.analyse.fichier_fondamentaux)
         assert referentiel, "le référentiel fondamental de test doit être lu"
+
+
+class TestReglagesEffectivementLus:
+    """Tout réglage déclaré doit être lu quelque part dans le code.
+
+    Un champ obligatoire que personne ne lit est pire qu'un champ absent :
+    l'utilisateur le renseigne, croit avoir réglé quelque chose, et rien ne
+    change — sans le moindre message. C'est exactement ce qui était arrivé à
+    `risque.fenetre_volatilite`, déclarée dans les trois configurations livrées
+    et lue par aucun calcul : toutes les volatilités portaient sur l'historique
+    entier au lieu de la fenêtre demandée.
+    """
+
+    #: Champs lus par les méthodes de la configuration elle-même, et donc
+    #: invisibles au balayage ci-dessous, qui écarte `config/modeles.py`.
+    #: Chacun nomme la méthode qui le lit : l'entrée est vérifiée, pas subie.
+    LUS_DANS_LE_MODELE: ClassVar[dict[str, str]] = {
+        "applicable_a": "ConfigLigneFrais.concerne",
+        "priorite": "Configuration.sources_actives",
+        "drawdown_alerte": "Configuration.avertissements",
+    }
+
+    @staticmethod
+    def champs_declares() -> dict[str, str]:
+        """Tous les champs des modèles de configuration, et leur modèle."""
+        trouves: dict[str, str] = {}
+        vus: set[str] = set()
+
+        def parcourir(modele: type[Any]) -> None:
+            if modele.__name__ in vus:
+                return
+            vus.add(modele.__name__)
+            for nom, champ in modele.model_fields.items():
+                trouves.setdefault(nom, modele.__name__)
+                annotation = champ.annotation
+                for sous in (annotation, *getattr(annotation, "__args__", ())):
+                    if isinstance(sous, type) and issubclass(sous, BaseModel):
+                        parcourir(sous)
+
+        parcourir(Configuration)
+        return trouves
+
+    def test_aucun_reglage_declare_n_est_ignore_par_le_code(self) -> None:
+        sources = [
+            chemin.read_text(encoding="utf-8")
+            for chemin in (RACINE_PROJET / "src").rglob("*.py")
+            # Le fichier des modèles ne compte pas : il DÉCLARE les champs, il
+            # ne les lit pas. S'y fier rendrait le contrôle inopérant.
+            if chemin.name != "modeles.py" or "config" not in chemin.parts
+        ]
+        jamais_lus = {
+            nom: modele
+            for nom, modele in self.champs_declares().items()
+            if nom not in self.LUS_DANS_LE_MODELE
+            and not any(f".{nom}" in texte for texte in sources)
+        }
+        assert jamais_lus == {}, (
+            "Réglages déclarés mais lus par aucun calcul : "
+            + ", ".join(f"{modele}.{nom}" for nom, modele in sorted(jamais_lus.items()))
+            + ". L'utilisateur les renseignerait sans effet et sans message."
+        )
+
+    def test_les_lectures_dans_le_modele_sont_reelles(self) -> None:
+        """Une exemption doit rester vraie : si la méthode citée cesse de lire le
+        champ, l'exemption devient un trou et ce contrôle le dit."""
+        modeles = (RACINE_PROJET / "src" / "brvm" / "config" / "modeles.py").read_text(
+            encoding="utf-8"
+        )
+        for nom in self.LUS_DANS_LE_MODELE:
+            assert f"self.{nom}" in modeles or f".{nom}" in modeles, (
+                f"{nom} est exempté au motif qu'il est lu dans modeles.py, "
+                "mais il n'y apparaît plus."
+            )

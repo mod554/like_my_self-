@@ -78,8 +78,17 @@ def cause_confiance_basse(analyse: AnalyseValeur) -> str:
         ),
         (
             analyse.profondeur,
-            f"profondeur {analyse.profondeur:.0%} — le montant échangé est faible "
-            "devant le volume de référence déclaré dans `indicateurs`",
+            f"profondeur {analyse.profondeur:.0%} — "
+            + (
+                # « Non publié » et « faible » ne se corrigent pas de la même
+                # façon : l'un se règle en changeant de source, l'autre non.
+                "la source ne publie aucun montant échangé, et la profondeur du "
+                "marché est donc inconnue. Elle est comptée comme nulle faute de "
+                "pouvoir l'estimer : ce n'est pas un jugement sur la valeur"
+                if not analyse.critere("volume").mesurable
+                else "le montant échangé est faible devant le volume de référence "
+                "déclaré dans `indicateurs`"
+            ),
         ),
         (
             analyse.etroitesse,

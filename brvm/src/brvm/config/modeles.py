@@ -300,6 +300,66 @@ class ConfigApi(_Base):
         return self
 
 
+class ConfigCsvDistant(_Base):
+    """Description d'un dépôt de CSV servis en HTTP, telle que VOUS l'avez observée.
+
+    Un fichier par valeur, une ligne par séance. Le système n'invente aucune
+    correspondance de colonne : une colonne mal appariée produirait des cours
+    faux sans le dire. Ouvrez un fichier de la source et recopiez ses en-têtes.
+    """
+
+    #: En-tête de la colonne portant la date de séance.
+    colonne_date: str = Field(min_length=1)
+    #: Format de cette date, au sens de `datetime.strptime`. Une date non
+    #: conforme n'est jamais réinterprétée : c'est le seul garde-fou entre un
+    #: 03/02 et un 02/03.
+    format_date: str = Field(default="%Y-%m-%d", min_length=2)
+    #: Champ du système → en-tête de colonne dans le fichier. Champs acceptés :
+    #: voir CHAMPS_ANALYSABLES.
+    colonnes: dict[str, str] = Field(default_factory=dict)
+    #: Vrai pour écrire toutes les séances du fichier (rattrapage d'historique),
+    #: faux pour ne retenir que la séance visée. Un rattrapage fait remonter des
+    #: barres anciennes que le contrôle de fraîcheur signalera comme périmées :
+    #: c'est attendu, et c'est pourquoi ce mode se demande explicitement.
+    historique: bool = False
+    #: Profondeur du rattrapage, en jours. Absent = tout le fichier.
+    profondeur_jours: int | None = Field(default=None, gt=0)
+    #: Calcule le montant échangé comme ``clôture × volume en titres`` quand la
+    #: source publie l'un sans l'autre.
+    #:
+    #: **N'activez ceci qu'après avoir vérifié que votre source procède ainsi.**
+    #: Le montant échangé mesure la profondeur du marché, donc la confiance
+    #: accordée à la valeur : le dériver au jugé fausserait tous les classements
+    #: sans le dire. Sur un marché de fixing, où une séance se dénoue à un cours
+    #: unique, l'égalité est exacte ; sur un marché continu, elle ne l'est pas.
+    #:
+    #: Le champ dérivé porte la mention de son origine dans le commentaire de la
+    #: cotation : un montant calculé ne doit pas se confondre avec un publié.
+    volume_xof_depuis_cours: bool = False
+
+    @model_validator(mode="after")
+    def _valider_colonnes(self) -> ConfigCsvDistant:
+        if not self.colonnes:
+            raise ValueError(
+                "Aucune correspondance de colonne déclarée : le connecteur ne "
+                "saurait pas quelle colonne porte le cours. Recopiez les en-têtes "
+                "du fichier réel."
+            )
+        inconnus = set(self.colonnes) - CHAMPS_ANALYSABLES
+        if inconnus:
+            raise ValueError(
+                "Champs inconnus dans la correspondance de colonnes : "
+                + ", ".join(sorted(inconnus))
+                + ". Champs acceptés : "
+                + ", ".join(sorted(CHAMPS_ANALYSABLES))
+            )
+        if "cloture" not in self.colonnes:
+            raise ValueError(
+                "La colonne de clôture est obligatoire : sans elle, aucune barre n'est exploitable."
+            )
+        return self
+
+
 class ConfigSource(_Base):
     """Paramétrage d'un connecteur d'ingestion."""
 
@@ -326,6 +386,8 @@ class ConfigSource(_Base):
     analyseur: ConfigAnalyseur | None = None
     #: Schéma de l'API, constaté par vous. Requis pour une source de type api_json.
     api: ConfigApi | None = None
+    #: Colonnes du dépôt CSV, constatées par vous. Requis pour csv_distant.
+    csv_distant: ConfigCsvDistant | None = None
 
     @model_validator(mode="after")
     def _valider_cible(self) -> ConfigSource:
@@ -621,6 +683,10 @@ class ConfigRisque(_Base):
     #: Nombre minimal de séances réellement cotées en commun pour qu'une
     #: corrélation entre deux valeurs soit calculée.
     seances_minimum_correlation: int = Field(gt=1)
+    #: Corrélation au-delà de laquelle deux lignes détenues sont signalées.
+    #: [PRÉFÉRENCE] — trois lignes de 15 % qui varient ensemble font une
+    #: position de 45 % que le contrôle de poids ne voit pas.
+    correlation_alerte: Fraction = Decimal("0.80")
     #: Nombre de séances de débouclage au-delà duquel une ligne est signalée
     #: comme trop grosse pour sa liquidité. Facultatif : aucune valeur par défaut
     #: n'est fournie, parce qu'il n'en existe pas d'objective — le délai tolérable
@@ -905,6 +971,16 @@ class Configuration(_Base):
                 "son absence sous-estime le coût de détention d'autant plus que le "
                 "portefeuille grossit."
             )
+        # Le seuil de repli est déclaré, mais aucun calcul ne peut s'y comparer :
+        # mesurer le repli d'un portefeuille exige un historique de ses
+        # valorisations, que le système n'enregistre pas encore. Le dire vaut
+        # mieux que de laisser croire à une surveillance qui n'existe pas.
+        messages.append(
+            f"Seuil de repli déclaré ({self.risque.drawdown_alerte:.0%}) mais inopérant : "
+            "aucune alerte de repli ne peut se déclencher tant que le système "
+            "n'enregistre pas l'historique de valorisation du portefeuille. Le "
+            "repli est calculé et testé, il n'a simplement rien à quoi se comparer."
+        )
         if self.indicateurs.remplissage_max_seances == 0:
             messages.append(
                 "Le report de cours est désactivé (remplissage_max_seances = 0) : sur une "

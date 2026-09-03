@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal, localcontext
 from enum import StrEnum
+from itertools import combinations
 from typing import Final
 
 from brvm.config.modeles import Configuration
@@ -24,6 +25,7 @@ from brvm.domain.monnaie import PRECISION_INTERNE, format_xof
 from brvm.indicators.resultats import ResultatIndicateur
 from brvm.indicators.serie import SerieTechnique
 from brvm.portfolio.valorisation import Portefeuille
+from brvm.risk.mesures import ResultatCorrelation, calculer_correlation
 
 _DECIMALES: Final[Decimal] = Decimal("0.000001")
 
@@ -127,6 +129,10 @@ class RapportRisque:
     concentrations: tuple[ConstatConcentration, ...] = ()
     liquidites: tuple[ConstatLiquidite, ...] = ()
     stops: tuple[StopAtr, ...] = ()
+    #: Corrélations entre lignes détenues. Deux lignes qui montent et descendent
+    #: ensemble ne diversifient rien : la limite de concentration par ligne est
+    #: alors respectée à la lettre et contournée en fait.
+    correlations: tuple[ResultatCorrelation, ...] = ()
     avertissements: tuple[str, ...] = ()
 
     def depassements(self) -> tuple[ConstatConcentration, ...]:
@@ -141,6 +147,17 @@ class RapportRisque:
         if self.stops:
             lignes.append("Stops :")
             lignes += [f"  {stop.resume()}" for stop in self.stops]
+        if self.correlations:
+            lignes.append("Corrélations entre lignes détenues :")
+            lignes += [
+                f"  {c.ticker_a}/{c.ticker_b} : "
+                + (
+                    f"{c.valeur:.2f} sur {c.seances_communes} séances communes"
+                    if c.valeur is not None
+                    else f"non mesurable — {c.motif_indisponible}"
+                )
+                for c in self.correlations
+            ]
         if self.avertissements:
             lignes.append("Avertissements :")
             lignes += [f"  • {message}" for message in self.avertissements]
@@ -387,12 +404,54 @@ def controler(
             + ". Leur liquidité et leurs stops ne sont pas évalués.",
         )
 
+    correlations, avertissements_correlation = controler_correlations(
+        portefeuille, series, configuration
+    )
+
     return RapportRisque(
         concentrations=concentrations,
         liquidites=tuple(liquidites),
         stops=tuple(stops),
-        avertissements=tuple(avertissements) + portefeuille.avertissements,
+        correlations=correlations,
+        avertissements=tuple(avertissements)
+        + avertissements_correlation
+        + portefeuille.avertissements,
     )
+
+
+def controler_correlations(
+    portefeuille: Portefeuille,
+    series: Mapping[str, SerieTechnique],
+    configuration: Configuration,
+) -> tuple[tuple[ResultatCorrelation, ...], tuple[str, ...]]:
+    """Corrélations deux à deux des lignes détenues.
+
+    Une limite de concentration par ligne se contourne sans le vouloir : trois
+    lignes de 15 % qui varient ensemble font une position de 45 %, et aucun
+    contrôle de poids ne le voit. On mesure donc, et on signale les couples
+    au-delà du seuil déclaré.
+
+    Rien n'est calculé sous ``seances_minimum_correlation`` séances **communes** :
+    apparier deux valeurs qui ne cotent pas les mêmes jours mesurerait le
+    calendrier, pas le marché.
+    """
+    tickers = sorted(ligne.ticker for ligne in portefeuille.lignes if ligne.ticker in series)
+    resultats = [
+        calculer_correlation(series[a], series[b], configuration.risque.seances_minimum_correlation)
+        for a, b in combinations(tickers, 2)
+    ]
+    seuil = configuration.risque.correlation_alerte
+    eleves = [c for c in resultats if c.valeur is not None and c.valeur >= seuil]
+    avertissements: tuple[str, ...] = ()
+    if eleves:
+        detail = ", ".join(f"{c.ticker_a}/{c.ticker_b} à {c.valeur:.2f}" for c in eleves)
+        avertissements = (
+            f"Lignes fortement corrélées (au-delà de {seuil:.2f}) : {detail}. "
+            "Leurs poids individuels respectent peut-être vos limites, mais elles "
+            "varient ensemble : la diversification est moindre que le tableau ne "
+            "le laisse croire.",
+        )
+    return tuple(resultats), avertissements
 
 
 def dimensionner(serie: SerieTechnique, configuration: Configuration) -> tuple[int, str | None]:

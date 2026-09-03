@@ -11,11 +11,11 @@ import pytest
 
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
-from brvm.domain.enums import GraviteAnomalie, Pays, StatutCollecte, StatutFiabilite
-from brvm.domain.modeles import Instrument
+from brvm.domain.enums import GraviteAnomalie, StatutCollecte, StatutFiabilite
 from brvm.ingestion.base import DataSource, ResultatCollecte
 from brvm.ingestion.fichier import SourceFichier
 from brvm.ingestion.orchestrateur import BilanIngestion, Orchestrateur
+from brvm.ingestion.univers import charger_univers
 from brvm.storage.base import BaseDonnees
 from brvm.storage.depots import (
     DepotAnomalies,
@@ -46,6 +46,14 @@ class LanceurCycle(Protocol):
 def source_fichier(configuration: Configuration, chemin: Path) -> SourceFichier:
     reglage = next(s for s in configuration.sources if s.type == "fichier_csv")
     return SourceFichier(reglage.model_copy(update={"chemin_fichier": chemin}), configuration)
+
+
+#: Univers réduit à une seule valeur, pour vérifier qu'un ticker non déclaré
+#: est bien signalé. Écrit tel quel : `ecrire` préfixe l'en-tête des cotations.
+UNIVERS_PARTIEL = (
+    "ticker,nom,isin,pays,secteur,compartiment,actif\n"
+    "TEST2,Société de test deux,,SN,Finances,Principal,true\n"
+)
 
 
 def ecrire(chemin: Path, lignes: str) -> Path:
@@ -176,24 +184,93 @@ class TestQuarantaine:
 
 
 class TestReferentiel:
-    def test_ticker_inconnu_rend_la_cotation_suspecte(
-        self, executer: LanceurCycle, base: BaseDonnees
+    """Le référentiel est une donnée de CONFIGURATION, la base en est le reflet.
+
+    Rien n'écrivait ce reflet : `DepotInstruments` restait vide en exploitation,
+    et tout ce qui en dépend s'éteignait sans un mot — la détection de ticker
+    inconnu ne se déclenchait jamais, le criblage ne voyait aucun univers, les
+    concentrations sectorielles n'avaient pas de secteur.
+    """
+
+    def test_le_cycle_recopie_l_univers_declare(
+        self, executer: LanceurCycle, base: BaseDonnees, configuration: Configuration
     ) -> None:
-        DepotInstruments(base).enregistrer(
-            Instrument(ticker="TEST2", nom="Société fictive", pays=Pays.COTE_DIVOIRE)
+        executer("TEST1,2026-03-02,COTEE,1000,500,995\n")
+        en_base = {i.ticker for i in DepotInstruments(base).lister()}
+        attendus = {i.ticker for i in charger_univers(configuration.marche.fichier_univers)}
+        assert en_base == attendus
+
+    def test_ticker_absent_de_l_univers_rend_la_cotation_suspecte(
+        self,
+        configuration: Configuration,
+        base: BaseDonnees,
+        calendrier: CalendrierSeances,
+        tmp_path: Path,
+    ) -> None:
+        univers = tmp_path / "univers_partiel.csv"
+        univers.write_text(UNIVERS_PARTIEL, encoding="utf-8")
+        reglages = configuration.model_copy(
+            update={"marche": configuration.marche.model_copy(update={"fichier_univers": univers})}
         )
-        bilan = executer("TEST1,2026-03-02,COTEE,1000,500,995\n")[0]
+        fichier = ecrire(tmp_path / "cotations.csv", "TEST1,2026-03-02,COTEE,1000,500,995\n")
+        bilan = Orchestrateur(
+            reglages, base, calendrier, sources=[source_fichier(reglages, fichier)]
+        ).executer(maintenant=MAINTENANT)[0]
+
         assert bilan.suspectes == 1
         cotation = DepotCotations(base).lire("TEST1")[0]
         assert cotation.statut_fiabilite is StatutFiabilite.SUSPECTE
         assert any(a.type_anomalie == "ticker_inconnu" for a in DepotAnomalies(base).lister())
 
-    def test_ticker_connu_reste_fiable(self, executer: LanceurCycle, base: BaseDonnees) -> None:
-        DepotInstruments(base).enregistrer(
-            Instrument(ticker="TEST1", nom="Société fictive", pays=Pays.COTE_DIVOIRE)
-        )
+    def test_ticker_declare_reste_fiable(self, executer: LanceurCycle, base: BaseDonnees) -> None:
         executer("TEST1,2026-03-02,COTEE,1000,500,995\n")
         assert DepotCotations(base).lire("TEST1")[0].statut_fiabilite is StatutFiabilite.FIABLE
+
+    def test_une_valeur_retiree_du_fichier_n_est_pas_effacee_de_la_base(
+        self,
+        configuration: Configuration,
+        base: BaseDonnees,
+        calendrier: CalendrierSeances,
+        tmp_path: Path,
+    ) -> None:
+        """Des cotations et des transactions la référencent : effacer son libellé
+        rendrait un historique illisible. On la marque inactive, on ne l'ôte pas."""
+        fichier = ecrire(tmp_path / "cotations.csv", "TEST1,2026-03-02,COTEE,1000,500,995\n")
+        Orchestrateur(
+            configuration, base, calendrier, sources=[source_fichier(configuration, fichier)]
+        ).executer(maintenant=MAINTENANT)
+        complet = {i.ticker for i in DepotInstruments(base).lister()}
+
+        reduit = tmp_path / "univers_reduit.csv"
+        reduit.write_text(UNIVERS_PARTIEL, encoding="utf-8")
+        reglages = configuration.model_copy(
+            update={"marche": configuration.marche.model_copy(update={"fichier_univers": reduit})}
+        )
+        Orchestrateur(
+            reglages, base, calendrier, sources=[source_fichier(reglages, fichier)]
+        ).executer(maintenant=MAINTENANT)
+        assert {i.ticker for i in DepotInstruments(base).lister()} == complet
+
+    def test_univers_illisible_n_interrompt_pas_la_collecte(
+        self,
+        configuration: Configuration,
+        base: BaseDonnees,
+        calendrier: CalendrierSeances,
+        tmp_path: Path,
+    ) -> None:
+        """On peut collecter avant d'avoir saisi la cote : ce n'est pas une erreur."""
+        reglages = configuration.model_copy(
+            update={
+                "marche": configuration.marche.model_copy(
+                    update={"fichier_univers": tmp_path / "jamais_ecrit.csv"}
+                )
+            }
+        )
+        fichier = ecrire(tmp_path / "cotations.csv", "TEST1,2026-03-02,COTEE,1000,500,995\n")
+        bilans = Orchestrateur(
+            reglages, base, calendrier, sources=[source_fichier(reglages, fichier)]
+        ).executer(maintenant=MAINTENANT)
+        assert bilans[0].lignes_lues == 1
 
 
 class TestResilience:

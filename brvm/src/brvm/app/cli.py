@@ -173,11 +173,19 @@ def commande_cribler(
     criblage = cribler(base, configuration, calendrier, jusqu_a=seance)
 
     if horizon is not None and horizon not in criblage.classements:
-        connus = ", ".join(sorted(criblage.classements)) or "aucun"
-        print(
-            f"Profil {horizon!r} inconnu. Profils déclarés dans la configuration : {connus}.",
-            file=sys.stderr,
-        )
+        if not criblage.classements:
+            # Sans univers, aucun profil n'est appliqué : accuser le profil
+            # enverrait chercher au mauvais endroit.
+            print(
+                "Aucun classement n'a pu être produit : " + " ".join(criblage.avertissements),
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"Profil {horizon!r} inconnu. Profils déclarés dans la "
+                f"configuration : {', '.join(sorted(criblage.classements))}.",
+                file=sys.stderr,
+            )
         return ECHEC
 
     propositions: dict[str, Proposition] = {}
@@ -194,7 +202,7 @@ def commande_cribler(
             for nom in vises
         }
 
-    print(restituer_criblage(criblage, propositions))
+    print(restituer_criblage(criblage, propositions, configuration.analyse.taille_classement))
 
     # Une cote dont aucune valeur n'est analysable n'est pas un succès : c'est
     # une base à alimenter, et un cron doit pouvoir s'en apercevoir.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -281,3 +282,100 @@ class TestRapportComplet:
         portefeuille = portefeuille_deux_lignes(moteur_frais, moteur_fiscal, fabrique_transaction)
         rapport = controler(portefeuille, {}, {"TEST1": fabrique_serie([1000] * 20)}, configuration)
         assert any("Aucune série de cours" in a for a in rapport.avertissements)
+
+
+class TestCorrelationsEntreLignes:
+    """Une limite de poids par ligne se contourne sans le vouloir.
+
+    Trois lignes de 15 % qui varient ensemble font une position de 45 % qu'aucun
+    contrôle de concentration ne voit. Le contrôle de corrélation existait et
+    n'était appelé par aucun code de production : `seances_minimum_correlation`
+    était un réglage mort, renseigné sans effet.
+    """
+
+    @staticmethod
+    def _portefeuille(
+        moteur_frais: MoteurFrais,
+        moteur_fiscal: MoteurFiscal,
+        fabrique_transaction: Callable[..., Transaction],
+    ) -> Portefeuille:
+        suivi = suivre(
+            [
+                fabrique_transaction("T1", ticker="TEST1", quantite=10, cours=1_000),
+                fabrique_transaction("T2", ticker="TEST2", quantite=10, cours=2_000),
+            ]
+        )
+        return valoriser(
+            suivi,
+            {"TEST1": cotation("TEST1", 1_000), "TEST2": cotation("TEST2", 2_000)},
+            moteur_frais,
+            moteur_fiscal,
+        )
+
+    @staticmethod
+    def _series_liees(
+        fabrique_serie: Callable[..., SerieTechnique],
+    ) -> dict[str, SerieTechnique]:
+        cours = [1000 + int(200 * math.sin(i / 3)) for i in range(120)]
+        return {
+            "TEST1": fabrique_serie(cours, ticker="TEST1"),
+            "TEST2": fabrique_serie([c * 2 for c in cours], ticker="TEST2"),
+        }
+
+    def test_deux_lignes_qui_varient_ensemble_sont_signalees(
+        self,
+        configuration: Configuration,
+        moteur_frais: MoteurFrais,
+        moteur_fiscal: MoteurFiscal,
+        fabrique_serie: Callable[..., SerieTechnique],
+        fabrique_transaction: Callable[..., Transaction],
+    ) -> None:
+        series = self._series_liees(fabrique_serie)
+        portefeuille = self._portefeuille(moteur_frais, moteur_fiscal, fabrique_transaction)
+        rapport = controler(portefeuille, {}, series, configuration)
+        assert rapport.correlations, "les corrélations doivent être calculées"
+        mesuree = rapport.correlations[0]
+        assert mesuree.valeur is not None
+        assert mesuree.valeur > Decimal("0.99"), "deux séries proportionnelles"
+        assert any("fortement corrélées" in a for a in rapport.avertissements)
+
+    def test_sous_le_minimum_de_seances_communes_rien_n_est_invente(
+        self,
+        configuration: Configuration,
+        moteur_frais: MoteurFrais,
+        moteur_fiscal: MoteurFiscal,
+        fabrique_serie: Callable[..., SerieTechnique],
+        fabrique_transaction: Callable[..., Transaction],
+    ) -> None:
+        """Apparier deux valeurs qui ne cotent pas les mêmes jours mesurerait le
+        calendrier, pas le marché."""
+        series = {
+            "TEST1": fabrique_serie([1000, None, 1010, None, 1020], ticker="TEST1"),
+            "TEST2": fabrique_serie([None, 900, None, 910, None], ticker="TEST2"),
+        }
+        portefeuille = self._portefeuille(moteur_frais, moteur_fiscal, fabrique_transaction)
+        rapport = controler(portefeuille, {}, series, configuration)
+        assert rapport.correlations
+        assert rapport.correlations[0].valeur is None
+        assert rapport.correlations[0].motif_indisponible
+        assert not any("fortement corrélées" in a for a in rapport.avertissements)
+
+    def test_le_seuil_declare_decide_de_l_alerte(
+        self,
+        configuration: Configuration,
+        moteur_frais: MoteurFrais,
+        moteur_fiscal: MoteurFiscal,
+        fabrique_serie: Callable[..., SerieTechnique],
+        fabrique_transaction: Callable[..., Transaction],
+    ) -> None:
+        series = self._series_liees(fabrique_serie)
+        portefeuille = self._portefeuille(moteur_frais, moteur_fiscal, fabrique_transaction)
+        tolerant = configuration.model_copy(
+            update={
+                "risque": configuration.risque.model_copy(
+                    update={"correlation_alerte": Decimal("1.01")}
+                )
+            }
+        )
+        rapport = controler(portefeuille, {}, series, tolerant)
+        assert not any("fortement corrélées" in a for a in rapport.avertissements)

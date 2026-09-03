@@ -112,7 +112,9 @@ def restituer(etat: EtatSysteme) -> str:
 
 
 def restituer_criblage(
-    criblage: Criblage, propositions: Mapping[str, Proposition] | None = None
+    criblage: Criblage,
+    propositions: Mapping[str, Proposition] | None = None,
+    taille: int = 20,
 ) -> str:
     """Restitution texte du criblage de la cote.
 
@@ -139,11 +141,20 @@ def restituer_criblage(
             f"  {classement.description.strip()}",
             "",
         ]
-        for place, rang in enumerate(classement.classes, start=1):
+        tete = classement.tete(taille)
+        for place, rang in enumerate(tete, start=1):
             cours = format_xof(rang.analyse.cours) if rang.analyse.cours else "cours absent"
             lignes.append(
                 f"  {place:>2}. {rang.valeur:.3f}  {rang.ticker:<8} {cours:>16}"
                 f"   couverture {rang.score.couverture:.0%}"
+            )
+        reste = len(classement.classes) - len(tete)
+        if reste > 0:
+            # Jamais de troncature muette : le nombre omis et le réglage qui l'a
+            # décidé figurent tous les deux.
+            lignes.append(
+                f"   … {reste} valeur(s) classée(s) de plus, non affichée(s) — "
+                f"`analyse.taille_classement` vaut {taille}."
             )
         for rang in classement.ecartes:
             lignes.append(f"   ——      {rang.ticker:<8} {rang.score.motif_absent}")

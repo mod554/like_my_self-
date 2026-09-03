@@ -243,6 +243,72 @@ s'abstient s'il est illisible, mais la décision d'ensemble vous revient.
 verra rien — et le dira. Aucun contournement n'est fourni : restez sur le fichier
 manuel, ou trouvez une réponse de données documentée.
 
+### Un dépôt public de CSV : la première source réellement observée
+
+Le connecteur `csv_distant` lit un dépôt de fichiers CSV servis en HTTP, **un
+fichier par valeur**. C'est la forme que prennent les dépôts de données tenus à
+jour automatiquement par des tiers.
+
+Contrairement à toutes les autres sources décrites ici, celle-ci a été
+**interrogée pour de vrai** et sa structure relevée sur les fichiers réels, le
+3 septembre 2026. C'est le seul niveau de preuve « observé » du dépôt.
+
+Ce qui a été constaté, et qui est recopié dans la configuration livrée :
+
+| Constat | Valeur |
+|---|---|
+| En-têtes, identiques sur les 66 fichiers quotidiens | `Date,Open,High,Low,Close,Volume` |
+| Format de date | `AAAA-MM-JJ` |
+| Actions / indices | 49 actions, 18 indices |
+| Cours | **entiers** pour les actions, **décimaux** pour les indices |
+| Profondeur | 158 691 séances, de 1998-09-16 à 2026-09-02 |
+| Lignes incohérentes | 40 (plus-haut inférieur à l'ouverture ou à la clôture) |
+| Séance sans transaction | **absente du fichier**, jamais présente à zéro |
+
+Trois conséquences pratiques.
+
+**Les indices ne sont pas des actions.** Ils partagent l'arborescence mais
+cotent en décimales et sans volume. Ne les mettez pas dans `univers.csv` : le
+XOF est entier, et ils seraient rejetés — à juste titre.
+
+**Une séance manquante n'est pas une séance sans transaction.** Le connecteur ne
+comble rien : il rapporte ce qui est publié, et c'est la construction de série,
+calendrier en main, qui tranche ensuite. Inventer une barre `SANS_TRANSACTION`
+reviendrait à affirmer qu'aucun échange n'a eu lieu, ce que le fichier ne dit pas.
+
+**Les 40 lignes incohérentes finissent en quarantaine, toutes seules.** Aucune
+n'a été retirée à la main : la couche d'anomalies les détecte, les écrit en base
+pour investigation, les exclut de tous les calculs et émet une alerte.
+
+### Le montant échangé, quand la source ne le publie pas
+
+Ce dépôt publie le volume en **titres**, jamais en XOF. Or le montant échangé
+mesure la profondeur du marché, donc la confiance accordée à chaque valeur :
+sans lui, **aucune valeur n'est classable** et le criblage rend une cote vide.
+
+L'option `volume_xof_depuis_cours` calcule le montant comme `clôture × volume`.
+Elle est **désactivée par défaut**, et pour cause : dériver ce chiffre au jugé
+fausserait tous les classements sans le dire.
+
+Elle a été activée ici après vérification : dans ses propres fichiers
+d'instantané, ce dépôt calcule lui-même `Volume_XOF = Cours × Volume_Titres` —
+exactement, sur les 45 valeurs comparables. C'est cohérent avec le fixing de la
+BRVM, où une séance se dénoue à un cours unique. Sur un marché continu, l'égalité
+ne tiendrait pas.
+
+Le montant ainsi obtenu porte la mention de son origine dans le commentaire de
+chaque cotation : un montant calculé ne se confond pas avec un montant publié,
+ni en base, ni dans un export.
+
+### Le référentiel est recopié en base à chaque cycle
+
+`marche.fichier_univers` est une donnée de **configuration** ; la base n'en est
+que le reflet. Le cycle d'ingestion l'y recopie avant de collecter.
+
+Une valeur retirée du fichier n'est pas supprimée de la base : des cotations et
+des transactions la référencent, et effacer son libellé rendrait un historique
+illisible. Marquez-la `actif: false` plutôt que de l'ôter.
+
 ### Ce qui est pré-rempli, et sur quelle preuve
 
 `config/config.sg-capital-2026.yaml` contient deux sources réseau pré-remplies et

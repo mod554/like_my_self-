@@ -194,7 +194,14 @@ def _critere_repli(
 def _critere_volatilite(
     serie: SerieTechnique, configuration: Configuration, bornes: ConfigBornes
 ) -> Critere:
-    mesure = calculer_volatilite(serie, configuration.risque.seances_par_an)
+    # La fenêtre déclarée est passée explicitement : sans elle, la volatilité se
+    # mesurait sur tout l'historique disponible, et le réglage de l'utilisateur
+    # ne faisait rien — sans le moindre message.
+    mesure = calculer_volatilite(
+        serie,
+        configuration.risque.seances_par_an,
+        fenetre=configuration.risque.fenetre_volatilite,
+    )
     if mesure.valeur is None:
         return Critere.absent(
             "volatilite", "Volatilité", mesure.motif_indisponible or "non calculable"

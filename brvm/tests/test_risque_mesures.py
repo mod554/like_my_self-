@@ -8,7 +8,10 @@ from decimal import Decimal
 
 import pytest
 
+from brvm.config.modeles import Configuration
+from brvm.indicators.catalogue import Indicateurs
 from brvm.indicators.serie import SerieTechnique
+from brvm.market.analyse import analyser
 from brvm.risk.mesures import (
     calculer_correlation,
     calculer_drawdown,
@@ -160,3 +163,49 @@ class TestCorrelation:
         b = fabrique_serie([2000, 2100], ticker="TEST2")
         resultat = calculer_correlation(a, b, seances_minimum=1)
         assert (resultat.ticker_a, resultat.ticker_b) == ("TEST1", "TEST2")
+
+
+class TestFenetreEffective:
+    """La fenêtre déclarée doit changer le résultat, sinon elle ne sert à rien.
+
+    Elle était déclarée dans les trois configurations livrées et lue par aucun
+    calcul : toutes les volatilités portaient sur l'historique entier.
+    """
+
+    def test_la_fenetre_borne_reellement_le_calcul(
+        self, fabrique_serie: Callable[..., SerieTechnique]
+    ) -> None:
+        # Cours calmes puis agités : une fenêtre courte ne doit voir que la fin.
+        cours = [1000 + (i % 2) for i in range(40)] + [1000 + (i % 2) * 300 for i in range(40)]
+        serie = fabrique_serie(cours)
+        courte = calculer_volatilite(serie, seances_par_an=250, fenetre=20)
+        longue = calculer_volatilite(serie, seances_par_an=250, fenetre=79)
+        assert courte.valeur is not None and longue.valeur is not None
+        assert courte.nb_rendements == 20
+        assert longue.nb_rendements == 79
+        assert courte.valeur > longue.valeur
+
+    def test_le_critere_de_marche_emploie_la_fenetre_configuree(
+        self, fabrique_serie: Callable[..., SerieTechnique], configuration: Configuration
+    ) -> None:
+        """Le critère de volatilité du criblage doit passer la fenêtre déclarée."""
+        cours = [1000 + (i % 2) for i in range(200)] + [1000 + (i % 2) * 300 for i in range(60)]
+        serie = fabrique_serie(cours)
+        analyse = analyser(
+            ticker="TEST1",
+            serie=serie,
+            indicateurs=Indicateurs(serie, configuration),
+            configuration=configuration,
+        )
+        critere = analyse.criteres["volatilite"]
+        attendue = calculer_volatilite(
+            serie,
+            configuration.risque.seances_par_an,
+            fenetre=configuration.risque.fenetre_volatilite,
+        )
+        assert critere.valeur == attendue.annualisee
+        # Et surtout : ce n'est PAS la volatilité de tout l'historique.
+        assert (
+            critere.valeur
+            != calculer_volatilite(serie, configuration.risque.seances_par_an).annualisee
+        )

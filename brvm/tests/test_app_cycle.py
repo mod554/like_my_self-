@@ -248,22 +248,36 @@ class TestLigneDeCommande:
         principal(["--config", str(self._config(dossier_config)), "cribler"])
         assert "RÉPARTITION POSSIBLE" not in capsys.readouterr().out
 
-    def test_cribler_refuse_un_profil_inconnu(
+    def test_cribler_sur_base_vide_accuse_le_referentiel_pas_le_profil(
         self, dossier_config: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
+        """Sans univers, aucun profil n'est appliqué. Dire « profil inconnu »
+        enverrait chercher au mauvais endroit."""
         code = principal(
             [
                 "--config",
                 str(self._config(dossier_config)),
                 "cribler",
-                "--capital",
-                "5000000",
                 "--horizon",
                 "moyen_terme",
             ]
         )
         assert code == ECHEC
-        assert "Profils déclarés" in capsys.readouterr().err
+        erreur = capsys.readouterr().err
+        assert "référentiel des valeurs est vide" in erreur
+        assert "collecter" in erreur
+
+    def test_cribler_refuse_un_profil_inconnu(
+        self, dossier_config: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = self._config(dossier_config)
+        principal(["--config", str(config), "collecter"])
+        capsys.readouterr()
+        code = principal(["--config", str(config), "cribler", "--horizon", "moyen_terme"])
+        assert code == ECHEC
+        erreur = capsys.readouterr().err
+        assert "Profils déclarés" in erreur
+        assert "court_terme" in erreur
 
     def test_configuration_invalide_donne_un_code_dechec(self, tmp_path: Path) -> None:
         manquante = tmp_path / "absente.yaml"

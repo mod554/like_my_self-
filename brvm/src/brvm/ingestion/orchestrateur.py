@@ -37,6 +37,7 @@ from brvm.ingestion.anomalies import (
 )
 from brvm.ingestion.base import DataSource, ResultatCollecte
 from brvm.ingestion.fabrique import construire_sources_actives
+from brvm.ingestion.univers import charger_univers
 from brvm.storage.base import BaseDonnees
 from brvm.storage.depots import (
     DepotAnomalies,
@@ -45,7 +46,7 @@ from brvm.storage.depots import (
     DepotJournalCollectes,
     ResumeEcriture,
 )
-from brvm.utils.erreurs import ErreurConfiguration
+from brvm.utils.erreurs import ErreurBrvm, ErreurConfiguration
 from brvm.utils.journalisation import obtenir_journal
 
 _journal = obtenir_journal("ingestion.orchestrateur")
@@ -116,6 +117,31 @@ class Orchestrateur:
 
     # --------------------------------------------------------------------- API
 
+    def synchroniser_univers(self) -> int:
+        """Recopie le référentiel de valeurs déclaré dans la base.
+
+        Une valeur retirée du fichier n'est pas supprimée de la base : des
+        cotations et des transactions peuvent la référencer, et effacer son
+        libellé rendrait un historique illisible. Marquez-la `actif: false`
+        plutôt que de l'ôter.
+
+        Returns:
+            Le nombre de valeurs écrites, ou 0 si le fichier est absent — ce
+            n'est pas une erreur : on peut collecter avant d'avoir saisi la cote.
+        """
+        try:
+            instruments = charger_univers(self.configuration.marche.fichier_univers)
+        except ErreurBrvm as exc:
+            _journal.warning(
+                "Référentiel des valeurs illisible : la base n'est pas mise à jour",
+                extra={"detail": str(exc)},
+            )
+            return 0
+        for instrument in instruments:
+            self.depot_instruments.enregistrer(instrument)
+        _journal.info("Référentiel synchronisé", extra={"valeurs": len(instruments)})
+        return len(instruments)
+
     def executer(
         self, jour: date | None = None, maintenant: datetime | None = None
     ) -> list[BilanIngestion]:
@@ -128,6 +154,13 @@ class Orchestrateur:
                 où l'ancienneté des données est attendue et ne doit pas déclencher
                 d'anomalie de péremption.
         """
+        # Le référentiel est une donnée de CONFIGURATION : la base en est le
+        # reflet, jamais la source. On le remet en phase à chaque cycle, sinon
+        # il reste vide et tout ce qui en dépend s'éteint en silence — le
+        # criblage ne voit aucun univers, la détection de ticker inconnu ne se
+        # déclenche jamais, les concentrations sectorielles n'ont pas de secteur.
+        self.synchroniser_univers()
+
         detecteur = DetecteurAnomalies(
             self.configuration,
             self.calendrier,

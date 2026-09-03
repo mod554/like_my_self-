@@ -112,8 +112,10 @@ def cribler(
             instant=maintenant,
             jusqu_a=borne,
             avertissements=(
-                "Le référentiel des valeurs est vide. Chargez `univers.csv` en "
-                "base avant de cribler la cote.",
+                "Le référentiel des valeurs est vide en base. Renseignez "
+                "`marche.fichier_univers`, puis lancez `collecter` : le cycle "
+                "d'ingestion y recopie l'univers déclaré. Le criblage lit la "
+                "base, il ne lit pas le fichier directement.",
             ),
         )
 

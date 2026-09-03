@@ -228,6 +228,75 @@ sources:
 #
 #  applicable_a : ACHAT | VENTE | LES_DEUX
 # ------------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Dépôt public de données BRVM, tenu à jour par un tiers.
+  #
+  # NIVEAU DE PREUVE : OBSERVÉ. Contrairement aux autres sources de ce fichier,
+  # celle-ci a été interrogée pour de vrai depuis l'environnement de
+  # développement, et sa structure relevée sur les fichiers réels le 03/09/2026 :
+  #   • 49 actions et 18 indices, un dossier par valeur ;
+  #   • en-têtes identiques sur les 66 fichiers quotidiens :
+  #     Date,Open,High,Low,Close,Volume ;
+  #   • dates en AAAA-MM-JJ, cours ENTIERS pour les actions (les indices, eux,
+  #     cotent en décimales : ne les mettez pas dans univers.csv) ;
+  #   • 158 691 séances de 1998-09-16 à 2026-09-02, dont 40 lignes incohérentes
+  #     (plus-haut inférieur à l'ouverture ou à la clôture) que la couche
+  #     d'anomalies met en quarantaine d'elle-même ;
+  #   • une séance SANS TRANSACTION est ABSENTE du fichier, elle n'y figure pas
+  #     à zéro. Le connecteur ne comble rien : c'est le calendrier qui tranche.
+  #
+  # CE QUI RESTE À VÉRIFIER PAR VOUS :
+  #   • les conditions d'utilisation du dépôt et sa licence (aucune n'était
+  #     publiée à la date du relevé) ;
+  #   • la correspondance des tickers avec la cote officielle, et les
+  #     radiations ou introductions postérieures à votre capture d'univers ;
+  #   • la fréquence réelle de mise à jour. Le dépôt annonce « toutes les 15
+  #     minutes de 9h à 15h UTC en semaine » ; l'en-tête HTTP Last-Modified de
+  #     chaque fichier reste le seul juge de son âge réel.
+  #
+  # CE N'EST PAS UNE SOURCE OFFICIELLE. Recoupez avec la BRVM avant toute
+  # décision engageant de l'argent.
+  - nom: brvm_data_public
+    type: csv_distant
+    actif: false          # passez à true après avoir lu ce qui précède
+    priorite: 2
+    url_base: https://raw.githubusercontent.com/Fredysessie/brvm-data-public/main/data/{ticker}/{ticker}.daily.csv
+    timeout_s: 30
+    tentatives_max: 3
+    backoff_initial_s: 1
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 15
+    age_max_minutes: 2880   # 2 jours : le dépôt publie la clôture de la veille
+    csv_distant:
+      colonne_date: Date
+      format_date: "%Y-%m-%d"
+      # Champ du système → en-tête réellement publié. Relevé sur le fichier,
+      # pas supposé : une colonne mal appariée produirait des cours faux.
+      colonnes:
+        ouverture: Open
+        plus_haut: High
+        plus_bas: Low
+        cloture: Close
+        volume_titres: Volume
+      # Rattrapage d'historique. Les barres anciennes seront signalées périmées
+      # par le contrôle de fraîcheur : c'est attendu.
+      historique: true
+      profondeur_jours: 500
+      # Le dépôt publie le volume en TITRES, jamais en XOF. Or le montant
+      # échangé mesure la profondeur du marché, donc la confiance accordée à
+      # chaque valeur : sans lui, AUCUNE valeur n'est classable.
+      #
+      # VÉRIFIÉ le 03/09/2026 : le dépôt calcule lui-même, dans ses fichiers
+      # d'instantané, Volume_XOF = Cours × Volume_Titres — exactement, sur les
+      # 45 valeurs comparables. C'est cohérent avec le fixing de la BRVM, où
+      # une séance se dénoue à un cours unique.
+      #
+      # Le montant ainsi calculé porte la mention de son origine dans le
+      # commentaire de chaque cotation : il ne se confond pas avec un publié.
+      volume_xof_depuis_cours: true
+
 frais:
   # À RENSEIGNER — nom de la SGI et date de la grille utilisée. Obligatoire :
   # un barème sans provenance n'est pas auditable.
@@ -325,6 +394,7 @@ fiscalite:
 # ------------------------------------------------------------------------------
 #  Ingestion — politique commune à tous les connecteurs
 # ------------------------------------------------------------------------------
+
 ingestion:
   # [FAIT] À RENSEIGNER — identifiez votre robot auprès des serveurs interrogés :
   # nom de l'outil et un moyen de vous joindre. Un robot anonyme est une
@@ -485,6 +555,10 @@ risque:
   drawdown_alerte: 0.15
   fenetre_volatilite: 60
   seances_par_an: 250
+  # Corrélation au-delà de laquelle deux lignes détenues sont signalées.
+  # [PRÉFÉRENCE] Trois lignes de 15 % qui varient ensemble font une position
+  # de 45 % qu'aucun contrôle de poids ne voit.
+  correlation_alerte: 0.80
   seances_minimum_correlation: 20
 
 # ------------------------------------------------------------------------------
