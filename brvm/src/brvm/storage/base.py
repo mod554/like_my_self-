@@ -19,7 +19,7 @@ from typing import Final
 from brvm.utils.erreurs import ErreurStockage
 
 #: Version du schéma embarqué dans ce module.
-VERSION_SCHEMA: Final[int] = 1
+VERSION_SCHEMA: Final[int] = 2
 
 _FICHIER_SCHEMA: Final[Path] = Path(__file__).with_name("schema.sql")
 

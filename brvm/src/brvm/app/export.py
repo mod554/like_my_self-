@@ -56,6 +56,21 @@ def _pourcent(valeur: Decimal | None) -> float | None:
     return float(valeur) if valeur is not None else None
 
 
+def _ligne_performance(etat: EtatSysteme) -> str:
+    """La performance, ou la raison précise de son absence.
+
+    Elle n'est pas approchée : un rendement qu'on ne peut pas fonder ne se
+    remplace pas par un nombre plausible.
+    """
+    resultat = etat.performance
+    if resultat is None or resultat.valeur is None:
+        return f"Performance : {etat.motif_performance_absente}"
+    return (
+        f"Performance (TWR, apports et retraits neutralisés) : {resultat.valeur:.2%} "
+        f"sur {len(resultat.sous_periodes)} sous-période(s)"
+    )
+
+
 def restituer(etat: EtatSysteme) -> str:
     """Restitution texte complète, sans aucune dépendance.
 
@@ -71,7 +86,7 @@ def restituer(etat: EtatSysteme) -> str:
         # `resume()` réaffiche le bandeau : il est déjà en tête, on ne le répète pas.
         "\n".join(etat.portefeuille.resume(etat.instant).splitlines()[1:]),
         "",
-        f"Performance : {etat.motif_performance_absente}",
+        _ligne_performance(etat),
         "",
         "-" * 78,
         "LIGNES",

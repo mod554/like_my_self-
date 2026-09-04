@@ -23,9 +23,12 @@ from brvm.app.etat import EtatSysteme, assembler
 from brvm.app.surveillance import rassembler
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
+from brvm.domain.modeles import Valorisation
 from brvm.indicators.signaux import Signal
 from brvm.ingestion.orchestrateur import BilanIngestion, Orchestrateur
+from brvm.portfolio.historique import photographier
 from brvm.storage.base import BaseDonnees
+from brvm.storage.depots import DepotValorisations
 from brvm.utils.journalisation import obtenir_journal
 
 _journal = obtenir_journal("app.cycle")
@@ -112,7 +115,8 @@ class Cycle:
             avertissements.append(f"État du portefeuille non composable : {exc}")
             etat = None
 
-        alertes = self._constater(bilans, etat, maintenant)
+        valorisations = self._historiser(etat, seance, maintenant, avertissements)
+        alertes = self._constater(bilans, etat, maintenant, valorisations)
         diffusion = self.diffuseur.diffuser(self.diffuseur.retenir(alertes))
         self.diffuseur.oublier_absents(alertes)
         if diffusion.avertissements:
@@ -137,11 +141,47 @@ class Cycle:
         )
         return resultat
 
+    def _historiser(
+        self,
+        etat: EtatSysteme | None,
+        seance: date | None,
+        maintenant: datetime,
+        avertissements: list[str],
+    ) -> tuple[Valorisation, ...]:
+        """Fige la valorisation du jour, puis relit la série complète.
+
+        Sans cette écriture, rien ne s'accumule et le repli reste éternellement
+        non mesurable. L'écriture est idempotente sur la date : rejouer un cycle
+        met la ligne à jour, il n'en crée pas une seconde.
+
+        Un portefeuille vide n'est pas historisé : une suite de zéros ferait
+        croire à un actif qui existe et ne bouge pas.
+        """
+        depot = DepotValorisations(self.base)
+        if etat is not None and etat.portefeuille.lignes:
+            jour = seance or maintenant.date()
+            try:
+                with self.base.transaction():
+                    depot.enregistrer(photographier(etat.portefeuille, jour, maintenant))
+            except Exception as exc:  # une historisation ratée n'emporte pas le cycle
+                _journal.exception("Valorisation non historisée")
+                avertissements.append(
+                    f"Valorisation du {jour} non enregistrée : {exc}. Le repli sera "
+                    "mesuré sur une série incomplète."
+                )
+        try:
+            return tuple(depot.lire())
+        except Exception as exc:
+            _journal.exception("Historique de valorisation illisible")
+            avertissements.append(f"Historique de valorisation illisible : {exc}")
+            return ()
+
     def _constater(
         self,
         bilans: tuple[BilanIngestion, ...],
         etat: EtatSysteme | None,
         maintenant: datetime,
+        valorisations: tuple[Valorisation, ...] = (),
     ) -> list[Alerte]:
         return rassembler(
             self.configuration,
@@ -151,6 +191,7 @@ class Cycle:
             portefeuille=etat.portefeuille if etat else None,
             rapport=etat.risque if etat else None,
             signaux=self._signaux_recents(etat),
+            valorisations=valorisations,
         )
 
     def _signaux_recents(self, etat: EtatSysteme | None) -> tuple[Signal, ...]:

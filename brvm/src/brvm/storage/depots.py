@@ -45,6 +45,7 @@ from brvm.domain.modeles import (
     LigneFrais,
     OperationSurTitre,
     Transaction,
+    Valorisation,
 )
 from brvm.storage.base import BaseDonnees
 from brvm.utils.erreurs import ErreurStockage
@@ -816,3 +817,69 @@ class DepotParametres(_Depot):
             "SELECT valeur FROM parametres WHERE cle = ?", (cle,)
         ).fetchone()
         return defaut if ligne is None else ligne["valeur"]
+
+
+class DepotValorisations(_Depot):
+    """Historique de valorisation, une ligne par séance.
+
+    L'écriture est idempotente sur la date de séance : rejouer un cycle sur une
+    séance déjà valorisée met la ligne à jour plutôt que d'en créer une seconde.
+    Deux valorisations d'une même séance ne peuvent pas coexister — elles se
+    contrediraient, et rien ne dirait laquelle croire.
+    """
+
+    def enregistrer(self, valorisation: Valorisation) -> None:
+        self.connexion.execute(
+            """
+            INSERT INTO valorisations
+                (date_seance, valeur_titres, especes, actif_total, cout_total,
+                 plus_value_brute, nb_lignes, nb_non_valorisees, horodatage_calcul,
+                 motif_especes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (date_seance) DO UPDATE SET
+                valeur_titres = excluded.valeur_titres,
+                especes = excluded.especes,
+                actif_total = excluded.actif_total,
+                cout_total = excluded.cout_total,
+                plus_value_brute = excluded.plus_value_brute,
+                nb_lignes = excluded.nb_lignes,
+                nb_non_valorisees = excluded.nb_non_valorisees,
+                horodatage_calcul = excluded.horodatage_calcul,
+                motif_especes = excluded.motif_especes
+            """,
+            (
+                valorisation.date_seance.isoformat(),
+                valorisation.valeur_titres,
+                valorisation.especes,
+                valorisation.actif_total,
+                valorisation.cout_total,
+                valorisation.plus_value_brute,
+                valorisation.nb_lignes,
+                valorisation.nb_non_valorisees,
+                valorisation.horodatage_calcul.isoformat(),
+                valorisation.motif_especes,
+            ),
+        )
+
+    def lire(self, debut: date | None = None, fin: date | None = None) -> list[Valorisation]:
+        """Série chronologique, bornée si demandé. Ordre croissant garanti."""
+        requete = "SELECT * FROM valorisations"
+        conditions: list[str] = []
+        parametres: list[Any] = []
+        if debut is not None:
+            conditions.append("date_seance >= ?")
+            parametres.append(debut.isoformat())
+        if fin is not None:
+            conditions.append("date_seance <= ?")
+            parametres.append(fin.isoformat())
+        if conditions:
+            requete += " WHERE " + " AND ".join(conditions)
+        requete += " ORDER BY date_seance"
+        lignes = self.connexion.execute(requete, parametres).fetchall()
+        return [Valorisation.model_validate(dict(ligne)) for ligne in lignes]
+
+    def derniere(self) -> Valorisation | None:
+        ligne = self.connexion.execute(
+            "SELECT * FROM valorisations ORDER BY date_seance DESC LIMIT 1"
+        ).fetchone()
+        return Valorisation.model_validate(dict(ligne)) if ligne else None

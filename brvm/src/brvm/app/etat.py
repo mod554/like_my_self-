@@ -27,6 +27,8 @@ from brvm.indicators.serie import SerieTechnique, construire_serie
 from brvm.indicators.signaux import DetecteurSignaux, Signal
 from brvm.portfolio.fiscalite import MoteurFiscal
 from brvm.portfolio.frais import MoteurFrais
+from brvm.portfolio.historique import points_de_performance
+from brvm.portfolio.performance import ResultatTwr, calculer_twr
 from brvm.portfolio.positions import ResultatSuivi, suivre_les_deux
 from brvm.portfolio.valorisation import Portefeuille, valoriser
 from brvm.risk.controles import RapportRisque, controler
@@ -39,6 +41,7 @@ from brvm.storage.depots import (
     DepotJournalCollectes,
     DepotOperationsSurTitres,
     DepotTransactions,
+    DepotValorisations,
 )
 from brvm.utils.erreurs import ErreurValidation
 from brvm.utils.journalisation import obtenir_journal
@@ -57,11 +60,13 @@ _journal = obtenir_journal("app.etat")
 #: `brvm.portfolio.performance.calculer_twr` est écrit, testé, et attend cette
 #: suite de valorisations. Tant qu'elle n'existe pas, aucune performance n'est
 #: publiée : un chiffre plausible et faux serait pire que pas de chiffre.
+#: Rendu quand la performance ne peut pas encore être mesurée. Le motif exact
+#: vient du calcul lui-même — série trop courte, espèces inconnues — et non de
+#: cette constante, qui ne sert que de repli.
 MOTIF_PERFORMANCE_ABSENTE: str = (
-    "Aucune performance chiffrée n'est publiée : la mesurer correctement exige un "
-    "historique de compte espèces (apports, retraits, produit des ventes, dividendes) "
-    "que le système n'enregistre pas encore. Un rendement calculé sur la seule valeur "
-    "des titres serait faux dès la première ligne soldée."
+    "Aucune performance chiffrée n'est publiée : l'historique de valorisation ne "
+    "comporte pas encore assez de points. Il se remplit à chaque cycle de "
+    "collecte ; deux séances suffisent pour un premier rendement."
 )
 
 #: Profondeur d'historique relue par valeur, en séances. Assez pour toutes les
@@ -102,7 +107,10 @@ class EtatSysteme:
     anomalies: tuple[Anomalie, ...] = ()
     journal_collectes: tuple[str, ...] = ()
     avertissements: tuple[str, ...] = ()
-    #: Pourquoi aucune performance chiffrée n'est publiée ici. Voir
+    #: Rendement pondéré par le temps, quand il est mesurable. Les apports et
+    #: retraits en sont neutralisés : ils ne sont pas de la performance.
+    performance: ResultatTwr | None = None
+    #: Pourquoi aucune performance chiffrée n'est publiée. Voir
     #: MOTIF_PERFORMANCE_ABSENTE.
     motif_performance_absente: str = ""
 
@@ -191,7 +199,15 @@ def assembler(
         if etat is not None:
             valeurs[ticker] = etat
 
-    portefeuille = valoriser(suivi, cours, moteur_frais, moteur_fiscal, flux=flux, reference=borne)
+    portefeuille = valoriser(
+        suivi,
+        cours,
+        moteur_frais,
+        moteur_fiscal,
+        flux=flux,
+        reference=borne,
+        transactions=transactions,
+    )
     risque = controler(
         portefeuille,
         instruments,
@@ -201,6 +217,17 @@ def assembler(
             ticker: etat.indicateurs.atr() for ticker, etat in valeurs.items() if etat.serie.barres
         },
     )
+
+    # La performance se mesure sur l'historique de valorisation, pas sur la
+    # photographie du jour : un rendement a besoin d'un avant et d'un après.
+    valorisations = DepotValorisations(base).lire(fin=borne)
+    points, motif_serie = points_de_performance(valorisations, flux)
+    if motif_serie is not None:
+        performance = None
+        motif_performance = motif_serie
+    else:
+        performance = calculer_twr(points)
+        motif_performance = performance.motif_indisponible or ""
 
     return EtatSysteme(
         instant=maintenant,
@@ -212,7 +239,8 @@ def assembler(
         anomalies=tuple(DepotAnomalies(base).lister(ouvertes_seulement=True)),
         journal_collectes=_journal_recent(base),
         avertissements=tuple(avertissements) + tuple(suivi.avertissements),
-        motif_performance_absente=MOTIF_PERFORMANCE_ABSENTE,
+        performance=performance,
+        motif_performance_absente=motif_performance,
     )
 
 

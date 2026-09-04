@@ -217,3 +217,31 @@ CREATE TABLE IF NOT EXISTS parametres (
     valeur TEXT NOT NULL,
     maj    TEXT NOT NULL
 );
+
+-- -----------------------------------------------------------------------------
+--  Historique de valorisation
+-- -----------------------------------------------------------------------------
+--  Une ligne par séance : la photographie du portefeuille ce jour-là.
+--
+--  Sans cet historique, ni la performance ni le repli ne sont mesurables — c'est
+--  ce qui rendait `risque.drawdown_alerte` inopérant, et ce qui avait fait
+--  retirer le TWR : un rendement calculé sur la seule valeur des titres part à
+--  −100 % dès qu'une ligne est soldée.
+--
+--  `especes` et `actif_total` sont NULLABLE à dessein : sans apport déclaré, le
+--  solde n'est pas connaissable, et l'écrire à zéro serait une affirmation
+--  fausse. Une valorisation sans espèces reste utile pour les titres.
+CREATE TABLE IF NOT EXISTS valorisations (
+    date_seance       TEXT    NOT NULL PRIMARY KEY,
+    valeur_titres     INTEGER NOT NULL,
+    especes           INTEGER,
+    actif_total       INTEGER,
+    cout_total        INTEGER NOT NULL,
+    plus_value_brute  INTEGER NOT NULL,
+    nb_lignes         INTEGER NOT NULL,
+    nb_non_valorisees INTEGER NOT NULL DEFAULT 0,
+    horodatage_calcul TEXT    NOT NULL,
+    motif_especes     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_valorisations_date ON valorisations (date_seance);

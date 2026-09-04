@@ -211,6 +211,52 @@ def _plus_values_realisees(etat: EtatSysteme) -> dict[str, int]:
     return resultats
 
 
+def _performance(etat: EtatSysteme) -> dict[str, Any]:
+    """Le rendement, ou la raison de son absence — jamais un zéro de remplacement.
+
+    Le champ était figé à `disponible: False`. Il aurait contredit l'état dès
+    que la performance est devenue mesurable.
+    """
+    resultat = etat.performance
+    if resultat is None or resultat.valeur is None:
+        return {
+            "disponible": False,
+            "valeur": None,
+            "motif": etat.motif_performance_absente,
+            "sous_periodes": [],
+        }
+    return {
+        "disponible": True,
+        "valeur": _nombre(resultat.valeur, 6),
+        "motif": None,
+        "sous_periodes": [
+            {
+                "debut": periode.debut.isoformat(),
+                "fin": periode.fin.isoformat(),
+                "rendement": _nombre(periode.rendement, 6),
+            }
+            for periode in resultat.sous_periodes
+        ],
+    }
+
+
+def _tresorerie(etat: EtatSysteme) -> dict[str, Any]:
+    """Le compte espèces, décomposé. Un solde inconnu reste ``null``."""
+    compte = etat.portefeuille.tresorerie
+    return {
+        "mesurable": compte.mesurable,
+        "solde": compte.solde,
+        "motif_indisponible": compte.motif_indisponible,
+        "apports": compte.apports,
+        "retraits": compte.retraits,
+        "dividendes_nets": compte.dividendes_nets,
+        "frais_garde": compte.frais_garde,
+        "decaissements_achats": compte.decaissements_achats,
+        "encaissements_ventes": compte.encaissements_ventes,
+        "actif_total": etat.portefeuille.actif_total,
+    }
+
+
 def serialiser(etat: EtatSysteme) -> dict[str, Any]:
     """Transforme l'état assemblé en charge JSON pour l'interface."""
     portefeuille = etat.portefeuille
@@ -239,7 +285,8 @@ def serialiser(etat: EtatSysteme) -> dict[str, Any]:
         },
         "plus_values_realisees": _plus_values_realisees(etat),
         "methode": etat.configuration.general.methode_valorisation.value,
-        "performance": {"disponible": False, "motif": etat.motif_performance_absente},
+        "performance": _performance(etat),
+        "tresorerie": _tresorerie(etat),
         "signaux": _signaux(etat),
         "risque": _risque(etat),
         "courbes": {ticker: courbe(valeur.serie) for ticker, valeur in etat.valeurs.items()},

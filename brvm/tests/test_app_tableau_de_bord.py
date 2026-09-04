@@ -147,7 +147,7 @@ class TestBandeauDeFraicheur:
 
 
 class TestContenu:
-    def test_le_portefeuille_montre_ses_totaux_et_labsence_de_performance(
+    def test_le_portefeuille_montre_ses_totaux_et_le_motif_de_performance(
         self, etat: EtatSysteme
     ) -> None:
         st = simulateur()
@@ -155,7 +155,9 @@ class TestContenu:
         libelles = [libelle for libelle, _ in st.metriques]
         assert "Coût engagé" in libelles
         assert "Valeur" in libelles
-        assert any("compte espèces" in texte for texte in st.affiche["caption"])
+        assert any("valorisation" in texte.lower() for texte in st.affiche["caption"]), (
+            "le motif d'absence de performance doit être affiché"
+        )
 
     def test_les_lignes_portent_lage_de_leur_cours(self, etat: EtatSysteme) -> None:
         st = simulateur()

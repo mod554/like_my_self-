@@ -483,7 +483,6 @@ class TestReglagesEffectivementLus:
     LUS_DANS_LE_MODELE: ClassVar[dict[str, str]] = {
         "applicable_a": "ConfigLigneFrais.concerne",
         "priorite": "Configuration.sources_actives",
-        "drawdown_alerte": "Configuration.avertissements",
     }
 
     @staticmethod

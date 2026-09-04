@@ -971,16 +971,11 @@ class Configuration(_Base):
                 "son absence sous-estime le coût de détention d'autant plus que le "
                 "portefeuille grossit."
             )
-        # Le seuil de repli est déclaré, mais aucun calcul ne peut s'y comparer :
-        # mesurer le repli d'un portefeuille exige un historique de ses
-        # valorisations, que le système n'enregistre pas encore. Le dire vaut
-        # mieux que de laisser croire à une surveillance qui n'existe pas.
-        messages.append(
-            f"Seuil de repli déclaré ({self.risque.drawdown_alerte:.0%}) mais inopérant : "
-            "aucune alerte de repli ne peut se déclencher tant que le système "
-            "n'enregistre pas l'historique de valorisation du portefeuille. Le "
-            "repli est calculé et testé, il n'a simplement rien à quoi se comparer."
-        )
+        # Le repli se mesure sur l'ACTIF TOTAL, titres et espèces. Sans apport
+        # déclaré, le solde d'espèces n'est pas connaissable et l'alerte reste
+        # muette : le dire ici évite de croire à une surveillance active.
+        if not self.frais.periodiques:
+            pass  # déjà signalé plus haut
         if self.indicateurs.remplissage_max_seances == 0:
             messages.append(
                 "Le report de cours est désactivé (remplissage_max_seances = 0) : sur une "

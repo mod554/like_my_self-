@@ -450,6 +450,55 @@ class FluxEspece(ModeleBrvm):
         return self.montant_brut - self.retenue_fiscale - self.frais
 
 
+class Valorisation(ModeleBrvm):
+    """Photographie du portefeuille pour une séance, telle qu'elle sera relue.
+
+    Sans cette série, ni la performance ni le repli ne se mesurent : c'est elle
+    qui manquait, et qui rendait `risque.drawdown_alerte` inopérant.
+
+    `especes` et `actif_total` sont **facultatifs**. Sans apport déclaré, le
+    solde n'est pas connaissable, et l'écrire à zéro serait une affirmation
+    fausse. Le motif accompagne alors l'absence. Une valorisation sans espèces
+    reste utile : elle mesure les titres.
+    """
+
+    date_seance: date
+    valeur_titres: MontantXof
+    cout_total: MontantXof
+    plus_value_brute: int
+    nb_lignes: int = Field(ge=0)
+    nb_non_valorisees: int = Field(default=0, ge=0)
+    horodatage_calcul: AwareDatetime
+    especes: int | None = None
+    actif_total: int | None = None
+    motif_especes: str | None = None
+
+    @model_validator(mode="after")
+    def _valider_coherence(self) -> Valorisation:
+        if self.nb_non_valorisees > self.nb_lignes:
+            raise ValueError(
+                "Plus de lignes non valorisées que de lignes : "
+                f"{self.nb_non_valorisees} sur {self.nb_lignes}."
+            )
+        if (self.especes is None) != (self.actif_total is None):
+            raise ValueError(
+                "Espèces et actif total vont ensemble : l'actif total est la somme "
+                "des titres et des espèces, il n'a pas de sens sans elles."
+            )
+        if self.especes is None and self.motif_especes is None:
+            raise ValueError(
+                "Un solde d'espèces absent doit porter son motif : une absence sans "
+                "raison ne se distingue pas d'un oubli."
+            )
+        if self.actif_total is not None and self.actif_total != self.valeur_titres + (
+            self.especes or 0
+        ):
+            raise ValueError(
+                "L'actif total ne correspond pas à la somme des titres et des espèces."
+            )
+        return self
+
+
 # ------------------------------------------------------------- journal et anomalies
 
 

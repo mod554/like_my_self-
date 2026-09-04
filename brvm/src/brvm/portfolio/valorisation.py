@@ -21,12 +21,13 @@ from datetime import date, datetime
 from decimal import Decimal, localcontext
 
 from brvm.domain.enums import SensOperation, TypeFluxEspece
-from brvm.domain.modeles import Cotation, FluxEspece
+from brvm.domain.modeles import Cotation, FluxEspece, Transaction
 from brvm.domain.monnaie import PRECISION_INTERNE, format_xof
 from brvm.portfolio.fiscalite import MoteurFiscal
 from brvm.portfolio.frais import MoteurFrais
 from brvm.portfolio.performance import ContributionLigne, DonneesLigne, calculer_contributions
 from brvm.portfolio.positions import Position, ResultatSuivi
+from brvm.portfolio.tresorerie import Tresorerie, calculer_tresorerie
 
 _DECIMALES = Decimal("0.000001")
 
@@ -76,8 +77,23 @@ class Portefeuille:
     plus_values_realisees: int
     #: Horodatage du cours le plus ancien utilisé. À afficher sur chaque écran.
     horodatage_le_plus_ancien: datetime | None
+    #: Compte espèces. Son solde peut être inconnu — voir `Tresorerie` : sans
+    #: apport déclaré, la somme des mouvements mesure l'argent dépensé, pas la
+    #: trésorerie disponible.
+    tresorerie: Tresorerie = field(default_factory=Tresorerie)
     contributions: tuple[ContributionLigne, ...] = ()
     avertissements: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def actif_total(self) -> int | None:
+        """Titres valorisés **plus** espèces. ``None`` si le solde est inconnu.
+
+        C'est le seul total qui ait un sens pour mesurer une performance : un
+        portefeuille dont toutes les lignes sont soldées ne vaut pas zéro, son
+        argent est passé en espèces.
+        """
+        solde = self.tresorerie.solde
+        return None if solde is None else self.valeur_totale + solde
 
     @property
     def lignes_non_valorisees(self) -> tuple[LigneValorisee, ...]:
@@ -112,6 +128,14 @@ class Portefeuille:
             f"{format_xof(self.plus_value_latente_nette):>20}",
             f"Dividendes nets encaissés{'':.<26}{format_xof(self.dividendes_nets_encaisses):>20}",
         ]
+        solde = self.tresorerie.solde
+        if solde is None:
+            lignes.append(f"Espèces : non calculables — {self.tresorerie.motif_indisponible}")
+        else:
+            lignes.append(f"Espèces{'':.<44}{format_xof(solde):>20}")
+            total = self.actif_total
+            if total is not None:
+                lignes.append(f"Actif total (titres + espèces){'':.<21}{format_xof(total):>20}")
         if self.lignes_non_valorisees:
             manquants = ", ".join(ligne.ticker for ligne in self.lignes_non_valorisees)
             lignes.append(f"Lignes non valorisées faute de cours : {manquants}")
@@ -134,6 +158,7 @@ def valoriser(
     moteur_fiscal: MoteurFiscal,
     flux: Sequence[FluxEspece] = (),
     reference: date | None = None,
+    transactions: Sequence[Transaction] = (),
 ) -> Portefeuille:
     """Valorise les lignes ouvertes au dernier cours connu.
 
@@ -143,10 +168,14 @@ def valoriser(
             valorisée — elle n'est pas comptée à zéro.
         moteur_frais: pour estimer les frais d'une cession immédiate.
         moteur_fiscal: pour estimer l'impôt d'une cession immédiate.
-        flux: mouvements d'espèces, pour les dividendes encaissés.
+        flux: mouvements d'espèces — dividendes, mais aussi apports, retraits et
+            frais de garde, qui composent le solde du compte.
         reference: date servant au calcul des durées de détention.
+        transactions: achats et ventes, pour leur effet sur les espèces. Sans
+            elles, le solde ignore ce que les ordres ont coûté ou rapporté.
     """
     dividendes = dividendes_par_ticker(flux)
+    tresorerie = calculer_tresorerie(transactions, flux, moteur_frais)
     aujourdhui = reference or date.today()
     lignes: list[LigneValorisee] = []
     avertissements: list[str] = []
@@ -233,6 +262,7 @@ def valoriser(
         dividendes_nets_encaisses=sum(dividendes.values()),
         plus_values_realisees=suivi.plus_values_realisees(),
         horodatage_le_plus_ancien=min(horodatages) if horodatages else None,
+        tresorerie=tresorerie,
         contributions=contributions,
         avertissements=tuple(avertissements),
     )

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from brvm.app.etat import MOTIF_PERFORMANCE_ABSENTE, assembler
+from brvm.app.etat import assembler
 from brvm.app.export import exporter, horodater, restituer
 from brvm.config.modeles import Configuration
 from brvm.domain.calendrier import CalendrierSeances
@@ -126,17 +126,18 @@ class TestAssemblage:
         assert any("TEST2" in message for message in etat.avertissements)
         assert "TEST2" in [ligne.ticker for ligne in etat.portefeuille.lignes_non_valorisees]
 
-    def test_aucune_performance_chiffree_nest_publiee(
+    def test_sans_historique_la_performance_dit_pourquoi_elle_manque(
         self,
         base_peuplee: BaseDonnees,
         configuration: Configuration,
         calendrier: CalendrierSeances,
     ) -> None:
-        """Un rendement calculé sans compte espèces serait faux dès la première
-        ligne soldée : le système dit pourquoi il n'en publie pas."""
+        """Un rendement a besoin d'un avant et d'un après. Tant que l'historique
+        de valorisation est vide, le motif l'explique — il n'est pas approché."""
         etat = assembler(base_peuplee, configuration, calendrier, instant=INSTANT)
-        assert etat.motif_performance_absente == MOTIF_PERFORMANCE_ABSENTE
-        assert "compte espèces" in etat.motif_performance_absente
+        assert etat.performance is None or etat.performance.valeur is None
+        assert etat.motif_performance_absente
+        assert "valorisation" in etat.motif_performance_absente.lower()
 
 
 class TestFraicheur:

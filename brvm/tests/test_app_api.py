@@ -111,10 +111,13 @@ class TestCharge:
         assert f["seuil_minutes"] == etat.configuration.alertes.age_donnee_max_minutes
         assert f["texte"] == etat.entete_fraicheur()
 
-    def test_aucune_performance_chiffree(self, etat: EtatSysteme) -> None:
+    def test_une_performance_non_mesurable_part_avec_sa_raison(self, etat: EtatSysteme) -> None:
+        """Sans historique de valorisation, aucun rendement n'est chiffré, et
+        l'interface reçoit le motif plutôt qu'un zéro."""
         performance = serialiser(etat)["performance"]
         assert performance["disponible"] is False
-        assert "compte espèces" in performance["motif"]
+        assert performance["motif"]
+        assert "valorisation" in performance["motif"].lower()
 
     def test_les_deux_methodes_sont_transmises(self, etat: EtatSysteme) -> None:
         """PMP et FIFO répondent à deux questions : l'interface reçoit les deux."""
@@ -288,3 +291,37 @@ class TestSerialisationMarche:
             assert valeur["assiduite"] is not None
             assert valeur["profondeur"] is not None
             assert valeur["etroitesse"] is not None
+
+
+class TestPerformanceEtTresorerie:
+    """Deux champs qui ne doivent jamais contredire l'état.
+
+    `performance` était figé à `disponible: False` dans la sérialisation : il
+    aurait continué de l'annoncer une fois le rendement devenu mesurable.
+    """
+
+    def test_la_performance_suit_l_etat_et_n_est_pas_figee(self, etat: EtatSysteme) -> None:
+        charge = serialiser(etat)["performance"]
+        mesurable = etat.performance is not None and etat.performance.valeur is not None
+        assert charge["disponible"] is mesurable
+        if mesurable:
+            assert charge["valeur"] is not None
+            assert charge["motif"] is None
+        else:
+            assert charge["valeur"] is None
+            assert charge["motif"]
+
+    def test_la_tresorerie_part_avec_sa_decomposition(self, etat: EtatSysteme) -> None:
+        """Un solde qu'on ne peut pas décomposer ne se vérifie pas contre un
+        relevé de compte."""
+        compte = serialiser(etat)["tresorerie"]
+        for poste in ("apports", "retraits", "dividendes_nets", "frais_garde"):
+            assert poste in compte
+        assert compte["mesurable"] is etat.portefeuille.tresorerie.mesurable
+
+    def test_un_solde_inconnu_reste_null_jamais_zero(self, etat: EtatSysteme) -> None:
+        compte = serialiser(etat)["tresorerie"]
+        if not compte["mesurable"]:
+            assert compte["solde"] is None
+            assert compte["actif_total"] is None
+            assert compte["motif_indisponible"]

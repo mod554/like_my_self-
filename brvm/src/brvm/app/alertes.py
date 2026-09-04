@@ -70,6 +70,12 @@ class CategorieAlerte(StrEnum):
     SEUIL_RISQUE = "SEUIL_RISQUE"
     DONNEE_PERIMEE = "DONNEE_PERIMEE"
     ECHEC_SOURCE = "ECHEC_SOURCE"
+    #: Recul du portefeuille sous son plus-haut. Distinct de SEUIL_RISQUE, qui
+    #: porte sur la composition : un portefeuille parfaitement diversifié peut
+    #: reculer, et un portefeuille concentré peut ne pas reculer.
+    REPLI_PORTEFEUILLE = "REPLI_PORTEFEUILLE"
+    #: Un réglage obligatoire est absent, ou déclaré sans pouvoir servir.
+    CONFIGURATION = "CONFIGURATION"
 
 
 @dataclass(frozen=True, slots=True)

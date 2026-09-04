@@ -24,11 +24,14 @@ from decimal import Decimal
 from brvm.app.alertes import Alerte, CategorieAlerte, NiveauAlerte
 from brvm.config.modeles import Configuration
 from brvm.domain.enums import GraviteAnomalie, StatutCollecte
-from brvm.domain.modeles import Anomalie
+from brvm.domain.modeles import Anomalie, Valorisation
+from brvm.domain.monnaie import format_xof
 from brvm.indicators.signaux import Signal
 from brvm.ingestion.orchestrateur import BilanIngestion
+from brvm.portfolio.historique import serie_actif_total
 from brvm.portfolio.valorisation import Portefeuille
 from brvm.risk.controles import Dimension, RapportRisque
+from brvm.risk.mesures import calculer_drawdown
 
 #: Mention ajoutée à toute alerte portant sur un signal technique. Le système
 #: constate un franchissement ; il ne prédit rien et ne promet aucun rendement.
@@ -297,6 +300,7 @@ def rassembler(
     portefeuille: Portefeuille | None = None,
     rapport: RapportRisque | None = None,
     signaux: Sequence[Signal] = (),
+    valorisations: Sequence[Valorisation] = (),
 ) -> list[Alerte]:
     """Réunit tous les constats du cycle, du plus grave au moins grave."""
     alertes: list[Alerte] = []
@@ -307,6 +311,7 @@ def rassembler(
     if rapport is not None:
         alertes += depuis_risque(rapport, configuration, maintenant)
     alertes += depuis_signaux(signaux, configuration, maintenant)
+    alertes += depuis_repli(valorisations, configuration, maintenant)
     return sorted(
         alertes,
         key=lambda alerte: (
@@ -316,3 +321,78 @@ def rassembler(
             alerte.titre,
         ),
     )
+
+
+def depuis_repli(
+    valorisations: Sequence[Valorisation],
+    configuration: Configuration,
+    maintenant: datetime,
+) -> list[Alerte]:
+    """Alerte sur le recul du portefeuille sous son plus-haut.
+
+    Le seuil `risque.drawdown_alerte` était déclaré dans les trois
+    configurations livrées et ne pouvait se comparer à rien : aucune
+    valorisation n'était conservée. Il est désormais opérant.
+
+    Deux abstentions volontaires. Une **série incomplète** ne produit pas
+    d'alerte approchée : sans espèces connues, un repli mesuré sur les seuls
+    titres afficherait 100 % dès qu'une ligne est soldée. Et un historique trop
+    court ne produit rien non plus — un repli se mesure contre un plus-haut
+    antérieur.
+    """
+    if not configuration.alertes.alerter_seuil_risque:
+        return []
+
+    serie, motif = serie_actif_total(valorisations)
+    if motif is not None:
+        # L'impossibilité de mesurer est elle-même un constat : sans elle,
+        # l'utilisateur croirait que son portefeuille ne recule pas.
+        if not valorisations:
+            return []
+        return [
+            Alerte(
+                categorie=CategorieAlerte.CONFIGURATION,
+                niveau=NiveauAlerte.INFORMATION,
+                titre="Repli du portefeuille non mesurable",
+                message=motif,
+                emise_le=maintenant,
+                contexte={"valorisations": str(len(valorisations))},
+            )
+        ]
+
+    resultat = calculer_drawdown(serie)
+    seuil = configuration.risque.drawdown_alerte
+    if resultat.drawdown_courant < seuil:
+        return []
+
+    plus_haut = resultat.points[-1].plus_haut_atteint
+    return [
+        Alerte(
+            categorie=CategorieAlerte.REPLI_PORTEFEUILLE,
+            niveau=(
+                NiveauAlerte.CRITIQUE
+                if resultat.drawdown_courant >= seuil * 2
+                else NiveauAlerte.AVERTISSEMENT
+            ),
+            titre=f"Repli de {resultat.drawdown_courant:.1%} sous le plus-haut",
+            message=(
+                f"L'actif total est à {format_xof(resultat.points[-1].valeur)}, contre un "
+                f"plus-haut de {format_xof(plus_haut)}. Le seuil que vous avez déclaré est "
+                f"{seuil:.0%}. Repli maximum observé sur la période : "
+                f"{resultat.drawdown_maximum:.1%}"
+                + (
+                    f" le {resultat.date_du_maximum.isoformat()}"
+                    if resultat.date_du_maximum
+                    else ""
+                )
+                + f". {resultat.seances_sous_le_sommet} séance(s) sous le sommet."
+            ),
+            emise_le=maintenant,
+            contexte={
+                "repli_courant": f"{resultat.drawdown_courant:.4f}",
+                "repli_maximum": f"{resultat.drawdown_maximum:.4f}",
+                "seuil": f"{seuil:.4f}",
+                "plus_haut": str(plus_haut),
+            },
+        )
+    ]
