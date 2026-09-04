@@ -1,0 +1,7 @@
+# Jours fériés FICTIFS, destinés aux seuls tests automatisés.
+# Ces dates ne prétendent correspondre à aucun calendrier officiel.
+CI:
+  - 2026-01-01
+  - 2026-05-01
+SN:
+  - 2026-04-04

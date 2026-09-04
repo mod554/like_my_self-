@@ -1,0 +1,216 @@
+# ==============================================================================
+#  Configuration de PUBLICATION — criblage public de la cote BRVM
+# ==============================================================================
+#
+#  Cette configuration ne sert QU'À produire la page publique. Elle ne contient
+#  aucun barème réel, aucun paramètre fiscal personnel et ne valorise aucun
+#  portefeuille : les frais y sont à zéro, parce qu'aucun ordre n'est chiffré.
+#
+#  Ne l'utilisez PAS pour suivre votre portefeuille : les montants seraient faux.
+#  Pour cela, partez de `config.sg-capital-2026.yaml` et renseignez votre grille.
+#
+#  Elle est exécutée par .github/workflows/brvm-publication.yml après la clôture.
+# ==============================================================================
+
+general:
+  devise: XOF
+  fuseau_horaire: Africa/Abidjan
+  repertoire_donnees: ../data/publication
+  base_donnees: ../data/publication/brvm.sqlite3
+  mode_arrondi: HALF_UP
+  methode_valorisation: PMP
+
+marche:
+  pays_place: CI
+  heure_cloture_locale: "15:30"
+  # Univers de référence versionné. Sa provenance et ses limites sont
+  # documentées en tête du fichier : ce n'est pas la cote officielle.
+  fichier_univers: ./univers.reference-2026-03-30.csv
+  seuil_variation_journaliere: 0.075
+
+calendrier:
+  fichier_feries: ./jours_feries.exemple.yaml
+  jours_ouvres: [0, 1, 2, 3, 4]   # 0 = lundi
+  couverture_debut: 2024-01-01
+  couverture_fin: 2027-12-31
+
+sources:
+  - nom: brvm_data_public
+    type: csv_distant
+    actif: true
+    priorite: 1
+    url_base: https://raw.githubusercontent.com/Fredysessie/brvm-data-public/main/data/{ticker}/{ticker}.daily.csv
+    timeout_s: 30
+    tentatives_max: 3
+    backoff_initial_s: 1
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 15
+    age_max_minutes: 2880
+    csv_distant:
+      colonne_date: Date
+      format_date: "%Y-%m-%d"
+      colonnes:
+        ouverture: Open
+        plus_haut: High
+        plus_bas: Low
+        cloture: Close
+        volume_titres: Volume
+      historique: true
+      profondeur_jours: 500
+      # Vérifié : ce dépôt calcule lui-même Volume_XOF = Cours × Volume_Titres.
+      # Voir la note détaillée dans config.sg-capital-2026.yaml.
+      volume_xof_depuis_cours: true
+
+ingestion:
+  agent_utilisateur: "brvm-suivi/1.0 (+https://github.com/mod554/like_my_self-)"
+  repertoire_cache: ../data/publication/cache
+  delai_entre_requetes_s: 1
+  tolerance_volume_xof: 0.02
+  quarantaine_si_variation_hors_seuil: true
+  refuser_seance_hors_calendrier: true
+  refuser_date_future: true
+
+# Aucun ordre n'est chiffré sur la page publique : le barème est neutre, et
+# c'est explicite. Un barème inventé produirait des frais faux.
+frais:
+  source_bareme: "AUCUN — page publique, aucun ordre chiffré"
+  minimum_perception_global:
+  lignes:
+    - libelle: Aucun frais (page publique)
+      base_calcul: MONTANT_FIXE
+      ordre: 1
+      applicable_a: LES_DEUX
+      taux:
+      montant_fixe: 0
+      minimum_perception:
+      maximum_perception:
+  periodiques: []
+
+fiscalite:
+  source_reference: "AUCUNE — page publique, aucune imposition calculée"
+  pays_residence: CI
+  retenue_dividendes: 0
+  plus_values_imposables: false
+
+indicateurs:
+  fenetre_mm_courte: 20
+  fenetre_mm_longue: 50
+  fenetre_mm_fond: 200
+  fenetre_rsi: 14
+  rsi_survente: 30
+  rsi_surachat: 70
+  macd_rapide: 12
+  macd_lente: 26
+  macd_signal: 9
+  fenetre_bollinger: 20
+  ecarts_bollinger: 2
+  fenetre_atr: 14
+  fenetre_momentum: 20
+  fenetre_extremes: 52
+  fenetre_volume_moyen: 20
+  ratio_minimum_seances_cotees: 0.30
+  remplissage_max_seances: 5
+  taux_remplissage_alerte: 0.25
+  fourchette_reference: 0.05
+  volume_reference_xof: 5000000
+
+analyse:
+  # Vide : la page publique ne classe donc rien en long terme, et le dit.
+  # Renseigner des comptes exige de les relever dans les rapports annuels.
+  fichier_fondamentaux: ./fondamentaux.exemple.csv
+  taille_classement: 50
+  bornes:
+    momentum_plancher: -0.15
+    momentum_plafond: 0.15
+    rsi_cible: 50
+    rsi_tolerance: 30
+    ecart_extreme_plafond: 0.30
+    volatilite_plafond: 0.60
+    rendement_dividende_plafond: 0.12
+    per_plancher: 5
+    per_plafond: 25
+    price_book_plancher: 0.5
+    price_book_plafond: 3
+  horizons:
+    court_terme:
+      libelle: Court terme
+      description: >-
+        Classe sur la dynamique récente et la capacité à entrer ET sortir.
+        Sur cette place, c'est la liquidité qui borne, pas la tendance.
+      couverture_minimale: 0.6
+      confiance_minimale: 0.25
+      exige_fondamentaux: false
+      poids:
+        momentum: 3
+        tendance: 2
+        regime_rsi: 1
+        repli: 1
+        volume: 2
+    long_terme:
+      libelle: Long terme
+      description: >-
+        Classe sur le rendement, la valorisation et la régularité du dividende.
+        Refuse de classer une valeur dont les comptes ne sont pas saisis.
+      couverture_minimale: 0.5
+      confiance_minimale: 0.15
+      exige_fondamentaux: true
+      poids:
+        rendement_dividende: 3
+        regularite_dividende: 2
+        per: 2
+        price_book: 1
+        volatilite: 1
+
+allocation:
+  lignes_max: 8
+  part_liquidites: 0.10
+  montant_minimum_ligne: 100000
+  frais_alerte: 0.02
+
+risque:
+  poids_max_ligne: 0.20
+  poids_max_secteur: 0.35
+  poids_max_pays: 0.60
+  part_max_volume_moyen: 0.25
+  fenetre_volume_moyen: 20
+  multiple_atr_stop: 2.5
+  drawdown_alerte: 0.15
+  correlation_alerte: 0.80
+  fenetre_volatilite: 60
+  seances_par_an: 250
+  seances_minimum_correlation: 20
+
+backtest:
+  capital_initial: 1000000
+  slippage: 0.005
+  part_max_volume_seance: 0.10
+  execution: OUVERTURE_BARRE_SUIVANTE
+  execution_sans_ouverture: REFUSER
+  walk_forward_apprentissage: 250
+  walk_forward_validation: 60
+  taux_sans_risque: 0
+
+alertes:
+  age_donnee_max_minutes: 2880
+  alerter_signal_technique: false
+  alerter_seuil_risque: false
+  alerter_echec_source: true
+  canaux:
+    - nom: journal_fichier
+      type: fichier
+      actif: true
+      parametres:
+        chemin: ../data/publication/alertes.log
+
+journalisation:
+  niveau: INFO
+  fichier: ../data/publication/brvm.log
+  taille_max_octets: 5242880
+  nb_sauvegardes: 3
+  format_json: false
+
+ordonnanceur:
+  actif: false
+  cron_collecte: "45 15 * * 0-4"   # 0 = lundi ; 15h45 UTC, après la clôture
+  fuseau_horaire: Africa/Abidjan

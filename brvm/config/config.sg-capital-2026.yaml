@@ -1,0 +1,641 @@
+# ==============================================================================
+#  Configuration pré-remplie — exemple travaillé
+# ==============================================================================
+#
+#  Ce fichier est le jumeau rempli de `config.exemple.yaml`. Chaque valeur porte
+#  sa PROVENANCE. Rien n'y a été deviné : tout vient soit des documents que vous
+#  avez fournis, soit reste vide.
+#
+#  Sources citées ci-dessous :
+#    [XLSX]   BRVM_Portefeuille_2026.xlsx, onglet « Comparatif SGI », 28/03/2026
+#    [C1.2]   cours « Organisation du marché BRVM » du dossier brvm-trader
+#    [C1.3]   cours « Les acteurs : SGI, CREPMF, BRVM »
+#    [C8.1]   cours « Fiscalité UEMOA & BRVM »
+#    [CACHE]  capture sikafinance.com du 30/03/2026 du même dossier
+#
+#  ⚠️ CES SOURCES SONT DES DOCUMENTS DE TRAVAIL, PAS DES ACTES OPPOSABLES.
+#  Avant de vous fier à un chiffre : recoupez-le avec votre convention de compte,
+#  vos avis d'opéré et les textes en vigueur. Un taux faux ici fausse tout prix de
+#  revient calculé ensuite.
+#
+#  Pour l'utiliser : copiez-le en `config.yaml`, puis corrigez au moins
+#  `ingestion.agent_utilisateur` — le fichier refuse de se charger sans lui.
+# ==============================================================================
+
+general:
+  devise: XOF
+  fuseau_horaire: Africa/Abidjan
+  repertoire_donnees: ../data
+  base_donnees: ../data/brvm.sqlite3
+  methode_valorisation: PMP
+  mode_arrondi: HALF_UP
+
+marche:
+  pays_place: CI
+  fichier_univers: ./univers.csv
+  # [C1.2] « Variation max par séance : ±7.5% (coupe-circuit automatique) ».
+  # À confirmer dans les textes en vigueur de l'entreprise de marché : ce seuil
+  # sert à mettre en quarantaine les cotations aberrantes.
+  seuil_variation_journaliere: 0.075
+  # [C1.2] « Horaires : 9h00–15h30 GMT (heure Abidjan) ».
+  heure_cloture_locale: "15:30"
+
+calendrier:
+  jours_ouvres: [0, 1, 2, 3, 4]   # [C1.2] lundi–vendredi, hors fériés UEMOA
+  couverture_debut: 2026-01-01
+  couverture_fin: 2026-12-31
+  # ⚠️ À REMPLIR : aucune source disponible ne donne les jours fériés 2026.
+  # Tant que ce fichier est vide, le système avertit au démarrage et compte
+  # toutes les semaines comme cinq séances pleines.
+  fichier_feries: ./jours_feries.yaml
+  fermetures_exceptionnelles: []
+
+sources:
+  - nom: fichier_manuel
+    type: fichier_csv
+    actif: true
+    priorite: 1
+    url_base:
+    chemin_fichier: ../data/cotations_manuelles.csv
+    timeout_s: 30
+    tentatives_max: 1
+    backoff_initial_s: 1
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 0
+    age_max_minutes: 1440
+
+  # --------------------------------------------------------------------------
+  #  Page de cote — structure relevée sur une capture du 30/03/2026 [CACHE]
+  # --------------------------------------------------------------------------
+  #  La capture montrait, sous le titre « BRVM : Les actions cotées », un tableau
+  #  aux en-têtes suivants :
+  #
+  #      Nom | Ouverture | +Haut | +Bas | Volume (titres) | Volume (XOF) | Dernier | Variation
+  #
+  #  et un premier tableau d'indices juste au-dessus — d'où `index_tableau: 1`.
+  #  Le code de la valeur n'apparaît PAS dans la cellule « Nom » : il n'existe
+  #  que dans l'adresse du lien (« …/cotation_SNTS.sn »), d'où `colonnes_lien`.
+  #
+  #  ⚠️ TOUT CECI EST À REVÉRIFIER. La capture a plusieurs mois, la mise en page a
+  #  pu changer, et l'index d'un tableau HTML ne correspond pas forcément à
+  #  l'ordre visuel. Avant d'activer :
+  #
+  #      python -m brvm.ingestion.capture --plan
+  #      python -m brvm.ingestion.capture --config config/config.yaml --source cote_du_jour
+  #      python -m brvm.ingestion.capture --lister-tableaux <fichier capturé>
+  #
+  #  Si un en-tête déclaré est introuvable, la collecte s'arrête et le dit : elle
+  #  ne renvoie jamais un tableau vide qui passerait pour une séance sans échange.
+  # --------------------------------------------------------------------------
+  - nom: cote_du_jour
+    type: web
+    actif: false          # passez à true après avoir vérifié url_base ET l'analyseur
+    priorite: 2
+    url_base:             # À RENSEIGNER — l'adresse exacte de la page que vous consultez
+    chemin_fichier:
+    timeout_s: 20
+    tentatives_max: 3
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+    analyseur:
+      type: tableau_html
+      index_tableau: 1
+      colonnes:
+        "Ouverture": ouverture
+        "+Haut": plus_haut
+        "+Bas": plus_bas
+        "Volume (titres)": volume_titres
+        "Volume (XOF)": volume_xof
+        "Dernier": cloture
+      colonnes_lien:
+        "Nom":
+          champ: ticker
+          # Capture le code court sans son suffixe pays : « cotation_SNTS.sn » → SNTS,
+          # ce qui correspond aux tickers du fichier univers.csv de référence.
+          motif: "cotation_([A-Za-z0-9]+)"
+      # La page de cote du jour ne porte pas de colonne de date.
+      date_seance_depuis: jour_de_collecte
+
+  # --------------------------------------------------------------------------
+  #  Site officiel de l'entreprise de marché — structure relevée dans un paquet
+  #  R publié sur le CRAN qui l'exploite en production [R-BRVM]
+  # --------------------------------------------------------------------------
+  #  PROVENANCE : paquet R « BRVM » (K. F. Sessie, O. A. G. Odjo), fichiers
+  #  R/brvm-ticker.R, R/brvm-bysetor.R et R/brvm-top-flop.R. Le paquet lit
+  #  https://www.brvm.org/en/cours-actions/0/status/200, prend le 4e tableau de
+  #  la page (numérotation R, à partir de 1 → `index_tableau: 3` ici, à partir
+  #  de 0) et nomme ses colonnes :
+  #
+  #      1 code valeur | 2 raison sociale | Volume | Previous price |
+  #      Opening price | Closing price | Change (%)
+  #
+  #  Les cinq derniers en-têtes sont ceux de la page : le code R les utilise tels
+  #  quels avant de renommer quoi que ce soit. Les deux premiers, il les renomme
+  #  sans les avoir cités — leur intitulé exact reste donc INCONNU, et c'est la
+  #  seule ligne qui vous reste à remplir ci-dessous.
+  #
+  #  ⚠️ NIVEAU DE PREUVE. Cette structure vient d'un tiers qui l'exploite, pas
+  #  d'une observation faite ici : l'accès réseau de l'environnement de
+  #  développement ne permettait pas d'ouvrir la page. Un paquet publié peut
+  #  avoir pris du retard sur une refonte du site. À revérifier :
+  #
+  #      python -m brvm.ingestion.capture --config config/config.yaml --source brvm_officiel
+  #      python -m brvm.ingestion.capture --lister-tableaux <fichier capturé>
+  #
+  #  Autres pages du même site, mêmes réserves, non câblées ici :
+  #      /en/indices/status/200         (4e tableau)  — indices
+  #      /en/capitalisations/0/status/200            — capitalisations
+  #      /en/volumes/0/status/200                    — volumes échangés
+  #      /en/summary                    (1er tableau) — activité de la séance
+  # --------------------------------------------------------------------------
+  - nom: brvm_officiel
+    type: web
+    actif: false          # passez à true après avoir vérifié la page vous-même
+    priorite: 3
+    url_base: https://www.brvm.org/en/cours-actions/0/status/200
+    chemin_fichier:
+    timeout_s: 20
+    tentatives_max: 3
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+    analyseur:
+      type: tableau_html
+      index_tableau: 3
+      colonnes:
+        # ⚠️ À RENSEIGNER : l'intitulé exact de la colonne du code valeur, tel
+        # qu'il s'affiche sur la page. Tant qu'il est faux, la collecte s'arrête
+        # sur « en-tête introuvable » — elle ne renvoie pas un tableau vide.
+        "À RENSEIGNER — en-tête de la colonne du code valeur": ticker
+        "Volume": volume_titres
+        "Previous price": cours_precedent
+        "Opening price": ouverture
+        "Closing price": cloture
+      # Cette page ne porte pas de colonne de date : elle montre la dernière
+      # séance. Le contrôle « séance hors calendrier » rattrape le cas où la
+      # page servie serait celle d'un autre jour que celui de la collecte.
+      date_seance_depuis: jour_de_collecte
+
+  # --------------------------------------------------------------------------
+  #  API d'historique — schéma relevé dans le même paquet R [R-BRVM]
+  # --------------------------------------------------------------------------
+  #  PROVENANCE : R/brvm-get-data.R et R/create-all-markets.R du paquet « BRVM ».
+  #  Requête POST JSON vers https://www.sikafinance.com/api/general/GetHistos,
+  #  corps {ticker, datedeb, datefin, xperiod}, réponse {"lst": [ {...}, … ]}
+  #  avec les champs Date, Open, High, Low, Close, Volume.
+  #
+  #  Points relevés dans le code, non supposés :
+  #    • les dates ENVOYÉES sont en aaaa-mm-jj, les dates REÇUES en jj/mm/aaaa —
+  #      d'où deux formats distincts ci-dessous. Se tromper de format ne donne
+  #      pas une erreur mais une séance décalée : le connecteur refuse donc toute
+  #      date non conforme au format déclaré plutôt que de la réinterpréter ;
+  #    • le paquet découpe l'historique en fenêtres de 89 jours : `fenetre_jours`
+  #      reprend cette valeur, qui est la seule attestée ;
+  #    • xperiod : 0 = quotidien, 7 = hebdomadaire, 30 = mensuel, 91 =
+  #      trimestriel, 365 = annuel. Seul le quotidien nous intéresse ;
+  #    • le ticker attendu porte un suffixe pays en minuscules (SNTS.sn), d'où
+  #      `gabarit_ticker`. Il vient de la liste déroulante « dpShares » de la page
+  #      d'accueil du site ; la colonne `pays` d'univers.csv doit donc coïncider
+  #      avec ce suffixe. En cas d'écart, la valeur remonte en avertissement
+  #      « n'a pas pu être collectée », jamais en cours faux ;
+  #    • le paquet envoie un Referer par valeur ; il est reproduit ici parce
+  #      qu'il a été constaté nécessaire par son auteur, pas par précaution.
+  #
+  #  ⚠️ MÊME NIVEAU DE PREUVE que ci-dessus, et une réserve de plus : avant
+  #  d'activer une collecte automatisée, lisez les conditions d'utilisation du
+  #  site et son robots.txt. Le connecteur refuse déjà de collecter si le
+  #  robots.txt l'interdit ou reste illisible, mais il ne lit pas les CGU à votre
+  #  place. C'est aussi la plateforme sur laquelle vous passez vos ordres : une
+  #  collecte trop insistante n'est pas un risque technique, c'est un risque de
+  #  compte.
+  #
+  #  MODE HISTORIQUE : `historique: false` ne retient que la séance visée. Pour
+  #  un rattrapage initial, passez-le à true le temps d'un cycle — les barres
+  #  anciennes seront alors signalées « périmées » par le contrôle de fraîcheur,
+  #  ce qui est attendu et non un défaut.
+  # --------------------------------------------------------------------------
+  - nom: sikafinance_historique
+    type: api_json
+    actif: false          # passez à true après avoir lu les CGU et le robots.txt
+    priorite: 4
+    url_base: https://www.sikafinance.com/api/general/GetHistos
+    chemin_fichier:
+    timeout_s: 30
+    tentatives_max: 3
+    backoff_initial_s: 2
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 60
+    age_max_minutes: 1440
+    api:
+      chemin_liste: lst
+      corps:
+        ticker: "{ticker}"
+        datedeb: "{debut}"
+        datefin: "{fin}"
+        xperiod: "0"
+      champs:
+        Date: date_seance
+        Open: ouverture
+        High: plus_haut
+        Low: plus_bas
+        Close: cloture
+        Volume: volume_titres
+      format_date: "%d/%m/%Y"
+      format_date_requete: "%Y-%m-%d"
+      gabarit_ticker: "{ticker}.{pays_bas}"
+      fenetre_jours: 89
+      historique: false
+      entetes:
+        Referer: "https://www.sikafinance.com/marches/historiques/{ticker}"
+
+  # ---------------------------------------------------------------------------
+  # Dépôt public de données BRVM, tenu à jour par un tiers.
+  #
+  # NIVEAU DE PREUVE : OBSERVÉ. Contrairement aux autres sources de ce fichier,
+  # celle-ci a été interrogée pour de vrai depuis l'environnement de
+  # développement, et sa structure relevée sur les fichiers réels le 03/09/2026 :
+  #   • 49 actions et 18 indices, un dossier par valeur ;
+  #   • en-têtes identiques sur les 66 fichiers quotidiens :
+  #     Date,Open,High,Low,Close,Volume ;
+  #   • dates en AAAA-MM-JJ, cours ENTIERS pour les actions (les indices, eux,
+  #     cotent en décimales : ne les mettez pas dans univers.csv) ;
+  #   • 158 691 séances de 1998-09-16 à 2026-09-02, dont 40 lignes incohérentes
+  #     (plus-haut inférieur à l'ouverture ou à la clôture) que la couche
+  #     d'anomalies met en quarantaine d'elle-même ;
+  #   • une séance SANS TRANSACTION est ABSENTE du fichier, elle n'y figure pas
+  #     à zéro. Le connecteur ne comble rien : c'est le calendrier qui tranche.
+  #
+  # CE QUI RESTE À VÉRIFIER PAR VOUS :
+  #   • les conditions d'utilisation du dépôt et sa licence (aucune n'était
+  #     publiée à la date du relevé) ;
+  #   • la correspondance des tickers avec la cote officielle, et les
+  #     radiations ou introductions postérieures à votre capture d'univers ;
+  #   • la fréquence réelle de mise à jour. Le dépôt annonce « toutes les 15
+  #     minutes de 9h à 15h UTC en semaine » ; l'en-tête HTTP Last-Modified de
+  #     chaque fichier reste le seul juge de son âge réel.
+  #
+  # CE N'EST PAS UNE SOURCE OFFICIELLE. Recoupez avec la BRVM avant toute
+  # décision engageant de l'argent.
+  - nom: brvm_data_public
+    type: csv_distant
+    actif: false          # passez à true après avoir lu ce qui précède
+    priorite: 2
+    url_base: https://raw.githubusercontent.com/Fredysessie/brvm-data-public/main/data/{ticker}/{ticker}.daily.csv
+    timeout_s: 30
+    tentatives_max: 3
+    backoff_initial_s: 1
+    backoff_facteur: 2
+    respecter_robots: true
+    cache_minutes: 15
+    age_max_minutes: 2880   # 2 jours : le dépôt publie la clôture de la veille
+    csv_distant:
+      colonne_date: Date
+      format_date: "%Y-%m-%d"
+      # Champ du système → en-tête réellement publié. Relevé sur le fichier,
+      # pas supposé : une colonne mal appariée produirait des cours faux.
+      colonnes:
+        ouverture: Open
+        plus_haut: High
+        plus_bas: Low
+        cloture: Close
+        volume_titres: Volume
+      # Rattrapage d'historique. Les barres anciennes seront signalées périmées
+      # par le contrôle de fraîcheur : c'est attendu.
+      historique: true
+      profondeur_jours: 500
+      # Le dépôt publie le volume en TITRES, jamais en XOF. Or le montant
+      # échangé mesure la profondeur du marché, donc la confiance accordée à
+      # chaque valeur : sans lui, AUCUNE valeur n'est classable.
+      #
+      # VÉRIFIÉ le 03/09/2026 : le dépôt calcule lui-même, dans ses fichiers
+      # d'instantané, Volume_XOF = Cours × Volume_Titres — exactement, sur les
+      # 45 valeurs comparables. C'est cohérent avec le fixing de la BRVM, où
+      # une séance se dénoue à un cours unique.
+      #
+      # Le montant ainsi calculé porte la mention de son origine dans le
+      # commentaire de chaque cotation : il ne se confond pas avec un publié.
+      volume_xof_depuis_cours: true
+
+ingestion:
+  # ⚠️ À RENSEIGNER — c'est le seul champ qui empêche ce fichier de se charger,
+  # et c'est volontaire : identifiez-vous auprès des serveurs que vous interrogez.
+  # Forme attendue : "suivi-brvm/0.1 (contact: vous@exemple.org)"
+  agent_utilisateur:
+  repertoire_cache: ../data/cache
+  delai_entre_requetes_s: 2
+  tolerance_volume_xof: 0.02
+  quarantaine_si_variation_hors_seuil: true
+  refuser_seance_hors_calendrier: true
+  refuser_date_future: true
+
+# ------------------------------------------------------------------------------
+#  Frais — SG Capital Securities WA
+# ------------------------------------------------------------------------------
+
+frais:
+  source_bareme: >-
+    SG Capital Securities WA — comparatif SGI du 28/03/2026
+    (BRVM_Portefeuille_2026.xlsx). À CONFIRMER sur la convention de compte
+    et les avis d'opéré.
+  minimum_perception_global:
+  lignes:
+    # [XLSX] « Frais de courtage : SG Capital 0,80% ».
+    - libelle: Commission de courtage SGI
+      base_calcul: MONTANT_BRUT
+      ordre: 1
+      applicable_a: LES_DEUX
+      taux: 0.008
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+
+    # [C1.3] « TVA sur courtage 18% ». L'exemple du cours applique bien la TVA
+    # au seul courtage : ici l'assiette est le total des commissions d'ordre
+    # inférieur, ce qui revient au même tant que le courtage est la seule ligne.
+    - libelle: TVA sur commissions
+      base_calcul: TOTAL_COMMISSIONS
+      ordre: 9
+      applicable_a: LES_DEUX
+      taux: 0.18
+      montant_fixe:
+      minimum_perception:
+      maximum_perception:
+
+    # ⚠️ ZONE D'INCERTITUDE À TRANCHER AVEC VOTRE SGI
+    #
+    # Le comparatif annonce « 0,80 % de courtage » sans dire si ce taux est tout
+    # compris ou s'il s'ajoute à une commission d'entreprise de marché et à une
+    # commission du dépositaire central (DC/BR), toutes deux mentionnées dans les
+    # cours mais jamais chiffrées.
+    #
+    # Prenez un avis d'opéré réel et comptez les lignes :
+    #   • une seule ligne de commission → laissez ce bloc commenté ;
+    #   • plusieurs lignes → décommentez et renseignez chaque taux.
+    #
+    # Tant que le doute subsiste, le coût d'acquisition calculé est un PLANCHER.
+    #
+    # - libelle: Commission entreprise de marché
+    #   base_calcul: MONTANT_BRUT
+    #   ordre: 2
+    #   applicable_a: LES_DEUX
+    #   taux:                  # À RENSEIGNER
+    #   montant_fixe:
+    #   minimum_perception:
+    #   maximum_perception:
+    #
+    # - libelle: Commission dépositaire central (DC/BR)
+    #   base_calcul: MONTANT_BRUT
+    #   ordre: 3
+    #   applicable_a: LES_DEUX
+    #   taux:                  # À RENSEIGNER
+    #   montant_fixe:
+    #   minimum_perception:
+    #   maximum_perception:
+
+  periodiques:
+    # [XLSX] « Tenue de compte : SG Capital 2 500/trimestre ».
+    - libelle: Tenue de compte
+      base_calcul: FORFAIT
+      periodicite: TRIMESTRIELLE
+      montant_fixe: 2500
+
+    # ⚠️ [XLSX] donne « Conservation / an : SG Capital 0,25 – 0,50% » — une
+    # FOURCHETTE, pas un taux. Le système ne choisit pas à votre place.
+    # Demandez le taux exact applicable à votre encours, puis décommentez.
+    # Tant que cette ligne manque, le coût de détention est sous-estimé, et le
+    # système le signale au démarrage.
+    #
+    # - libelle: Droits de garde
+    #   base_calcul: ENCOURS
+    #   periodicite: ANNUELLE
+    #   taux:                  # À RENSEIGNER, entre 0.0025 et 0.005 d'après [XLSX]
+
+# ------------------------------------------------------------------------------
+#  Fiscalité — résident Côte d'Ivoire
+# ------------------------------------------------------------------------------
+fiscalite:
+  pays_residence: CI
+  source_reference: >-
+    Cours « Fiscalité UEMOA & BRVM » du dossier brvm-trader (module 8.1).
+    Document pédagogique — À CONFIRMER auprès de l'administration fiscale
+    ou d'un conseil avant toute déclaration.
+  # [C8.1] tableau « Taux par pays » : Côte d'Ivoire 15 %.
+  retenue_dividendes: 0.15
+  # [C8.1] « Plus-values sur actions cotées BRVM : exonérées en Côte d'Ivoire
+  # pour les particuliers ». Si votre situation diffère (personne morale,
+  # résidence changée), passez à true et renseignez le taux.
+  plus_values_imposables: false
+  plus_values_taux:
+  plus_values_exoneration_mois:
+
+indicateurs:
+  ratio_minimum_seances_cotees: 0.60
+  remplissage_max_seances: 3
+  fenetre_volume_moyen: 20
+  taux_remplissage_alerte: 0.25
+
+  # Fenêtres de calcul. Les valeurs usuelles viennent des marchés liquides :
+  # validez-les par backtest avant de vous y fier sur une valeur peu échangée.
+  fenetre_mm_courte: 20
+  fenetre_mm_longue: 50
+  fenetre_mm_fond: 200
+  fenetre_rsi: 14
+  macd_rapide: 12
+  macd_lente: 26
+  macd_signal: 9
+  fenetre_bollinger: 20
+  ecarts_bollinger: 2
+  fenetre_atr: 14
+  fenetre_momentum: 20
+  fenetre_extremes: 60
+  rsi_survente: 30
+  rsi_surachat: 70
+  fourchette_reference: 0.05
+  volume_reference_xof: 5000000
+
+# ------------------------------------------------------------------------------
+#  Analyse de la cote — [PRÉFÉRENCE] les poids vous appartiennent
+# ------------------------------------------------------------------------------
+#  Ces valeurs ne sont pas des faits de marché : ce sont VOS jugements, écrits
+#  ici plutôt que cachés dans le code. Dire qu'un momentum de +15 % vaut la note
+#  maximale est un choix ; il se règle et se valide par backtest.
+#
+#  Aucun classement produit ici n'est une recommandation. Le système ordonne des
+#  valeurs selon des critères mesurés sur des données passées. Il ne prédit rien.
+analyse:
+  # Données fondamentales, saisies par VOUS depuis les rapports annuels.
+  # Tant que ce fichier est vide, tout classement de long terme s'abstient.
+  fichier_fondamentaux: ./fondamentaux.csv
+  taille_classement: 10
+
+  bornes:
+    # Momentum : note nulle en dessous, saturée au-dessus.
+    momentum_plancher: -0.15
+    momentum_plafond: 0.15
+    # RSI : régime jugé normal, et écart toléré de part et d'autre. Un RSI à 15
+    # comme à 85 s'éloigne autant du régime, et rien ne dit dans quel sens le
+    # cours y reviendra.
+    rsi_cible: 50
+    rsi_tolerance: 30
+    # Écart au plus haut glissant saturant la note de repli.
+    ecart_extreme_plafond: 0.30
+    # Volatilité annualisée annulant la note. À ajuster après une année de
+    # collecte : sur une valeur qui cote une séance sur trois, l'annualisation
+    # suppose une continuité qui n'existe pas.
+    volatilite_plafond: 0.60
+    # Rendement du dividende saturant la note. Au-delà, un rendement très élevé
+    # signale plus souvent un cours effondré qu'une aubaine.
+    rendement_dividende_plafond: 0.12
+    per_plancher: 5
+    per_plafond: 25
+    price_book_plancher: 0.5
+    price_book_plafond: 3
+
+  horizons:
+    court_terme:
+      libelle: Court terme
+      description: >-
+        Classe sur la dynamique récente et la capacité à entrer ET sortir.
+        Sur cette place, c'est la liquidité qui borne, pas la tendance.
+      couverture_minimale: 0.6
+      # En dessous de cette confiance, la valeur n'est pas classée du tout :
+      # ordonner des séries trouées revient à ordonner du bruit.
+      confiance_minimale: 0.25
+      exige_fondamentaux: false
+      poids:
+        momentum: 3
+        tendance: 2
+        regime_rsi: 1
+        repli: 1
+        volume: 2
+
+    long_terme:
+      libelle: Long terme
+      description: >-
+        Classe sur le rendement, la valorisation et la régularité du dividende.
+        Refuse de classer une valeur dont les comptes ne sont pas saisis.
+      couverture_minimale: 0.5
+      confiance_minimale: 0.15
+      # Sans fondamentaux, ce profil ne retombe PAS sur le prix : classer
+      # plusieurs années sur la seule tendance des cours n'aurait pas de sens.
+      exige_fondamentaux: true
+      poids:
+        rendement_dividende: 3
+        regularite_dividende: 2
+        per: 2
+        price_book: 1
+        volatilite: 1
+        tendance: 1
+
+# ------------------------------------------------------------------------------
+#  Allocation — [PRÉFÉRENCE] vos contraintes de construction
+# ------------------------------------------------------------------------------
+#  Les limites de concentration ne sont PAS redéclarées ici : elles vivent dans
+#  `risque`, à un seul endroit. L'allocateur les applique et dit, pour chaque
+#  ligne, laquelle a borné sa taille.
+allocation:
+  lignes_max: 8
+  part_liquidites: 0.10
+  # En deçà, les frais fixes de votre barème rendent l'opération absurde.
+  # Ce seuil dépend de la grille de VOTRE SGI : ajustez-le.
+  montant_minimum_ligne: 100000
+  # Part des frais dans un ordre au-delà de laquelle il est signalé comme coûteux.
+  frais_alerte: 0.02
+
+risque:
+  # Le portefeuille cible du dossier fourni est concentré sur 3 lignes
+  # (40 / 35 / 25 %). Ces plafonds sont plus larges que cette cible : ajustez-les
+  # à votre tolérance réelle, ils déclenchent des alertes, pas des blocages.
+  poids_max_ligne: 0.45
+  poids_max_secteur: 0.60
+  poids_max_pays: 0.80
+  part_max_volume_moyen: 0.25
+  fenetre_volume_moyen: 20
+  # Le dossier fourni retient un stop à -15 % du prix d'achat pour un profil
+  # débutant. Ici le stop est adossé à la volatilité réelle (ATR) plutôt qu'à un
+  # pourcentage fixe ; ajustez le multiple après avoir comparé les deux.
+  multiple_atr_stop: 2.5
+  drawdown_alerte: 0.15
+  fenetre_volatilite: 60
+  seances_par_an: 250
+  # Corrélation au-delà de laquelle deux lignes détenues sont signalées.
+  # [PRÉFÉRENCE] Trois lignes de 15 % qui varient ensemble font une position
+  # de 45 % qu'aucun contrôle de poids ne voit.
+  correlation_alerte: 0.80
+  seances_minimum_correlation: 20
+
+backtest:
+  # Capital indiqué dans le dossier fourni.
+  capital_initial: 500000
+  slippage: 0.005
+  part_max_volume_seance: 0.10
+  execution: OUVERTURE_BARRE_SUIVANTE
+  # REFUSER (rigoureux) ou COURS_PRECEDENT (approché) si la source ne
+  # publie pas de cours d'ouverture.
+  execution_sans_ouverture: REFUSER
+  walk_forward_apprentissage: 250
+  walk_forward_validation: 60
+  taux_sans_risque: 0
+
+alertes:
+  age_donnee_max_minutes: 1440
+  alerter_signal_technique: true
+  alerter_seuil_risque: true
+  alerter_echec_source: true
+  canaux:
+    - nom: journal_fichier
+      type: fichier
+      actif: true
+      parametres:
+        chemin: ../data/alertes.log
+    # - nom: courriel
+    #   type: email
+    #   actif: false
+    #   parametres:
+    #     # Tous ces paramètres sont obligatoires : un canal mal réglé ne
+    #     # prévient personne, et le système refuse de le construire à moitié.
+    #     serveur: smtp.exemple.org
+    #     port: "587"
+    #     expediteur: robot-brvm@exemple.org
+    #     destinataires: vous@exemple.org, associe@exemple.org
+    #     # Facultatifs :
+    #     utilisateur: robot-brvm@exemple.org
+    #     motdepasse: ""          # préférez une variable d'environnement
+    #     starttls: "true"
+    #     objet_prefixe: "[BRVM]"
+    # - nom: webhook
+    #   type: webhook
+    #   actif: false
+    #   parametres:
+    #     # https exclusivement : une alerte décrit la composition de votre
+    #     # portefeuille, ce qui n'a rien à faire en clair sur le réseau.
+    #     url: https://exemple.org/hook
+    #     entete_autorisation: "Bearer votre-jeton"
+
+journalisation:
+  niveau: INFO
+  fichier: ../data/brvm.log
+  taille_max_octets: 10485760
+  nb_sauvegardes: 5
+  format_json: true
+
+ordonnanceur:
+  actif: false
+  # Clôture à 15h30 heure d'Abidjan [C1.2] : collecte à 16h00, séances seulement.
+  #
+  # ⚠️ CONVENTION : 0 = lundi, comme partout ailleurs dans ce système, et NON
+  # 0 = dimanche comme dans certains cron Unix. Les jours ouvrés s'écrivent donc
+  # « 0-4 » et non « 1-5 » — qui désignerait mardi à samedi, et sauterait tous
+  # les lundis sans le moindre message. L'expression est analysée au chargement.
+  #
+  # De toute façon, le calendrier a le dernier mot : un jour férié dans l'un des
+  # États de l'Union ferme la bourse, et aucune collecte ne part ce jour-là.
+  cron_collecte: "0 16 * * 0-4"
+  fuseau_horaire: Africa/Abidjan

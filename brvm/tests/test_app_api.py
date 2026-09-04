@@ -1,0 +1,327 @@
+"""Sérialisation pour l'interface web.
+
+Ce qui est vérifié ici : l'interface reçoit **exactement** ce que l'état contient,
+sans arrondi de complaisance et sans zéro de remplacement. Une valeur absente
+traverse la sérialisation en restant absente.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
+
+import pytest
+from conftest import INSTANT_MARCHE
+
+from brvm.app.api import (
+    TRAME_SEANCES,
+    courbe,
+    serialiser,
+    serialiser_criblage,
+    trame,
+)
+from brvm.app.etat import EtatSysteme, assembler
+from brvm.config.modeles import Configuration
+from brvm.domain.calendrier import CalendrierSeances
+from brvm.domain.enums import SensOperation, StatutSeance
+from brvm.domain.modeles import Cotation, Transaction
+from brvm.indicators.serie import OrigineValeur
+from brvm.market.allocation import proposer
+from brvm.market.criblage import cribler
+from brvm.storage.base import BaseDonnees
+from brvm.storage.depots import DepotCotations, DepotInstruments, DepotTransactions
+
+INSTANT = datetime(2026, 3, 20, 16, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def etat(
+    base: BaseDonnees,
+    configuration: Configuration,
+    calendrier: CalendrierSeances,
+    fabrique_cotation: Callable[..., Cotation],
+) -> EtatSysteme:
+    """Un portefeuille à deux lignes : une cotée par intermittence, une sans cours.
+
+    L'intermittence n'est pas un cas limite sur cette place : c'est le cas normal,
+    et une interface conçue sur une valeur qui cote tous les jours ne le montre
+    jamais.
+    """
+    depot = DepotTransactions(base)
+    depot.enregistrer(
+        Transaction(
+            identifiant="T1",
+            ticker="TEST1",
+            date_operation=date(2026, 3, 2),
+            sens=SensOperation.ACHAT,
+            quantite=10,
+            cours_unitaire=1000,
+        )
+    )
+    depot.enregistrer(
+        Transaction(
+            identifiant="T2",
+            ticker="TEST2",
+            date_operation=date(2026, 3, 2),
+            sens=SensOperation.ACHAT,
+            quantite=5,
+            cours_unitaire=2000,
+        )
+    )
+
+    cotations = []
+    jour = date(2026, 3, 2)
+    numero = 0
+    while jour <= date(2026, 3, 20):
+        if calendrier.est_jour_de_seance(jour):
+            numero += 1
+            horodatage = datetime(jour.year, jour.month, jour.day, 15, 0, tzinfo=UTC)
+            cote = numero % 3 != 0  # deux séances cotées sur trois
+            cotations.append(
+                fabrique_cotation(
+                    jour=jour,
+                    cloture=1000 + numero * 10 if cote else None,
+                    ticker="TEST1",
+                    source="fichier_manuel",
+                    statut=StatutSeance.COTEE if cote else StatutSeance.SANS_TRANSACTION,
+                    volume=400 if cote else 0,
+                    horodatage_donnee=horodatage,
+                    horodatage_collecte=horodatage,
+                )
+            )
+        jour += timedelta(days=1)
+    DepotCotations(base).enregistrer_lot(cotations)
+    return assembler(base, configuration, calendrier, instant=INSTANT)
+
+
+class TestCharge:
+    def test_la_charge_est_du_json_valide(self, etat: EtatSysteme) -> None:
+        """Elle traverse un aller-retour JSON sans perdre ni Decimal ni date."""
+        charge = json.loads(json.dumps(serialiser(etat), ensure_ascii=False))
+        assert charge["portefeuille"]["cout_total"] == etat.portefeuille.cout_total
+        assert charge["instant"] == etat.instant.isoformat()
+
+    def test_la_fraicheur_voyage_avec_son_seuil(self, etat: EtatSysteme) -> None:
+        """Un âge sans le seuil toléré ne se juge pas."""
+        f = serialiser(etat)["fraicheur"]
+        assert f["horodatage"] is not None
+        assert f["age_minutes"] is not None
+        assert f["seuil_minutes"] == etat.configuration.alertes.age_donnee_max_minutes
+        assert f["texte"] == etat.entete_fraicheur()
+
+    def test_une_performance_non_mesurable_part_avec_sa_raison(self, etat: EtatSysteme) -> None:
+        """Sans historique de valorisation, aucun rendement n'est chiffré, et
+        l'interface reçoit le motif plutôt qu'un zéro."""
+        performance = serialiser(etat)["performance"]
+        assert performance["disponible"] is False
+        assert performance["motif"]
+        assert "valorisation" in performance["motif"].lower()
+
+    def test_les_deux_methodes_sont_transmises(self, etat: EtatSysteme) -> None:
+        """PMP et FIFO répondent à deux questions : l'interface reçoit les deux."""
+        assert set(serialiser(etat)["plus_values_realisees"]) == {"PMP", "FIFO"}
+
+
+class TestValeursAbsentes:
+    def test_une_ligne_sans_cours_ne_vaut_pas_zero(self, etat: EtatSysteme) -> None:
+        """Le pire résultat possible serait un zéro qui se lit comme une mesure."""
+        lignes = {poste["ticker"]: poste for poste in serialiser(etat)["portefeuille"]["lignes"]}
+        sans_cours = lignes["TEST2"]
+        assert sans_cours["valorisee"] is False
+        assert sans_cours["cours"] is None
+        assert sans_cours["valeur"] is None
+        assert sans_cours["motif_indisponible"]
+        assert "TEST2" in serialiser(etat)["portefeuille"]["non_valorisees"]
+
+    def test_un_decimal_absent_reste_absent(self, etat: EtatSysteme) -> None:
+        lignes = {poste["ticker"]: poste for poste in serialiser(etat)["portefeuille"]["lignes"]}
+        assert lignes["TEST2"]["poids"] is None
+
+
+class TestTrame:
+    """La signature de l'interface : la texture du silence derrière chaque cours."""
+
+    def test_la_trame_compte_les_seances_reellement_cotees(self, etat: EtatSysteme) -> None:
+        donnees = trame(etat.valeurs["TEST1"].serie)
+        assert donnees["attendues"] == len(donnees["seances"])
+        assert 0 < donnees["cotees"] < donnees["attendues"]
+        cotees = sum(1 for s in donnees["seances"] if s["origine"] == OrigineValeur.COTEE.value)
+        assert cotees == donnees["cotees"]
+
+    def test_chaque_seance_porte_son_origine(self, etat: EtatSysteme) -> None:
+        origines = {s["origine"] for s in trame(etat.valeurs["TEST1"].serie)["seances"]}
+        assert origines <= {"COTEE", "REPORTEE", "ABSENTE"}
+        assert "COTEE" in origines
+
+    def test_la_derniere_seance_cotee_est_datee(self, etat: EtatSysteme) -> None:
+        """Sans elle, « il y a 4 jours » ne dit pas de quelle séance il s'agit."""
+        assert trame(etat.valeurs["TEST1"].serie)["derniere_cotee"] is not None
+
+    def test_la_profondeur_est_bornee(self, etat: EtatSysteme) -> None:
+        assert len(trame(etat.valeurs["TEST1"].serie)["seances"]) <= TRAME_SEANCES
+
+    def test_chaque_ligne_valorisee_porte_sa_trame(self, etat: EtatSysteme) -> None:
+        lignes = {poste["ticker"]: poste for poste in serialiser(etat)["portefeuille"]["lignes"]}
+        assert lignes["TEST1"]["trame"] is not None
+        # Une valeur sans aucune cotation n'a pas de trame : l'interface le dit,
+        # elle n'affiche pas une trame vide qui se lirait comme « rien n'a coté ».
+        assert lignes["TEST2"]["trame"] is None
+
+
+class TestCourbe:
+    def test_chaque_point_sait_sil_a_ete_observe(self, etat: EtatSysteme) -> None:
+        """Un point reporté est transmis, mais marqué : la vue le trace en
+        pointillé plutôt que de lisser une tendance qui n'a pas eu lieu."""
+        points = courbe(etat.valeurs["TEST1"].serie)
+        assert points
+        assert all("cotee" in point for point in points)
+        assert any(point["cotee"] for point in points)
+
+    def test_aucun_point_sans_cours(self, etat: EtatSysteme) -> None:
+        assert all(point["cloture"] is not None for point in courbe(etat.valeurs["TEST1"].serie))
+
+    def test_les_points_sont_ordonnes(self, etat: EtatSysteme) -> None:
+        dates = [point["date"] for point in courbe(etat.valeurs["TEST1"].serie)]
+        assert dates == sorted(dates)
+
+
+class TestRisque:
+    def test_chaque_concentration_porte_sa_limite(self, etat: EtatSysteme) -> None:
+        """Un poids sans sa limite ne se juge pas : la jauge a besoin des deux."""
+        for constat in serialiser(etat)["risque"]["concentrations"]:
+            assert constat["poids"] is not None
+            assert constat["limite"] is not None
+            assert isinstance(constat["respecte"], bool)
+
+    def test_une_liquidite_non_mesurable_le_dit(self, etat: EtatSysteme) -> None:
+        for constat in serialiser(etat)["risque"]["liquidites"]:
+            if not constat["mesurable"]:
+                assert constat["motif_indisponible"]
+                assert constat["seances_pour_deboucler"] is None
+
+
+class TestSerialisationMarche:
+    """La cote sérialisée. Ce qui est vérifié ici, c'est que rien ne disparaît
+    en route : une valeur écartée, un critère non mesuré et une contrainte
+    d'allocation doivent tous arriver au navigateur avec leur explication."""
+
+    @pytest.fixture
+    def charge(
+        self,
+        cote: BaseDonnees,
+        configuration: Configuration,
+        calendrier: CalendrierSeances,
+    ) -> dict[str, Any]:
+        criblage = cribler(cote, configuration, calendrier, instant=INSTANT_MARCHE)
+        instruments = {
+            instrument.ticker: instrument
+            for instrument in DepotInstruments(cote).lister(actifs_seulement=True)
+        }
+        propositions = {
+            nom: proposer(classement, 5_000_000, configuration, instruments=instruments)
+            for nom, classement in criblage.classements.items()
+        }
+        return serialiser_criblage(criblage, propositions)
+
+    def test_la_mention_voyage_avec_la_donnee(self, charge: dict[str, Any]) -> None:
+        """Elle n'est pas posée une fois dans un coin de la page : un tableau
+        recopié ailleurs doit rester lisible pour ce qu'il est."""
+        assert "aucune promesse de rendement" in charge["mention"]
+
+    def test_la_fraicheur_accompagne_le_criblage(self, charge: dict[str, Any]) -> None:
+        assert charge["fraicheur"]["horodatage_le_plus_ancien"]
+        assert charge["fraicheur"]["age_minutes"] is not None
+
+    def test_les_valeurs_ecartees_partent_avec_leur_raison(
+        self,
+        cote: BaseDonnees,
+        configuration: Configuration,
+        calendrier: CalendrierSeances,
+    ) -> None:
+        criblage = cribler(
+            cote,
+            configuration,
+            calendrier,
+            instant=INSTANT_MARCHE,
+            tickers=["TEST1", "ABSENTE"],
+        )
+        charge = serialiser_criblage(criblage)
+        ecartees = {e["ticker"]: e["motif"] for e in charge["ecartees"]}
+        assert "ABSENTE" in ecartees
+        assert ecartees["ABSENTE"]
+
+    def test_un_critere_non_mesure_arrive_avec_son_motif_et_sans_note(
+        self, charge: dict[str, Any]
+    ) -> None:
+        absents = [
+            critere
+            for valeur in charge["valeurs"]
+            for critere in valeur["criteres"]
+            if not critere["mesurable"]
+        ]
+        assert absents, "le jeu de test comporte des critères non mesurables"
+        for critere in absents:
+            assert critere["note"] is None, "une absence ne doit jamais devenir un zéro"
+            assert critere["motif_absent"]
+
+    def test_chaque_rang_porte_de_quoi_etre_contesté(self, charge: dict[str, Any]) -> None:
+        for classement in charge["classements"].values():
+            for rang in classement["classes"]:
+                assert rang["score"] is not None
+                assert rang["couverture"] is not None
+                assert rang["criteres"]
+            for rang in classement["ecartes"]:
+                assert rang["score"] is None
+                assert rang["motif_absent"], "un écarté sans raison serait une disparition"
+
+    def test_chaque_ligne_proposee_nomme_la_limite_qui_l_a_bornee(
+        self, charge: dict[str, Any]
+    ) -> None:
+        for proposition in charge["propositions"].values():
+            for ligne in proposition["lignes"]:
+                assert ligne["contrainte"]
+                assert ligne["montant_net"] == ligne["montant_brut"] + ligne["frais"]
+
+    def test_les_composantes_de_la_confiance_sont_servies(self, charge: dict[str, Any]) -> None:
+        """Sans elles, l'interface ne pourrait pas dire POURQUOI une confiance
+        est basse, et retomberait sur une explication inventée."""
+        for valeur in charge["valeurs"]:
+            assert valeur["assiduite"] is not None
+            assert valeur["profondeur"] is not None
+            assert valeur["etroitesse"] is not None
+
+
+class TestPerformanceEtTresorerie:
+    """Deux champs qui ne doivent jamais contredire l'état.
+
+    `performance` était figé à `disponible: False` dans la sérialisation : il
+    aurait continué de l'annoncer une fois le rendement devenu mesurable.
+    """
+
+    def test_la_performance_suit_l_etat_et_n_est_pas_figee(self, etat: EtatSysteme) -> None:
+        charge = serialiser(etat)["performance"]
+        mesurable = etat.performance is not None and etat.performance.valeur is not None
+        assert charge["disponible"] is mesurable
+        if mesurable:
+            assert charge["valeur"] is not None
+            assert charge["motif"] is None
+        else:
+            assert charge["valeur"] is None
+            assert charge["motif"]
+
+    def test_la_tresorerie_part_avec_sa_decomposition(self, etat: EtatSysteme) -> None:
+        """Un solde qu'on ne peut pas décomposer ne se vérifie pas contre un
+        relevé de compte."""
+        compte = serialiser(etat)["tresorerie"]
+        for poste in ("apports", "retraits", "dividendes_nets", "frais_garde"):
+            assert poste in compte
+        assert compte["mesurable"] is etat.portefeuille.tresorerie.mesurable
+
+    def test_un_solde_inconnu_reste_null_jamais_zero(self, etat: EtatSysteme) -> None:
+        compte = serialiser(etat)["tresorerie"]
+        if not compte["mesurable"]:
+            assert compte["solde"] is None
+            assert compte["actif_total"] is None
+            assert compte["motif_indisponible"]

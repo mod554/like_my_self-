@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brvm-portefeuille"
+version = "0.1.0"
+description = "Suivi et analyse technique de portefeuille sur la BRVM (UEMOA)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "pandas>=2.2",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Dépendances ajoutées couche par couche, au moment où elles servent réellement.
+# Lecture de classeurs Excel pour le connecteur de secours. Facultatif : le
+# format CSV suffit et ne demande aucune dépendance.
+tableur = ["openpyxl>=3.1"]
+# Moteur de planification. Facultatif : la politique d'ordonnancement est écrite
+# sans lui et `Ordonnanceur.boucle()` suffit à un poste qui reste allumé.
+ordonnanceur = ["apscheduler>=3.10"]
+# Tableau de bord. Facultatif : l'export et les restitutions texte n'en dépendent pas.
+tableau = ["streamlit>=1.36"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAML>=6", "openpyxl>=3.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Les fichiers de l'interface web voyagent avec le paquet : elle doit
+# fonctionner hors ligne, sans build et sans CDN.
+brvm = ["storage/*.sql", "app/web/*", "app/web/polices/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+addopts = "-q --strict-markers"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# Dépendances facultatives, importées paresseusement là où elles servent. Le
+# système fonctionne sans elles : CSV au lieu d'Excel, boucle au lieu
+# d'APScheduler, restitution texte au lieu du tableau de bord.
+module = ["openpyxl.*", "apscheduler.*", "streamlit.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # accents et apostrophes typographiques assumés

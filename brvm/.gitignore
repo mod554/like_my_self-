@@ -1,0 +1,32 @@
+# Artefacts d'exécution : rien de ce qui suit n'est du code, et rien n'a de
+# raison de voyager d'un poste à l'autre.
+
+# Base de données, journaux, cache de collecte, captures de pages, exports.
+donnees/
+donnees_test/
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.log
+rapports/
+
+# Configuration réelle : elle contient vos taux, vos identifiants de compte et
+# éventuellement un mot de passe SMTP. Les modèles versionnés sont
+# config.exemple.yaml et config.sg-capital-2026.yaml.
+config/config.yaml
+config/jours_feries.yaml
+config/univers.csv
+
+# Outillage Python.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/

@@ -43,3 +43,26 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# ─── Sous-projet Python BRVM (brvm/) ──────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Configuration renseignée par l'utilisateur : contient son barème de frais et
+# ses paramètres fiscaux. Seuls les fichiers *.exemple.* sont versionnés.
+brvm/config/config.yaml
+brvm/config/jours_feries.yaml
+brvm/config/univers.csv
+
+# Base de données locale, journaux et fichiers de cotations
+brvm/data/
+
+# Artefacts des tests (chemins relatifs de la configuration de test)
+donnees_test/
