@@ -115,6 +115,14 @@ def lire_membres(chemin):
     return {os.path.basename(n): z.read(n) for n in z.namelist() if not n.endswith("/")}
 
 
+# Google Colab : si le ZIP n'est pas présent, il est demandé à l'utilisateur (téléversement).
+if "google.colab" in sys.modules or os.path.exists("/content"):
+    if not any(os.path.exists(p) for p in [ENTREE, os.path.join("..", ENTREE)]):
+        from google.colab import files as _colab_files
+        print("Téléversez BASE_SOLIBRA_SLBC_2023_2026.zip (ou le CSV ANALYSE) :")
+        _televerse = _colab_files.upload()
+        ENTREE = next(iter(_televerse))
+
 membres = lire_membres(trouver_entree(ENTREE))
 print("Fichiers reconnus :", sorted(membres))
 
