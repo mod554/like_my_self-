@@ -1,0 +1,19 @@
+{
+  "fichier": "SOLIBRA_SLBC_2023_2026_ANALYSE.csv",
+  "colonnes": [
+    "Date",
+    "Close",
+    "Volume"
+  ],
+  "unite_close": "FCFA par action, cours de clôture tel que coté",
+  "close_ajuste_fractionnement": "NON",
+  "volume": "nombre d'actions échangées tel que publié (non ajusté)",
+  "fractionnement_confirme_par_avis_officiel": false,
+  "date_effet_fractionnement": null,
+  "ratio_nouvelles_pour_une": null,
+  "suspensions_confirmees": [],
+  "exiger_calendrier_officiel": true,
+  "genere_utc": "2026-10-16T10:21:39Z",
+  "serie_ajustee": null,
+  "raison_absence_serie_ajustee": "fractionnement non confirmé par un avis officiel récupéré"
+}
