@@ -115,15 +115,20 @@ def lire_membres(chemin):
     return {os.path.basename(n): z.read(n) for n in z.namelist() if not n.endswith("/")}
 
 
-# Google Colab : si le ZIP n'est pas présent, il est demandé à l'utilisateur (téléversement).
+# Entrées : sous Google Colab, les fichiers sont téléversés (CSV, JSON). Ailleurs, le ZIP est lu depuis le disque.
+FICHIERS_REQUIS = ["SOLIBRA_SLBC_2023_2026_ANALYSE.csv", "SOLIBRA_SLBC_2023_2026_BRUT.csv",
+                   "JOURNAL_CORRECTIONS_EXCLUSIONS.csv", "CALENDRIER_COUVERTURE_2023_2026.csv",
+                   "SOLIBRA_DIVIDENDES_2023_2026.csv", "EVENEMENTS_SOLIBRA_2023_2026.csv",
+                   "METADONNEES_SERIE.json", "Indice_BRVMC.csv"]
 if "google.colab" in sys.modules or os.path.exists("/content"):
-    if not any(os.path.exists(p) for p in [ENTREE, os.path.join("..", ENTREE)]):
-        from google.colab import files as _colab_files
-        print("Téléversez BASE_SOLIBRA_SLBC_2023_2026.zip (ou le CSV ANALYSE) :")
-        _televerse = _colab_files.upload()
-        ENTREE = next(iter(_televerse))
-
-membres = lire_membres(trouver_entree(ENTREE))
+    from google.colab import files as _colab_files
+    print("Téléversez les fichiers d'entrée :", ", ".join(FICHIERS_REQUIS))
+    membres = {os.path.basename(k): v for k, v in _colab_files.upload().items()}
+else:
+    membres = lire_membres(trouver_entree(ENTREE))
+manquants = [f for f in FICHIERS_REQUIS if f not in membres]
+if manquants:
+    raise FileNotFoundError(f"Fichiers manquants : {manquants}")
 print("Fichiers reconnus :", sorted(membres))
 
 def csv_depuis(nom, **kw):
