@@ -1,0 +1,4 @@
+segment,max_drawdown,date_sommet,cours_sommet,date_creux,cours_creux,date_recuperation,jours_ouvres_recuperation_observe,n_observations_recuperation
+S1 pré-suspension,-0.27290697674418607,2023-04-04,8600,2023-06-05,6253,2023-08-31,63,47
+S2 reprise pré-fractionnement,-0.0010393809908765261,2024-09-13,8659,2024-09-16,8650,2024-09-17,1,1
+S3 post-fractionnement,-0.3571428571428571,2024-10-11,18200,2024-11-14,11700,2025-06-18,154,142

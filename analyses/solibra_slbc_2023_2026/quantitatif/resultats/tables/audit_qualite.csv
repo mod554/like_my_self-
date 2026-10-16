@@ -1,0 +1,19 @@
+controle,valeur
+lignes_ANALYSE,721
+date_min,2023-01-02
+date_max,2026-10-14
+dates_non_parsees,0
+doublons_de_date,0
+close_manquants,0
+volume_manquants,0
+close_non_positifs,0
+volume_negatifs,0
+volume_non_entiers,0
+week_ends,0
+volumes_nuls,47
+volumes_nuls_avec_volume_FCFA_nul,47
+calendrier_officiel_etabli,False
+jours_ouvres_civils_fenetre,989
+jours_ouvres_civils_avec_observation,721
+part_jours_ouvres_civils_avec_observation,0.729
+note_couverture,"dénominateur = jours ouvrés civils, fériés non connus : ce n'est pas un taux de couverture des séances"

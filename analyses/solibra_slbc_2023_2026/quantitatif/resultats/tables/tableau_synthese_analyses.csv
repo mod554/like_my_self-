@@ -1,0 +1,11 @@
+analyse,effectif,conditions,limites,conclusion
+Cours et performance (segments),721 observations ; segments S1 (n=205) et S3 (n=505),base non ajustée indéterminée : calcul par segment seulement,bornes de S1 = séances sans transaction ; source secondaire,trajectoire des cours publiés sur S3 ; pas de performance sur toute la période
+Rendements simples et log,637 quotidiens admissibles ; 81 lacunes séparées,non-blocage fractionnement et suspension,continuité non démontrée,distribution descriptive des rendements observés
+Statistiques des rendements,637,conventions explicites,27 % de rendements nuls ; extrêmes influents,queues lourdes et asymétrie faible ; pas de loi précise
+Volatilité,637 (fenêtres 20 et 60),pas d'annualisation,pas de calendrier pour la racine du temps,volatilité observée à la fréquence des observations
+VaR / ES historiques 95 %,637 ; queue 32,queue ≥ 30 : satisfaite,un jour ; IC bootstrap sous dépendance,perte journalière historique relative d'environ 6 % à 7 %
+VaR / ES historiques 99 %,queue 7,queue ≥ 30 : non satisfaite,estimation instable,aucune conclusion robuste
+"Diagnostics (LB, ARCH, ADF, KPSS, JB)",479 (S3) et 148 (S1),effectif ≥ 30,tests multiples ; retards fixés ; KPSS bornée,dépendance de la volatilité sur S3 ; pas de prévisibilité démontrée
+"Comparaison à l'indice (corrélation, bêta)",637 appariés,dates appariées sans lacune,pas de taux sans risque ; composition de l'indice non vérifiée,"lien faible, bêta imprécis"
+Rendement total indicatif,2 détachements dans la fenêtre,dividendes documentés par le dépôt uniquement,avis PDF non ouverts,indicatif seulement
+Sharpe,—,taux sans risque absent,non calculé,aucune
