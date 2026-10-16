@@ -45,3 +45,5 @@ horodatage_utc,source,serie,periode_debut,periode_fin,methode,url,corps_requete,
 2026-10-16T10:14:48Z,brvm.org,AVIS,,,GET,https://www.brvm.org/fr/avis?page=8,,,,,,,NON RÉCUPÉRÉ,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>
 2026-10-16T10:14:48Z,brvm.org,AVIS,,,GET,https://www.brvm.org/fr/avis?page=9,,,,,,,NON RÉCUPÉRÉ,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>
 2026-10-16T10:14:49Z,brvm.org,INDICES,,,GET,https://www.brvm.org/fr/indices,,,,,,,NON RÉCUPÉRÉ,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>
+2026-10-16T10:25:15Z,brvmetrics.vercel.app,SLBC.CI,,,GET,https://brvmetrics.vercel.app/,,,,,,,NON RÉCUPÉRÉ,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>
+2026-10-16T10:25:15Z,brvmetrics.vercel.app,SLBC.CI,,,GET,https://brvmetrics.vercel.app/api/stocks/SLBC,,,,,,,NON RÉCUPÉRÉ,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>
