@@ -137,12 +137,17 @@ def charger_serie(octets):
 
 
 def charger_calendrier(octets):
+    """Calendrier officiel attendu : colonnes Date et statut_seance_officiel.
+    Un calendrier sans ces colonnes (ex. calendrier de couverture non officiel) est ignoré
+    avec un avertissement : aucune séance n'est alors tenue pour établie."""
     if octets is None:
         return None
     cal = pd.read_csv(io.BytesIO(octets), dtype=str, keep_default_na=False)
     req = {"Date", "statut_seance_officiel"}
     if not req <= set(cal.columns):
-        raise ErreurDonnees(f"calendrier : colonnes {req} requises")
+        print("AVERTISSEMENT : calendrier sans colonne statut_seance_officiel : ignoré ; "
+              "aucune séance n'est établie par un calendrier officiel.")
+        return None
     cal["Date"] = pd.to_datetime(cal.Date, format="%Y-%m-%d")
     return cal
 

@@ -1,0 +1,32 @@
+== ANALYSE : Date,Close,Volume
+effectif : 721 | dates extrêmes : 2023-01-02 -> 2026-10-14
+effectif annuel : {2023: 177, 2024: 103, 2025: 247, 2026: 194}
+effectif trimestriel : {Period('2023Q1', 'Q-DEC'): 43, Period('2023Q2', 'Q-DEC'): 39, Period('2023Q3', 'Q-DEC'): 49, Period('2023Q4', 'Q-DEC'): 46, Period('2024Q1', 'Q-DEC'): 28, Period('2024Q3', 'Q-DEC'): 12, Period('2024Q4', 'Q-DEC'): 63, Period('2025Q1', 'Q-DEC'): 60, Period('2025Q2', 'Q-DEC'): 59, Period('2025Q3', 'Q-DEC'): 63, Period('2025Q4', 'Q-DEC'): 65, Period('2026Q1', 'Q-DEC'): 61, Period('2026Q2', 'Q-DEC'): 59, Period('2026Q3', 'Q-DEC'): 64, Period('2026Q4', 'Q-DEC'): 10}
+doublons de date : 0 | valeurs manquantes : 0
+cours <= 0 : 0 | volumes négatifs : 0 | volumes nuls : 47
+week-ends : 0 | dans la suspension 02/04/2024-10/09/2024 : 0
+15/10/2026 présent : False (exclu : clôture provisoire contredite)
+cours 26/09, 30/09, 08/10/2024 : [9500, 10975, 15505] (pas de division par 10 visible)
+variation journalière absolue max : 12.4 %
+
+== BRUT
+lignes : 725 | statuts : {'RETENUE': 721, 'EXCLUE': 4}
+
+== CALENDRIER
+jours calendaires : 1384 | jours ouvrés : 989
+statuts : {'RETENUE': 721, 'WEEK-END': 395, 'SUSPENDU': 116, 'JOUR': 92, 'EXCLU': 57, 'EXCLUE': 3}
+
+== JOURNAL
+entrées : 68 | opérations : {'exclusion (amont)': 57, 'exclusion': 5, 'constat': 4, 'contradiction': 1, 'non ajusté (conservé)': 1}
+non résolues : 9
+
+== DIVIDENDES
+exercice dividende_brut_FCFA_par_action dividende_net_FCFA_par_action date_detachement date_paiement   anomalies_dates
+    2025                         2127.0                       1871.76       2026-07-29    2026-07-30                  
+    2024                         1220.0                        1073.6       2025-07-25    2025-07-29                  
+    2023                                                       2700.0       2024-09-12    2024-08-14 payment_before_ex
+
+== CONCORDANCE AVEC LES COURS DE RÉFÉRENCE BRVM (dividendes.json)
+2024-06-03 CSV = None | référence BRVM = 8325 | concordant : ligne absente
+2025-07-24 CSV = 19320 | référence BRVM = 19320 | concordant : True
+2026-07-28 CSV = 39500 | référence BRVM = 39500 | concordant : True

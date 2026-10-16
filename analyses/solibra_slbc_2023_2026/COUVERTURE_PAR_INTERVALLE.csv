@@ -1,17 +1,17 @@
-intervalle,debut,fin,tentatives,tentatives_reussies,sources_tentees,sources_reussies,echecs,lignes_recuperees,dates_retenues,lignes_exclues
-1,2023-01-01,2023-03-31,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-2,2023-04-01,2023-06-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-3,2023-07-01,2023-09-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-4,2023-10-01,2023-12-31,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-5,2024-01-01,2024-03-31,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-6,2024-04-01,2024-06-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-7,2024-07-01,2024-09-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-8,2024-10-01,2024-12-31,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-9,2025-01-01,2025-03-31,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-10,2025-04-01,2025-06-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-11,2025-07-01,2025-09-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-12,2025-10-01,2025-12-31,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-13,2026-01-01,2026-03-31,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-14,2026-04-01,2026-06-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-15,2026-07-01,2026-09-30,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
-16,2026-10-01,2026-10-15,2,0,ilboursa;sikafinance,,URLError: <urlopen error Tunnel connection failed: 403 Forbidden>,0,0,0
+intervalle,debut,fin,jours_ouvres,retenues,exclues_ou_sans_transaction,suspendus,jours_ouvres_sans_ligne,source_utilisee,echecs_collecte
+1,2023-01-01,2023-03-31,65,43,13,0,11,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+2,2023-04-01,2023-06-30,65,39,9,0,17,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+3,2023-07-01,2023-09-30,65,49,12,0,6,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+4,2023-10-01,2023-12-31,65,46,9,0,16,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+5,2024-01-01,2024-03-31,65,28,3,0,36,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+6,2024-04-01,2024-06-30,65,0,0,64,1,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+7,2024-07-01,2024-09-30,66,12,0,52,2,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+8,2024-10-01,2024-12-31,66,63,0,0,0,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+9,2025-01-01,2025-03-31,64,60,0,0,1,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+10,2025-04-01,2025-06-30,65,59,1,0,2,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+11,2025-07-01,2025-09-30,66,63,0,0,0,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+12,2025-10-01,2025-12-31,66,65,1,0,0,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+13,2026-01-01,2026-03-31,64,61,0,0,0,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+14,2026-04-01,2026-06-30,65,59,1,0,0,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+15,2026-07-01,2026-09-30,66,64,0,0,0,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"
+16,2026-10-01,2026-10-15,11,10,1,0,0,"1 fichier complet du dépôt, filtré sur l'intervalle","aucun (fichier récupéré par git ; sites officiels inaccessibles, voir preuves/COLLECTE_TENTATIVES.csv)"

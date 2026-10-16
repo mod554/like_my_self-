@@ -143,13 +143,18 @@ def main():
         assert r["modules"]["bêta contre indice"]["statut"] == "EXÉCUTÉ"
     test("Bêta exécuté seulement avec indice fourni (indice synthétique)", beta_indice)
 
-    def serie_vide_reelle():
+    def zip_livre():
         p = sys.argv[1] if len(sys.argv) > 1 else None
         if not p:
             raise AssertionError("ZIP livré non indiqué")
         r = A.executer(p, os.path.join(tmp, "out6"))
-        assert r["lignes_fichier"] == 0 and "série vide" in r["avertissements"]
-    test("ZIP livré (série réelle actuelle) : lecture et arrêt propre si vide", serie_vide_reelle)
+        assert r["lignes_fichier"] == 721, r["lignes_fichier"]
+        assert r["close_ajuste_fractionnement"] == "NON"
+        assert r["modules"]["rendements simples et logarithmiques"]["statut"] == "EXÉCUTÉ"
+        assert r["classes_rendements"].get("traverse le fractionnement (cours non ajustés)") == 1
+        assert r["classes_rendements"].get("traverse une suspension") == 1
+        assert not any(k.startswith("quotidien") for k in r["classes_rendements"]), "rendement quotidien sans calendrier officiel"
+    test("ZIP livré (721 lignes réelles) : lecture, aucun rendement quotidien sans calendrier officiel", zip_livre)
 
     def cli():
         out = subprocess.run([sys.executable, os.path.join(ICI, "analyse_solibra_colab.py"),

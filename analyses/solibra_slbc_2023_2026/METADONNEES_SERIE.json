@@ -5,15 +5,29 @@
     "Close",
     "Volume"
   ],
-  "unite_close": "FCFA par action, cours de clôture tel que coté",
+  "close": "cours de clôture publié par la source, FCFA par action, NON ajusté du fractionnement",
+  "volume": "nombre de titres échangés (Volume Titres) ; 0 seulement si Volume FCFA = 0 dans la source",
+  "statut_serie": "SÉRIE NON VALIDÉE : source secondaire unique, contradictions non résolues (voir journal)",
+  "fractionnement_2024": "avis BRVM n°242 (27/09/2024) lu par son titre seulement ; effet absent du CSV ; non appliqué",
+  "source": "https://github.com/harzat/brvm-data-public",
+  "commit": "ed5e3e355d4fdd21b024de59140a19a67e4dccd3",
+  "sha256_source": "efdb083760097733d971de5a888618cef0bd7a919553107730e1be93591a6902",
+  "date_recuperation_utc": "2026-10-16T10:39:34Z",
   "close_ajuste_fractionnement": "NON",
-  "volume": "nombre d'actions échangées tel que publié (non ajusté)",
-  "fractionnement_confirme_par_avis_officiel": false,
-  "date_effet_fractionnement": null,
-  "ratio_nouvelles_pour_une": null,
-  "suspensions_confirmees": [],
-  "exiger_calendrier_officiel": true,
-  "genere_utc": "2026-10-16T10:25:18Z",
-  "serie_ajustee": null,
-  "raison_absence_serie_ajustee": "fractionnement non confirmé par un avis officiel récupéré"
+  "date_effet_fractionnement": "2024-09-30",
+  "date_effet_source": "presse (CGF Bourse) ; avis BRVM n°242 non lu",
+  "suspensions_confirmees": [
+    [
+      "2024-04-02",
+      "2024-09-10"
+    ]
+  ],
+  "source_suspension": "titres des avis BRVM n°054 (02/04/2024) et n°227 (11/09/2024), non lus",
+  "fenetre": [
+    "2023-01-01",
+    "2026-10-15"
+  ],
+  "lignes_source_total": 2400,
+  "lignes_fenetre": 725,
+  "lignes_analyse": 721
 }
