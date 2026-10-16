@@ -1,0 +1,4 @@
+segment,debut,fin,n,close_debut,close_fin,performance_cours
+S1 pré-suspension,2023-01-02,2024-03-28,205,8325,8325,0.0
+S2 reprise pré-fractionnement,2024-09-13,2024-09-27,11,8659,10213,0.17946645109134995
+S3 post-fractionnement,2024-09-30,2026-10-14,505,10975,38200,2.480637813211845
